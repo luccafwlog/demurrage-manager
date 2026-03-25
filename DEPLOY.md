@@ -1,73 +1,36 @@
-# 🚀 Deploy Firebase Hosting - Demurrage Manager
+# Demurrage Manager — Deploy Automático
 
-Seus arquivos estão prontos para deploy! Escolha uma das opções abaixo:
+## 🚀 Como funciona
 
----
+Qualquer alteração feita nos arquivos e enviada para o GitHub dispara automaticamente um deploy no Firebase Hosting.
 
-## ✅ Opção 1: Deploy via Firebase Console (MAIS FÁCIL)
+## 📋 Fluxo de trabalho
 
-1. Acesse: https://console.firebase.google.com/project/demurragemanager/hosting
-2. Clique em **"Iniciar"** ou **"Adicionar site"** (se for primeira vez)
-3. Clique em **"Upload de arquivo"**
-4. Selecione TODOS os arquivos dessa pasta:
-   - `app.html`
-   - `index.html`
-   - `firebase.json`
-5. Clique em **Upload**
-
-**Seu site estará em:**
 ```
-https://demurragemanager.web.app
-https://demurragemanager.firebaseapp.com
+Você edita um arquivo → Salva → Git push → GitHub Actions → Firebase Hosting atualizado ✅
 ```
 
----
+## 🔧 Configuração
 
-## 🔧 Opção 2: Deploy via CLI (Automático)
+| Item | Valor |
+|------|-------|
+| Repositório GitHub | https://github.com/luccafwlog/demurrage-manager |
+| Firebase Project | demurragemanager |
+| Site publicado | https://demurragemanager.web.app |
+| Branch principal | main |
+| Workflow | .github/workflows/firebase-deploy.yml |
 
-Se preferir usar terminal:
+## 📦 Arquivos do projeto
 
-```bash
-# 1. Ir para a pasta
-cd /sessions/great-bold-cori/firebase-hosting
+- `index.html` — Página inicial
+- `app.html` — Aplicação principal
+- `firebase.json` — Configuração do Firebase Hosting
+- `firestore.rules` — Regras do Firestore
+- `.github/workflows/firebase-deploy.yml` — Pipeline de deploy automático
 
-# 2. Fazer login (abre browser)
-npx -y firebase-tools@latest login
+## ⚠️ Segurança
 
-# 3. Definir projeto
-npx -y firebase-tools@latest use demurragemanager
-
-# 4. Fazer deploy
-npx -y firebase-tools@latest deploy --only hosting
-
-# 5. Seu site estará em:
-# https://demurragemanager.web.app
-```
-
----
-
-## 📝 Arquivos Incluídos:
-
-✅ `app.html` - Aplicação principal (721KB)
-✅ `index.html` - Tela de login (15KB)
-✅ `firebase.json` - Configuração do hosting
+O token do Firebase (`FIREBASE_TOKEN`) está armazenado de forma segura nos **GitHub Actions Secrets** e nunca fica exposto no código.
 
 ---
-
-## 🎯 Próximos passos:
-
-1. Faça o deploy (escolha opção 1 ou 2)
-2. Acesse seu site em: https://demurragemanager.web.app
-3. Teste o login e a exclusão de dados
-4. Pronto! 🎉
-
----
-
-## 📌 Notas importantes:
-
-- **Ilimitado de deploys** - Pode fazer deploy quantas vezes quiser
-- **Gratuito** - Sem cobranças adicionais
-- **Domínio personalizado** - Você pode adicionar seu próprio domínio depois
-- **SSL/HTTPS automático** - Seu site já tem certificado de segurança
-
-Qualquer dúvida, é só chamar! 🚀
+*Configurado em 24/03/2026 — Deploy automático via GitHub Actions*
