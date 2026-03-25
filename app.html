@@ -653,23 +653,30 @@ onAuthStateChanged(auth, (user) => {
   }
 
   // ── Listeners em tempo real ──────────────────────────────────────────────
+  // FIX #6: erros de onSnapshot exibidos visivelmente (nao silenciados no console)
+  function _handleSnapshotError(col, err, isReady, markReady) {
+    console.error('[DB] ' + col + ':', err);
+    if (window.toast) window.toast('\u26a0\ufe0f Erro ao carregar dados (' + col + '): ' + (err.code || err.message) + '. Recarregue a pagina.', 'error');
+    if (!isReady) markReady();
+  }
+
   onSnapshot(uCol('bls'), snap => {
     window._dmStore.bls = snap.docs.map(d => d.data());
     if (!blsReady) { blsReady = true; checkReady(); }
     else if (window._dmOnBLsUpdate) window._dmOnBLsUpdate();
-  }, err => { console.error('[DB] bls:', err); if (!blsReady) { blsReady = true; checkReady(); } });
+  }, err => _handleSnapshotError('bls', err, blsReady, () => { blsReady = true; checkReady(); }));
 
   onSnapshot(uCol('containers'), snap => {
     window._dmStore.trk = snap.docs.map(d => d.data());
     if (!trkReady) { trkReady = true; checkReady(); }
     else if (window._dmOnTrkUpdate) window._dmOnTrkUpdate();
-  }, err => { console.error('[DB] containers:', err); if (!trkReady) { trkReady = true; checkReady(); } });
+  }, err => _handleSnapshotError('containers', err, trkReady, () => { trkReady = true; checkReady(); }));
 
   onSnapshot(uCol('clients'), snap => {
     window._dmStore.clients = snap.docs.map(d => d.data());
     if (!cliReady) { cliReady = true; checkReady(); }
     else if (window._dmOnClientsUpdate) window._dmOnClientsUpdate();
-  }, err => { console.error('[DB] clients:', err); if (!cliReady) { cliReady = true; checkReady(); } });
+  }, err => _handleSnapshotError('clients', err, cliReady, () => { cliReady = true; checkReady(); }));
 
   // ── Salvar com diff correto: lê store ANTES de atualizar ────────────────
   window._dmFireSave = function(type, newData) {
@@ -690,6 +697,7 @@ onAuthStateChanged(auth, (user) => {
     const batch = writeBatch(db);
     let deleteCount = 0;
     let setCount = 0;
+    let prevStore = null; // FIX #1: para rollback em caso de falha no commit
 
     if (type === 'bls') {
       const oldStore = window._dmStore.bls;           // snapshot ANTES de atualizar
@@ -706,7 +714,7 @@ onAuthStateChanged(auth, (user) => {
         batch.set(uDoc('bls', b.id), sanitize(b));
         setCount++;
       });
-      window._dmStore.bls = newData;                  // atualiza store DEPOIS do diff
+      prevStore = oldStore; // FIX #1: store atualizado APOS commit (ver .then abaixo)
 
     } else if (type === 'trk') {
       const oldStore = window._dmStore.trk;
@@ -723,7 +731,7 @@ onAuthStateChanged(auth, (user) => {
         batch.set(uDoc('containers', c.container), sanitize(c));
         setCount++;
       });
-      window._dmStore.trk = newData;
+      prevStore = oldStore; // FIX #1: store atualizado APOS commit (ver .then abaixo)
 
     } else if (type === 'clients') {
       const oldStore = window._dmStore.clients;
@@ -740,7 +748,7 @@ onAuthStateChanged(auth, (user) => {
         batch.set(uDoc('clients', c.id), sanitize(c));
         setCount++;
       });
-      window._dmStore.clients = newData;
+      prevStore = oldStore; // FIX #1: store atualizado APOS commit (ver .then abaixo)
     }
 
     console.log(`[DB-SAVE] Operações em batch: ${deleteCount} deletes + ${setCount} sets`);
@@ -755,6 +763,17 @@ onAuthStateChanged(auth, (user) => {
     batch.commit()
       .then(() => {
         clearTimeout(timeoutId);
+        // FIX #1: Rollback do store em caso de falha no commit
+        if (prevStore !== null) {
+          if      (type === 'bls')     window._dmStore.bls     = prevStore;
+          else if (type === 'trk')     window._dmStore.trk     = prevStore;
+          else if (type === 'clients') window._dmStore.clients = prevStore;
+          console.warn('[DB-SAVE] Rollback do store "' + type + '" executado.');
+        }
+        // FIX #1: Atualiza store APENAS apos confirmacao do Firestore
+        if      (type === 'bls')     window._dmStore.bls     = newData;
+        else if (type === 'trk')     window._dmStore.trk     = newData;
+        else if (type === 'clients') window._dmStore.clients = newData;
         console.log(`[DB-SAVE] ✓ ${type} salvo com sucesso no Firestore!`);
         if (window.toast) window.toast(`✓ ${type} deletado com sucesso!`, 'success');
       })
@@ -773,13 +792,30 @@ onAuthStateChanged(auth, (user) => {
   };
 
   // ── Restaurar backup ─────────────────────────────────────────────────────
+  // FIX #5: helper — executa operacoes em batches de 400 (limite Firestore = 500)
+  async function _commitInChunks(ops) {
+    var CHUNK = 400;
+    for (var i = 0; i < ops.length; i += CHUNK) {
+      var b = writeBatch(db);
+      ops.slice(i, i + CHUNK).forEach(function(fn) { fn(b); });
+      await b.commit();
+    }
+  }
+
   window._dmFireRestore = async function(bkp) {
-    const batch = writeBatch(db);
-    if (bkp.bls)      bkp.bls.forEach(b => batch.set(uDoc('bls', b.id), sanitize(b)));
-    if (bkp.tracking) bkp.tracking.forEach(c => batch.set(uDoc('containers', c.container), sanitize(c)));
-    if (bkp.clients)  bkp.clients.forEach(c => batch.set(uDoc('clients', c.id), sanitize(c)));
-    if (bkp.alertDays) batch.set(settingsDoc, { days: bkp.alertDays });
-    await batch.commit();
+    // FIX #4: restore SUBSTITUTIVO — apaga docs existentes antes de inserir backup
+    var ops = [];
+    // 1) Deletar todos os documentos existentes nas colecoes relevantes
+    (window._dmStore.bls     || []).forEach(function(b) { ops.push(function(bt) { bt.delete(uDoc("bls", b.id)); }); });
+    (window._dmStore.trk     || []).forEach(function(c) { ops.push(function(bt) { bt.delete(uDoc("containers", c.container)); }); });
+    (window._dmStore.clients || []).forEach(function(c) { ops.push(function(bt) { bt.delete(uDoc("clients", c.id)); }); });
+    // 2) Inserir dados do backup
+    if (bkp.bls)       bkp.bls.forEach(function(b)      { ops.push(function(bt) { bt.set(uDoc("bls", b.id), sanitize(b)); }); });
+    if (bkp.tracking)  bkp.tracking.forEach(function(c) { ops.push(function(bt) { bt.set(uDoc("containers", c.container), sanitize(c)); }); });
+    if (bkp.clients)   bkp.clients.forEach(function(c)  { ops.push(function(bt) { bt.set(uDoc("clients", c.id), sanitize(c)); }); });
+    if (bkp.alertDays) ops.push(function(bt) { bt.set(settingsDoc, { days: bkp.alertDays }); });
+    // FIX #5: commit em chunks de 400 ops
+    await _commitInChunks(ops);
   };
 
   // ── Expor db e user para o script não-modular ────────────────────────────
@@ -3941,11 +3977,12 @@ function clearTracking() {
     'Você está prestes a excluir permanentemente TODOS os containers do controle de rastreamento. Todos os dados de tracking, histórico e informações associadas serão removidos.',
     trkData.length,
     () => {
+      var qtdExcluida = trkData.length; // FIX #8: captura ANTES de zerar o array
       trkData = [];
       trkSave(trkData);
       renderTracking();
       toast('✓ Controle de containers excluído permanentemente.', '');
-      logAuditAction('exclusao_todos_containers', {quantidade: trkData.length});
+      logAuditAction('exclusao_todos_containers', {quantidade: qtdExcluida});
     }
   );
 }
@@ -5025,27 +5062,8 @@ function printAllInvoices() {
 // ============================================================
 // INIT
 // ============================================================
-// Migração: atribuir docnum a BLs existentes que não possuem
-(function migrateDotcnum() {
-  let changed = false;
-  bls.forEach(b => { if (!b.docnum) { b.docnum = genDocnum(b.bl); changed = true; } });
-  if (changed) save(bls);
-})();
-
-// Migração: atribuir migratedAt a BLs vindos do tracking que não possuem a data
-(function backfillMigratedAt() {
-  let changed = false;
-  bls.forEach(b => {
-    if (b.migratedFromTracking && !b.migratedAt) {
-      // Usa createdAt como data de migração (timestamp → YYYY-MM-DD)
-      b.migratedAt = b.createdAt
-        ? new Date(b.createdAt).toISOString().slice(0, 10)
-        : new Date().toISOString().slice(0, 10);
-      changed = true;
-    }
-  });
-  if (changed) save(bls);
-})();
+// FIX #3: migracoes movidas para window._dmOnReady() — veja abaixo
+// (executavam sobre bls=[] antes do Firebase carregar os dados)
 document.addEventListener('click', e => {
   const dd = document.getElementById('cons-dropdown');
   const inp = document.getElementById('cons-search');
@@ -6089,6 +6107,27 @@ window._dmOnReady = function() {
   // ── Reload all global arrays from Firestore ──
   bls = load();              // ← critical: reatribui bls com dados do Firebase
   _backfillVenc();           // ← backfill seguro: só salva se houver mudança real
+  // FIX #3: migracoes agora rodam APOS bls ser carregado do Firestore
+  (function migrateDotcnum() {
+    let changed = false;
+    bls.forEach(b => { if (!b.docnum) { b.docnum = genDocnum(b.bl); changed = true; } });
+    if (changed) save(bls);
+  })();
+  
+  // Migração: atribuir migratedAt a BLs vindos do tracking que não possuem a data
+  (function backfillMigratedAt() {
+    let changed = false;
+    bls.forEach(b => {
+      if (b.migratedFromTracking && !b.migratedAt) {
+        // Usa createdAt como data de migração (timestamp → YYYY-MM-DD)
+        b.migratedAt = b.createdAt
+          ? new Date(b.createdAt).toISOString().slice(0, 10)
+          : new Date().toISOString().slice(0, 10);
+        changed = true;
+      }
+    });
+    if (changed) save(bls);
+  })();
   const rawTrk = trkLoad();
   const cleanTrk = rawTrk.filter(r => {
     if (r.emptyReturn && r.discharge) {
@@ -6119,7 +6158,19 @@ window._dmOnReady = function() {
     updateAlertBadge();
   };
   window._dmOnTrkUpdate = function() {
-    trkData = trkLoad();
+    // FIX #7: aplica filtro de containers devolvidos dentro do free time
+    // (mesmo filtro do carregamento inicial em _dmOnReady)
+    var raw7 = trkLoad();
+    var clean7 = raw7.filter(function(r) {
+      if (r.emptyReturn && r.discharge) {
+        var used = trkDaysBetween(r.discharge, r.emptyReturn);
+        var ft   = r.freeTime || 21;
+        if (used !== null && used <= ft) return false;
+      }
+      return true;
+    });
+    if (clean7.length < raw7.length) trkSave(clean7);
+    trkData = clean7;
     renderTracking();
     updateAlertBadge();
   };
