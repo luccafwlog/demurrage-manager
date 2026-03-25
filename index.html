@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Demurrage Manager — Transhipping</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --ink:     #0b0e14;
+  --panel:   #111620;
+  --surface: #161c2a;
+  --border:  rgba(255,255,255,.07);
+  --accent:  #1d8cf8;
+  --muted:   #4a5568;
+  --text:    #e2e8f0;
+  --subtext: #64748b;
+  --error:   #f87171;
+  --success: #34d399;
+}
+
+body {
+  font-family: 'DM Mono', monospace;
+  background: var(--ink);
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr 480px;
+  overflow: hidden;
+}
+
+/* ── Left panel ─────────────────────────────────────────────────── */
+.left-panel {
+  position: relative;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 56px;
+  overflow: hidden;
+}
+
+.left-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(29,140,248,.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(29,140,248,.06) 1px, transparent 1px);
+  background-size: 48px 48px;
+  animation: gridShift 18s linear infinite;
+}
+
+@keyframes gridShift {
+  from { transform: translateY(0); }
+  to   { transform: translateY(48px); }
+}
+
+.left-panel::after {
+  content: '';
+  position: absolute;
+  bottom: -80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  height: 300px;
+  background: radial-gradient(ellipse, rgba(29,140,248,.18) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.scanlines {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 3px,
+    rgba(0,0,0,.12) 3px, rgba(0,0,0,.12) 4px
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+.data-tag {
+  position: absolute;
+  font-size: 10px;
+  color: rgba(29,140,248,.5);
+  letter-spacing: 1px;
+  z-index: 2;
+  animation: fadeFloat 6s ease-in-out infinite;
+}
+.data-tag:nth-child(2) { top: 14%; left: 8%;   animation-delay: 0s; }
+.data-tag:nth-child(3) { top: 28%; right: 12%;  animation-delay: 1.5s; }
+.data-tag:nth-child(4) { top: 52%; left: 14%;   animation-delay: 3s; }
+.data-tag:nth-child(5) { top: 68%; right: 8%;   animation-delay: 4.5s; }
+.data-tag:nth-child(6) { top: 40%; left: 40%;   animation-delay: 2s; }
+
+@keyframes fadeFloat {
+  0%, 100% { opacity: .35; transform: translateY(0); }
+  50%       { opacity: .8;  transform: translateY(-8px); }
+}
+
+.left-content { position: relative; z-index: 3; }
+
+.left-eyebrow {
+  font-size: 10px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.left-eyebrow::before {
+  content: '';
+  display: block;
+  width: 28px;
+  height: 1px;
+  background: var(--accent);
+}
+
+.left-headline {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: clamp(36px, 4vw, 52px);
+  line-height: 1.05;
+  color: var(--text);
+  margin-bottom: 20px;
+  letter-spacing: -1px;
+}
+.left-headline span {
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(29,140,248,.6);
+}
+
+.left-desc {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--subtext);
+  max-width: 380px;
+  margin-bottom: 40px;
+}
+
+.stat-row { display: flex; gap: 40px; }
+.stat { display: flex; flex-direction: column; gap: 4px; }
+.stat-num {
+  font-family: 'Syne', sans-serif;
+  font-weight: 700;
+  font-size: 28px;
+  color: var(--accent);
+  letter-spacing: -1px;
+}
+.stat-label {
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── Right panel ────────────────────────────────────────────────── */
+.right-panel {
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 56px 52px;
+  border-left: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.right-panel::before {
+  content: '';
+  position: absolute;
+  top: -1px; right: -1px;
+  width: 120px; height: 120px;
+  border-top: 1px solid rgba(29,140,248,.25);
+  border-right: 1px solid rgba(29,140,248,.25);
+  border-radius: 0 0 0 80px;
+}
+.right-panel::after {
+  content: '';
+  position: absolute;
+  bottom: -1px; left: -1px;
+  width: 80px; height: 80px;
+  border-bottom: 1px solid rgba(29,140,248,.15);
+  border-left: 1px solid rgba(29,140,248,.15);
+  border-radius: 0 60px 0 0;
+}
+
+.brand { display: flex; flex-direction: column; gap: 4px; margin-bottom: 48px; }
+
+.brand-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(29,140,248,.1);
+  border: 1px solid rgba(29,140,248,.2);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--accent);
+  width: fit-content;
+  margin-bottom: 8px;
+}
+.brand-badge::before {
+  content: '';
+  width: 6px; height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: .4; transform: scale(.8); }
+}
+
+.brand-name {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 22px;
+  color: var(--text);
+  letter-spacing: -.5px;
+}
+.brand-company {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.form-title {
+  font-family: 'Syne', sans-serif;
+  font-weight: 700;
+  font-size: 26px;
+  color: var(--text);
+  margin-bottom: 6px;
+  letter-spacing: -.5px;
+}
+.form-sub {
+  font-size: 12px;
+  color: var(--subtext);
+  margin-bottom: 36px;
+  letter-spacing: .3px;
+}
+
+.field { margin-bottom: 20px; }
+.field label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.field-line {
+  display: flex;
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  transition: border-color .2s, box-shadow .2s;
+  overflow: hidden;
+}
+.field-line:focus-within {
+  border-color: rgba(29,140,248,.5);
+  box-shadow: 0 0 0 3px rgba(29,140,248,.08);
+}
+
+.field-icon {
+  padding: 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.field-line input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  padding: 13px 14px 13px 0;
+  letter-spacing: .3px;
+}
+.field-line input::placeholder { color: var(--muted); }
+
+.btn-login {
+  width: 100%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-family: 'Syne', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 14px;
+  cursor: pointer;
+  transition: background .2s, transform .1s, box-shadow .2s;
+  margin-top: 8px;
+  position: relative;
+  overflow: hidden;
+}
+.btn-login::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,.1) 0%, transparent 60%);
+  pointer-events: none;
+}
+.btn-login:hover:not(:disabled) {
+  background: #1a7de0;
+  box-shadow: 0 8px 24px rgba(29,140,248,.35);
+  transform: translateY(-1px);
+}
+.btn-login:active:not(:disabled) { transform: translateY(0); }
+.btn-login:disabled { opacity: .5; cursor: not-allowed; }
+
+.btn-spinner {
+  display: inline-block;
+  width: 12px; height: 12px;
+  border: 2px solid rgba(255,255,255,.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.alert {
+  border-radius: 6px;
+  padding: 11px 14px;
+  font-size: 12px;
+  margin-top: 14px;
+  display: none;
+  letter-spacing: .2px;
+}
+.alert.visible { display: block; }
+.alert-error {
+  background: rgba(248,113,113,.08);
+  border: 1px solid rgba(248,113,113,.25);
+  color: var(--error);
+}
+.alert-success {
+  background: rgba(52,211,153,.08);
+  border: 1px solid rgba(52,211,153,.25);
+  color: var(--success);
+}
+
+.form-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+.forgot-link {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: .5px;
+  transition: color .2s;
+  padding: 0;
+}
+.forgot-link:hover { color: var(--accent); }
+
+.page-footer {
+  position: absolute;
+  bottom: 28px;
+  left: 52px; right: 52px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.page-footer-text {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 1px;
+}
+
+@media (max-width: 800px) {
+  body { grid-template-columns: 1fr; }
+  .left-panel { display: none; }
+  .right-panel { padding: 40px 32px; }
+  .page-footer { left: 32px; right: 32px; }
+}
+</style>
+</head>
+<body>
+
+<div class="left-panel">
+  <div class="scanlines"></div>
+  <div class="data-tag">BL_2024_0481 &middot; 40HC &middot; D&D +12d</div>
+  <div class="data-tag">CNTR: MSCU7823410 &middot; POD: SANTOS</div>
+  <div class="data-tag">FREE TIME: 21d &middot; ROE: 5.4320</div>
+  <div class="data-tag">VESSEL: MSC CAPRICORN &middot; ETA OK</div>
+  <div class="data-tag">ALERT: 3 containers vencendo</div>
+  <div class="left-content">
+    <div class="left-eyebrow">Demurrage &amp; Detention</div>
+    <h1 class="left-headline">Controle total<br>de <span>D&amp;D</span><br>em tempo real</h1>
+    <p class="left-desc">Gestão centralizada de demurrage, containers e faturamento para toda a equipe da Transhipping.</p>
+    <div class="stat-row">
+      <div class="stat"><span class="stat-num">&#8734;</span><span class="stat-label">BLs</span></div>
+      <div class="stat"><span class="stat-num">RT</span><span class="stat-label">Sync</span></div>
+      <div class="stat"><span class="stat-num">PIX</span><span class="stat-label">QR Code</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="right-panel">
+  <div class="brand">
+    <div class="brand-badge">sistema ativo</div>
+    <div class="brand-name">Demurrage Manager</div>
+    <div class="brand-company">Transhipping Agenciamento Mar&iacute;timo</div>
+  </div>
+  <div class="form-title">Acesso</div>
+  <div class="form-sub">Entre com sua conta corporativa</div>
+  <div class="field">
+    <label>E-mail</label>
+    <div class="field-line">
+      <span class="field-icon">@</span>
+      <input type="email" id="email" placeholder="usuario@transhipping.com.br" autocomplete="email">
+    </div>
+  </div>
+  <div class="field">
+    <label>Senha</label>
+    <div class="field-line">
+      <span class="field-icon">#</span>
+      <input type="password" id="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password">
+    </div>
+  </div>
+  <button class="btn-login" id="btn-login" onclick="doLogin()">Entrar no sistema</button>
+  <div class="alert alert-error" id="error-msg"></div>
+  <div class="alert alert-success" id="reset-success">E-mail de redefinicao enviado &mdash; verifique sua caixa de entrada.</div>
+  <div class="form-footer">
+    <button class="forgot-link" onclick="doReset()">Esqueci minha senha</button>
+  </div>
+  <div class="page-footer">
+    <span class="page-footer-text">&copy; TRANSHIPPING</span>
+    <span class="page-footer-text">by ljuliatti</span>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, sendPasswordResetEmail }
+    from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
+
+  // PREENCHA COM AS CREDENCIAIS DO SEU PROJETO:
+  const firebaseConfig = {
+    apiKey:            "AIzaSyBWXLvUspGo1rRDSWYJ3rGMRUOGUH6bARI",
+    authDomain:        "demurragemanager.firebaseapp.com",
+    projectId:         "demurragemanager",
+    storageBucket:     "demurragemanager.firebasestorage.app",
+    messagingSenderId: "951449004275",
+    appId:             "1:951449004275:web:c01cc83d02ba87d9bcaf86"
+  };
+
+  const app  = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+
+  onAuthStateChanged(auth, user => { if (user) window.location.href = 'app.html'; });
+
+  const msgs = {
+    'auth/invalid-credential':     'E-mail ou senha incorretos.',
+    'auth/user-not-found':         'Usuário não encontrado.',
+    'auth/wrong-password':         'Senha incorreta.',
+    'auth/too-many-requests':      'Muitas tentativas. Aguarde alguns minutos.',
+    'auth/user-disabled':          'Esta conta foi desativada.',
+    'auth/network-request-failed': 'Erro de conexão. Verifique a internet.',
+  };
+
+  window.doLogin = async function() {
+    const email = document.getElementById('email').value.trim();
+    const pw    = document.getElementById('password').value;
+    const btn   = document.getElementById('btn-login');
+    const err   = document.getElementById('error-msg');
+    const ok    = document.getElementById('reset-success');
+    err.classList.remove('visible'); ok.classList.remove('visible');
+    if (!email || !pw) { err.textContent = 'Preencha e-mail e senha.'; err.classList.add('visible'); return; }
+    btn.disabled = true;
+    btn.innerHTML = '<span class="btn-spinner"></span>Verificando...';
+    try {
+      await signInWithEmailAndPassword(auth, email, pw);
+      window.location.href = 'app.html';
+    } catch (e) {
+      err.textContent = msgs[e.code] || e.message;
+      err.classList.add('visible');
+      btn.disabled = false;
+      btn.textContent = 'Entrar no sistema';
+    }
+  };
+
+  window.doReset = async function() {
+    const email = document.getElementById('email').value.trim();
+    const err   = document.getElementById('error-msg');
+    const ok    = document.getElementById('reset-success');
+    err.classList.remove('visible'); ok.classList.remove('visible');
+    if (!email) { err.textContent = 'Digite seu e-mail acima.'; err.classList.add('visible'); return; }
+    try { await sendPasswordResetEmail(auth, email); ok.classList.add('visible'); }
+    catch (e) { err.textContent = e.message; err.classList.add('visible'); }
+  };
+
+  document.getElementById('password').addEventListener('keydown', e => { if (e.key === 'Enter') window.doLogin(); });
+  document.getElementById('email').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('password').focus(); });
+</script>
+</body>
+</html>
