@@ -6180,5 +6180,27 @@ window._dmOnReady = function() {
   };
 };
 </script>
+
+<!-- ── Badge de versão fixo ──────────────────────────────────────────── -->
+<style>
+  .version-badge {
+    position: fixed;
+    bottom: 12px;
+    right: 16px;
+    z-index: 9999;
+    background: var(--navy);
+    color: rgba(255,255,255,0.6);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    padding: 4px 9px;
+    border-radius: 20px;
+    pointer-events: none;
+    user-select: none;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  }
+</style>
+<div class="version-badge">v1.0.4</div>
+
 </body>
 </html>
