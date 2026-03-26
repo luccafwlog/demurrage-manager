@@ -22,7 +22,7 @@ jobs:
       - name: Injetar data e hora do deploy no badge
         run: |
           DEPLOY_DATE=$(TZ='America/Sao_Paulo' date '+%d/%m/%Y %H:%M')
-          sed -i "s/__DEPLOY_DATE__/${DEPLOY_DATE}/g" app.html
+          sed -i "s|__DEPLOY_DATE__|${DEPLOY_DATE}|g" app.html
 
       - name: 🔥 Deploy para Firebase Hosting
         run: npx -y firebase-tools@latest deploy --only hosting --project demurragemanager --token "$FIREBASE_TOKEN"
