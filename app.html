@@ -683,7 +683,8 @@ onAuthStateChanged(auth, (user) => {
     console.log(`[DB-SAVE] Iniciando salvamento de ${type}...`, newData.length || 'N/A', 'registros');
 
     if (type === 'alertDays') {
-      setDoc(settingsDoc, { days: newData })
+      // FIX #14: merge:true preserva campos futuros do documento settings/alerts
+      setDoc(settingsDoc, { days: newData }, { merge: true })
         .then(() => {
           console.log('[DB-SAVE] alertDays salvo com sucesso');
         })
@@ -763,30 +764,43 @@ onAuthStateChanged(auth, (user) => {
     batch.commit()
       .then(() => {
         clearTimeout(timeoutId);
-        // FIX #1: Rollback do store em caso de falha no commit
-        if (prevStore !== null) {
-          if      (type === 'bls')     window._dmStore.bls     = prevStore;
-          else if (type === 'trk')     window._dmStore.trk     = prevStore;
-          else if (type === 'clients') window._dmStore.clients = prevStore;
-          console.warn('[DB-SAVE] Rollback do store "' + type + '" executado.');
-        }
-        // FIX #1: Atualiza store APENAS apos confirmacao do Firestore
+        // FIX #2: Atualiza store APENAS após confirmação do Firestore (sem rollback indevido aqui)
         if      (type === 'bls')     window._dmStore.bls     = newData;
         else if (type === 'trk')     window._dmStore.trk     = newData;
         else if (type === 'clients') window._dmStore.clients = newData;
         console.log(`[DB-SAVE] ✓ ${type} salvo com sucesso no Firestore!`);
-        if (window.toast) window.toast(`✓ ${type} deletado com sucesso!`, 'success');
+        // FIX #9: mensagem correta — "salvo", não "deletado"
+        if (window.toast) window.toast(`✓ Dados salvos com sucesso!`, 'success');
       })
       .catch(e => {
         clearTimeout(timeoutId);
         console.error(`[DB-SAVE] ✗ Erro ao salvar ${type}:`, e.code, e.message, e);
+        // FIX #2: rollback do store ao estado anterior em caso de falha no commit
+        if (prevStore !== null) {
+          if      (type === 'bls')     window._dmStore.bls     = prevStore;
+          else if (type === 'trk')     window._dmStore.trk     = prevStore;
+          else if (type === 'clients') window._dmStore.clients = prevStore;
+          console.warn('[DB-SAVE] Rollback do store "' + type + '" executado após falha.');
+        }
         if (window.toast) window.toast(`Erro ao salvar ${type}: ${e.code || e.message}`, 'error');
       });
   };
 
   // ── Deletar doc único ────────────────────────────────────────────────────
+  // FIX #10: atualiza o store in-memory imediatamente após deleteDoc para que a UI
+  // não exiba o registro como existente enquanto o onSnapshot não chega.
   window._dmFireDelete = function(type, id) {
     const colMap = { bls: 'bls', trk: 'containers', clients: 'clients' };
+    // Remove do store imediatamente (optimistic update)
+    if (window._dmStore) {
+      const storeKey = { bls: 'bls', trk: 'trk', clients: 'clients' }[type];
+      const idKey    = { bls: 'id',  trk: 'container', clients: 'id' }[type];
+      if (storeKey && idKey) {
+        window._dmStore[storeKey] = (window._dmStore[storeKey] || []).filter(
+          r => String(r[idKey]) !== String(id)
+        );
+      }
+    }
     deleteDoc(uDoc(colMap[type] || type, id))
       .catch(e => console.error('[DB] delete:', e));
   };
@@ -858,6 +872,9 @@ onAuthStateChanged(auth, (user) => {
   })();
 
   // ── Verificar se usuário é admin ──────────────────────────────────────────
+  // FIX #20: valor padrão seguro ANTES do getDoc resolver, para que código que
+  // verifica _dmIsAdmin durante a inicialização não encontre undefined.
+  window._dmIsAdmin = false;
   getDoc(doc(db, 'usuarios', uid))
     .then(snap => {
       const data = snap.exists() ? snap.data() : {};
@@ -2225,7 +2242,9 @@ function effectiveROE(b) {
 // STORAGE
 // ============================================================
 // ── STORAGE: BLs (Firestore via window._dmStore) ──────────────────────────
-function load()  { return (window._dmStore && window._dmStore.bls) || []; }
+// FIX #2: retorna cópia profunda para que o diff em _dmFireSave compare
+// oldStore (referência ao store) vs newData (cópia local modificada) corretamente.
+function load()  { return JSON.parse(JSON.stringify((window._dmStore && window._dmStore.bls) || [])); }
 function save(b) {
   // NÃO atualiza _dmStore aqui — _dmFireSave faz o diff correto e atualiza o store
   if (window._dmFireSave) window._dmFireSave('bls', b);
@@ -3477,7 +3496,8 @@ function renderDoc(b, type) {
 // TRACKING MODULE
 // ============================================================
 // ── STORAGE: Containers (Firestore via window._dmStore) ───────────────────
-function trkLoad() { return (window._dmStore && window._dmStore.trk) || []; }
+// FIX #2: cópia profunda — mesma razão que load()
+function trkLoad() { return JSON.parse(JSON.stringify((window._dmStore && window._dmStore.trk) || [])); }
 function trkSave(d) {
   if (window._dmFireSave) window._dmFireSave('trk', d);
   else if (window._dmStore) window._dmStore.trk = d;
@@ -4161,7 +4181,8 @@ function processClientRows(rows) {
 // CLIENTS MODULE
 // ============================================================
 // ── STORAGE: Clientes (Firestore via window._dmStore) ─────────────────────
-function cliLoad() { return (window._dmStore && window._dmStore.clients) || []; }
+// FIX #2: cópia profunda — mesma razão que load()
+function cliLoad() { return JSON.parse(JSON.stringify((window._dmStore && window._dmStore.clients) || [])); }
 function cliSave(d) {
   if (window._dmFireSave) window._dmFireSave('clients', d);
   else if (window._dmStore) window._dmStore.clients = d;
@@ -4325,11 +4346,13 @@ function clearClients() {
     'Você está prestes a excluir permanentemente TODOS os clientes cadastrados no sistema. Informações de contato, histórico e configurações associadas também serão removidas.',
     clients.length,
     () => {
+      // FIX #15: captura quantidade ANTES de zerar o array (senão log registra 0)
+      var qtdExcluida = clients.length;
       clients = [];
       cliSave(clients);
       renderClients();
       toast('✓ Cadastro de clientes excluído permanentemente.', '');
-      logAuditAction('exclusao_todos_clientes', {quantidade: clients.length});
+      logAuditAction('exclusao_todos_clientes', {quantidade: qtdExcluida});
     }
   );
 }
@@ -5882,6 +5905,8 @@ function backupData() {
     bls:      load(),
     tracking: trkLoad(),
     clients:  cliLoad(),
+    // FIX #13: alertDays incluído no backup para ser restaurado corretamente
+    alertDays: getAlertDays(),
   };
   const json  = JSON.stringify(data, null, 2);
   const blob  = new Blob([json], { type: 'application/json' });
