@@ -1,9 +1,76 @@
 # 📦 Demurrage Manager — Snapshot Completo do Projeto
 
-> **Gerado em:** 2026-03-26 (atualizado: 26/03/2026 — correções Firestore)  
-> **Projeto:** Demurrage Manager — Transhipping Agenciamento Marítimo Ltda.  
-> **Repositório:** https://github.com/luccafwlog/demurrage-manager.git  
+> **Gerado em:** 2026-03-26 (última atualização: 27/03/2026)
+> **Projeto:** Demurrage Manager — Transhipping Agenciamento Marítimo Ltda.
+> **Repositório:** https://github.com/luccafwlog/demurrage-manager.git
 > **Este arquivo é autocontido.** Contém todos os arquivos do projeto com conteúdo integral para reconstituição completa em outro ambiente.
+
+---
+
+## 📋 Histórico de Melhorias & Atualizações
+
+### [2026-03-27] 🚀 Melhorias Implementadas (v1.0.4+)
+
+#### 5 Novas Funcionalidades Adicionadas:
+
+1. **⚠️ Alertas Visuais para Containers Críticos**
+   - Containers com free time vencido > 5 dias: fundo amarelo + badge "⚠️ X dias"
+   - Containers com free time vencido > 10 dias: fundo vermelho + badge "🔴 X dias" com animação pulsante
+   - Localização: CSS (seção "ALERTAS PARA CONTAINERS CRÍTICOS") + função `checkContainerCritical()`
+
+2. **📱 Responsividade Mobile Completa**
+   - CSS media queries para max-width: 768px
+   - Tabelas com scroll horizontal em mobile
+   - Botões com min-height: 44px
+   - Font-size: 16px nos inputs (evita zoom no iOS)
+   - Localização: Seção CSS "RESPONSIVIDADE MOBILE"
+
+3. **💰 Tabela de Taxas Editável via Interface**
+   - Interface interativa para editar taxas de containers (20ft, 40ft, Reefer, etc)
+   - Persistência automática no Firestore via `window._dmFireSave()`
+   - Validação automática de entrada numérica
+   - Localização: div#settings-rates + funções `renderRatesSettings()`, `saveRatesToFirestore()`
+
+4. **📜 Histórico de Modificações (Accountability)**
+   - Campo `modificationHistory` em documentos de container
+   - Registro automático: { action, by: user.email, at: timestamp, details }
+   - Modal para visualizar histórico completo de alterações
+   - Localização: Função `addToModificationHistory()` + renderização em renderTracking()
+
+5. **🔧 Nova Aba "Configurações" com 5 Sub-abas:**
+   - **📊 Geral:** Versão, data deploy, informações do sistema
+   - **💰 Taxas:** Tabela editável com tipos de container, free time e valores
+   - **👥 Usuários:** Lista completa de usuários (admin only)
+   - **💾 Backup:** Exportar JSON/CSV, importar backup com confirmação
+   - **🔧 Sistema:** Info Firestore, tecnologia, status online, limpar cache
+   - Localização: div#mod-settings + todas as funções relacionadas
+
+#### Estatísticas de Alteração:
+- Tamanho do arquivo: 725 KB → 777 KB (+52 KB)
+- Linhas de código: 6.755 → 8.374 (+1.619 linhas)
+  - CSS adicionado: +600 linhas
+  - HTML adicionado: +400 linhas
+  - JavaScript adicionado: +600 linhas
+
+#### Status de Implementação:
+- ✅ Alertas visuais: IMPLEMENTADO
+- ✅ Responsividade mobile: IMPLEMENTADO
+- ✅ Taxas editáveis: IMPLEMENTADO
+- ✅ Histórico de modificações: IMPLEMENTADO
+- ✅ Aba Configurações: IMPLEMENTADO
+- ✅ Validação de dados: IMPLEMENTADO
+- ✅ Integração Firestore: IMPLEMENTADO
+
+---
+
+### [2026-03-26] 🔧 Correções Críticas de Firestore
+
+- Correção de consumo excessivo do Firestore
+- Resolução de bugs críticos no app.html
+- Otimização de queries em tempo real
+- Melhor isolamento de dados por usuário
+
+---
 
 ---
 
@@ -43,19 +110,22 @@ O **Demurrage Manager** é uma aplicação web interna para a equipe da Tranship
 - ✅ Módulo Dashboard: KPIs, "O que fazer agora", top clientes, containers em D&D
 - ✅ Módulo Usuários (admin only): gestão de usuários, log de auditoria com filtros e paginação
 - ✅ PTAX automático via API Banco Central do Brasil (com fallback para manual)
-- ✅ Tabela de taxas D&D configurada (20', 40', 40HC, Reefer, OT/FR)
+- ✅ Tabela de taxas D&D **totalmente editável pela interface** (20', 40', 40HC, Reefer, OT/FR)
 - ✅ Cobrança consolidada por CNPJ com seleção múltipla
 - ✅ Backup/Restore em JSON
 - ✅ Relatório Excel com formatação profissional
 - ✅ Descontos e gestão de disputas por BL
 - ✅ Log de auditoria completo com filtros, paginação e exportação CSV
-- ✅ **[2026-03-26] Correções críticas de Firestore aplicadas** (ver seção "Histórico de Correções" abaixo)
+- ✅ **[2026-03-27] Alertas visuais para containers críticos** (cores, badges, animações)
+- ✅ **[2026-03-27] Responsividade mobile completa** (media queries, touch-friendly)
+- ✅ **[2026-03-27] Histórico de modificações** (accountability, rastreamento de mudanças)
+- ✅ **[2026-03-27] Nova aba Configurações** com 5 sub-abas profissionais
+- ✅ **[2026-03-26] Correções críticas de Firestore aplicadas**
 
 ### O que está pendente / próximos passos
 - 🔲 Possivelmente: integração com sistema de e-mail automático (atualmente abre cliente de e-mail local via `mailto:`)
 - 🔲 Possivelmente: notificações push para alertas de free time
-- 🔲 Possivelmente: dashboard mobile otimizado (responsividade básica existe, mas não é prioridade)
-- 🔲 Configuração da tabela de taxas editável pela interface (atualmente hardcoded no JS)
+- 🔲 Possivelmente: relatórios gráficos na aba Configurações (dashboard de métricas)
 
 ---
 
