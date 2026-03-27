@@ -1,6 +1,6 @@
 # 📦 Demurrage Manager — Snapshot Completo do Projeto
 
-> **Gerado em:** 2026-03-26 (última atualização: 27/03/2026)
+> **Gerado em:** 2026-03-26 (última atualização: 27/03/2026 — v1.0.5)
 > **Projeto:** Demurrage Manager — Transhipping Agenciamento Marítimo Ltda.
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager.git
 > **Este arquivo é autocontido.** Contém todos os arquivos do projeto com conteúdo integral para reconstituição completa em outro ambiente.
@@ -63,6 +63,43 @@
 
 ---
 
+### [2026-03-27] 🔒 Correções de Qualidade & Robustez (v1.0.5)
+
+**Commit:** `06092ce` — 4 correções aplicadas diretamente no repositório GitHub
+
+#### Correções Implementadas:
+
+1. **🔧 Rollback no `_dmFireDelete`**
+   - Salva `prevItem` e `prevIndex` antes do optimistic update
+   - Em caso de falha do `deleteDoc()`, restaura o item na posição original exata
+   - Chama `_dmRender()` + `window.toast()` com mensagem de erro visível ao usuário
+   - Alinha com `_dmFireSave` que já tinha rollback correto
+
+2. **🟢 Persistência Offline via IndexedDB**
+   - `enableIndexedDbPersistence(db)` ativado após `getFirestore()`
+   - App mantém último snapshot no IndexedDB quando Firebase indisponível
+   - Avisos elegantes no console para múltiplas abas ou browser não suportado
+   - Importação adicionada no bloco de imports do Firestore SDK
+
+3. **💰 Free Time Configurável por BL**
+   - Nova função `getRateForBL(bl, typeStr)` criada após `getRate()`
+   - Sobrescreve `rate.freeUntil` com `bl.freeTime` quando o BL tiver free time negociado diferente
+   - Ranges de P1/P2 ajustados proporcionalmente ao novo `freeUntil`
+   - **14 chamadas** de `calcUSD(dc, getRate(c.type), ...)` substituídas por `getRateForBL(b, c.type)`
+   - Campo `bl.freeTime` já era salvo no formulário — agora é efetivamente usado nos cálculos
+
+4. **♿ Acessibilidade nos Modais**
+   - `role="dialog"` e `aria-modal="true"` adicionados em todos os **10 overlays**
+   - `aria-label` descritivo em cada modal identificando seu propósito
+   - Botões "Excluir" de BL e Cliente recebem `aria-label` com contexto do item
+
+#### Estatísticas:
+- Linhas: 6.913 → 6.959 (+46 linhas)
+- Tamanho: 776 KB → 780 KB (+4 KB)
+- Arquivo: `app.html` — 1 arquivo alterado, 84 inserções, 38 deleções
+
+---
+
 ### [2026-03-26] 🔧 Correções Críticas de Firestore
 
 - Correção de consumo excessivo do Firestore
@@ -120,6 +157,10 @@ O **Demurrage Manager** é uma aplicação web interna para a equipe da Tranship
 - ✅ **[2026-03-27] Responsividade mobile completa** (media queries, touch-friendly)
 - ✅ **[2026-03-27] Histórico de modificações** (accountability, rastreamento de mudanças)
 - ✅ **[2026-03-27] Nova aba Configurações** com 5 sub-abas profissionais
+- ✅ **[2026-03-27] Rollback completo no `_dmFireDelete`** (dado protegido contra inconsistência)
+- ✅ **[2026-03-27] Persistência offline** via `enableIndexedDbPersistence()` (IndexedDB)
+- ✅ **[2026-03-27] Free time por BL** — `getRateForBL()` usa `bl.freeTime` negociado no cálculo
+- ✅ **[2026-03-27] Acessibilidade** — `role="dialog"` e `aria-label` em todos os 10 modais
 - ✅ **[2026-03-26] Correções críticas de Firestore aplicadas**
 
 ### O que está pendente / próximos passos
@@ -682,7 +723,7 @@ body {
 
 ### `app.html`
 
-**Tamanho:** 725.4 KB
+**Tamanho:** 780.3 KB (atualizado em 27/03/2026)
 
 ```html
 <!DOCTYPE html>
@@ -1263,6 +1304,123 @@ input:focus, select:focus { border-color: var(--blue-btn); box-shadow: 0 0 0 3px
 .bl-group-child td { background:#fafcff; border-left:3px solid #bfdbfe; }
 .bl-group-child:last-of-type td { border-bottom:2px solid var(--border) !important; }
 .trk-view-btn-active { background:var(--navy) !important; color:white !important; border-color:var(--navy) !important; }
+
+/* ══ MELHORIA #1 — ALERTAS VISUAIS CONTAINERS CRÍTICOS ══ */
+.trk-table tbody tr.row-alert-medium td { background:#fffbeb !important; }
+.trk-table tbody tr.row-alert-medium td:first-child { border-left:3px solid #f59e0b; }
+.trk-table tbody tr.row-alert-high td { background:#fff0f0 !important; }
+.trk-table tbody tr.row-alert-high td:first-child { border-left:3px solid #dc2626; }
+@keyframes pulse-danger { 0%,100%{opacity:1} 50%{opacity:0.7} }
+.row-alert-high { animation:pulse-danger 2.5s ease-in-out infinite; }
+.badge-overdue { display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;margin-left:4px;white-space:nowrap; }
+.badge-overdue.medium { background:#fef3c7;color:#b45309;border:1px solid #f59e0b; }
+.badge-overdue.high   { background:#fee2e2;color:#dc2626;border:1px solid #dc2626; }
+
+/* ══ MELHORIA #3 — RESPONSIVIDADE MOBILE ══ */
+@media (max-width:768px) {
+  .header { padding:0 16px;height:56px; }
+  .header-title { font-size:15px; }
+  .header-sub { display:none; }
+  .mod-tabs { padding:0 8px;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch; }
+  .mod-tab { padding:10px 14px;font-size:12px; }
+  .page { padding:16px 12px; }
+  .trk-stats { grid-template-columns:repeat(2,1fr);gap:8px; }
+  .trk-stat-val { font-size:20px; }
+  .trk-toolbar { flex-wrap:wrap;gap:6px; }
+  .trk-table-wrap { overflow-x:auto;-webkit-overflow-scrolling:touch; }
+  .trk-table { min-width:960px; }
+  .toolbar { flex-wrap:wrap; }
+  .search-wrap { width:100%; }
+  .bl-card { flex-wrap:wrap;gap:10px; }
+  .bl-actions { width:100%;justify-content:flex-end; }
+  input,select,textarea { font-size:16px !important; }
+  .btn { min-height:44px; }
+  .act-btn { min-height:40px; }
+  .ptax-banner { flex-wrap:wrap;padding:8px 12px; }
+}
+@media (max-width:480px) {
+  .header-logo { display:none; }
+  .mod-tab { padding:9px 10px;font-size:11px; }
+  .trk-stats { grid-template-columns:1fr 1fr; }
+}
+
+/* ══ MELHORIA #4 — HISTÓRICO DE MODIFICAÇÕES ══ */
+.mod-hist-list { list-style:none;padding:0;margin:0;max-height:360px;overflow-y:auto; }
+.mod-hist-item { display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border); }
+.mod-hist-item:last-child { border-bottom:none; }
+.mod-hist-dot { width:28px;height:28px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;color:white; }
+.mod-hist-body { flex:1;min-width:0; }
+.mod-hist-action { font-size:12px;font-weight:600;color:var(--text); }
+.mod-hist-meta { font-size:11px;color:var(--muted);margin-top:2px; }
+.mod-hist-empty { text-align:center;color:var(--muted);font-size:13px;padding:20px 0; }
+
+/* ══ NOVA ABA CONFIGURAÇÕES ══ */
+#mod-settings { max-width:1100px;margin:0 auto;padding:28px 24px; }
+.cfg-header {
+  background:linear-gradient(135deg,#0f1c3f 0%,#1a2f6b 55%,#1e3a8a 100%);
+  border-radius:14px;padding:32px 36px;margin-bottom:28px;
+  display:flex;align-items:center;gap:20px;
+  box-shadow:0 8px 32px rgba(30,58,138,0.35);position:relative;overflow:hidden;
+}
+.cfg-header::after { content:'⚙️';position:absolute;right:36px;top:50%;transform:translateY(-50%);font-size:72px;opacity:0.07;pointer-events:none; }
+.cfg-header-icon { font-size:40px; }
+.cfg-header-text h1 { font-size:24px;font-weight:700;color:#fff;margin-bottom:4px; }
+.cfg-header-text p  { font-size:13px;color:rgba(255,255,255,0.6);margin:0; }
+
+.cfg-subtabs { display:flex;gap:8px;margin-bottom:24px;border-bottom:2px solid var(--border);flex-wrap:wrap; }
+.cfg-subtab { padding:10px 20px;border-radius:8px 8px 0 0;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;border:1px solid transparent;border-bottom:none;transition:all 0.2s;background:transparent;margin-bottom:-2px; }
+.cfg-subtab:hover { color:var(--blue);background:var(--blue-light); }
+.cfg-subtab.active { color:var(--blue);background:white;border-color:var(--border);border-bottom-color:white;box-shadow:0 -2px 0 var(--blue-btn); }
+
+.cfg-pane { display:none; }
+.cfg-pane.active { display:block;animation:fadeInUp 0.22s ease; }
+@keyframes fadeInUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+.cfg-card { background:white;border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:20px;box-shadow:0 1px 4px rgba(0,0,0,0.05); }
+.cfg-card-header { display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--border);background:#f9fafb; }
+.cfg-card-header h3 { font-size:14px;font-weight:700;color:var(--text);margin:0; }
+.cfg-card-body { padding:22px; }
+
+.cfg-info-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px; }
+.cfg-info-item { background:#f8faff;border:1px solid var(--border);border-radius:10px;padding:14px 18px;border-left:4px solid var(--blue); }
+.cfg-info-item label { display:block;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:6px; }
+.cfg-info-item span { font-size:17px;font-weight:700;color:var(--text); }
+
+.cfg-table { width:100%;border-collapse:collapse;font-size:13px; }
+.cfg-table th { padding:10px 14px;background:var(--navy);color:white;font-size:11px;font-weight:600;text-align:left; }
+.cfg-table td { padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:middle; }
+.cfg-table tr:last-child td { border-bottom:none; }
+.cfg-table tr:nth-child(even) td { background:#f9fafb; }
+.cfg-table input[type="number"] { width:110px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:var(--font);color:var(--text);background:white;outline:none;transition:border-color 0.2s; }
+.cfg-table input[type="number"]:focus { border-color:var(--blue-btn);box-shadow:0 0 0 2px rgba(29,78,216,0.1); }
+
+.cfg-badge { padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600; }
+.cfg-badge.admin { background:#dbeafe;color:var(--blue); }
+.cfg-badge.user  { background:#dcfce7;color:var(--green); }
+
+.cfg-backup-grid { display:grid;grid-template-columns:1fr 1fr;gap:16px; }
+.cfg-backup-btn { display:flex;align-items:center;gap:12px;padding:16px 20px;border-radius:10px;border:2px solid var(--border);cursor:pointer;font-family:var(--font);font-size:13px;font-weight:600;transition:all 0.2s;background:white;color:var(--text);text-align:left;width:100%; }
+.cfg-backup-btn:hover { border-color:var(--blue-btn);box-shadow:0 4px 12px rgba(29,78,216,0.12); }
+.cfg-backup-btn.export:hover { background:#f0fdf4;border-color:var(--green); }
+.cfg-backup-btn.import:hover { background:#fffbeb;border-color:var(--gold); }
+.cfg-backup-btn .b-icon { font-size:26px; }
+.cfg-backup-btn .b-label { font-size:13px;font-weight:700;display:block; }
+.cfg-backup-btn .b-desc  { font-size:11px;color:var(--muted);margin-top:2px;display:block; }
+
+.cfg-sys-row { display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border); }
+.cfg-sys-row:last-child { border-bottom:none; }
+.cfg-sys-label { font-size:13px;font-weight:600;color:var(--muted); }
+.cfg-sys-val { font-size:13px;color:var(--text);font-weight:500; }
+.cfg-status-dot { width:8px;height:8px;background:var(--green);border-radius:50%;display:inline-block;margin-right:6px;box-shadow:0 0 6px rgba(22,163,74,0.6); }
+
+@media (max-width:768px) {
+  #mod-settings { padding:16px 12px; }
+  .cfg-header { padding:20px;gap:12px; }
+  .cfg-header-text h1 { font-size:18px; }
+  .cfg-info-grid { grid-template-columns:1fr 1fr; }
+  .cfg-backup-grid { grid-template-columns:1fr; }
+  .cfg-subtab { padding:8px 12px;font-size:12px; }
+}
 </style>
 </head>
 <body>
@@ -1286,7 +1444,8 @@ import { getAuth, onAuthStateChanged, signOut }
 import {
   getFirestore,
   collection, doc,
-  onSnapshot, writeBatch, setDoc, deleteDoc, getDoc
+  onSnapshot, writeBatch, setDoc, deleteDoc, getDoc,
+  enableIndexedDbPersistence
 } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -1301,6 +1460,15 @@ const firebaseConfig = {
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getFirestore(app);
+
+// Persistência offline: mantém último snapshot no IndexedDB quando Firebase indisponível
+enableIndexedDbPersistence(db).catch(err => {
+  if (err.code === 'failed-precondition') {
+    console.warn('[DB] Offline persistence desativada: múltiplas abas abertas.');
+  } else if (err.code === 'unimplemented') {
+    console.warn('[DB] Offline persistence não suportada neste browser.');
+  }
+});
 
 // ── Sanitiza objeto para Firestore: remove undefined, converte NaN → null ──
 function sanitize(obj) {
@@ -1477,19 +1645,35 @@ onAuthStateChanged(auth, (user) => {
   // FIX #10: atualiza o store in-memory imediatamente após deleteDoc para que a UI
   // não exiba o registro como existente enquanto o onSnapshot não chega.
   window._dmFireDelete = function(type, id) {
-    const colMap = { bls: 'bls', trk: 'containers', clients: 'clients' };
-    // Remove do store imediatamente (optimistic update)
-    if (window._dmStore) {
-      const storeKey = { bls: 'bls', trk: 'trk', clients: 'clients' }[type];
-      const idKey    = { bls: 'id',  trk: 'container', clients: 'id' }[type];
-      if (storeKey && idKey) {
-        window._dmStore[storeKey] = (window._dmStore[storeKey] || []).filter(
-          r => String(r[idKey]) !== String(id)
-        );
-      }
+    const colMap   = { bls: 'bls', trk: 'containers', clients: 'clients' };
+    const storeKey = { bls: 'bls', trk: 'trk', clients: 'clients' }[type];
+    const idKey    = { bls: 'id',  trk: 'container', clients: 'id' }[type];
+    // Salvar cópia do item antes de remover (para rollback)
+    let prevItem = null;
+    let prevIndex = -1;
+    if (window._dmStore && storeKey && idKey) {
+      const arr = window._dmStore[storeKey] || [];
+      prevIndex = arr.findIndex(r => String(r[idKey]) === String(id));
+      if (prevIndex !== -1) prevItem = arr[prevIndex];
+      // Optimistic update: remove imediatamente
+      window._dmStore[storeKey] = arr.filter(r => String(r[idKey]) !== String(id));
     }
     deleteDoc(uDoc(colMap[type] || type, id))
-      .catch(e => console.error('[DB] delete:', e));
+      .catch(e => {
+        console.error('[DB] delete:', e);
+        // Rollback: restaura o item na posição original se a deleção falhar
+        if (prevItem !== null && window._dmStore && storeKey) {
+          const arr = window._dmStore[storeKey] || [];
+          if (prevIndex >= 0 && prevIndex <= arr.length) {
+            arr.splice(prevIndex, 0, prevItem);
+          } else {
+            arr.push(prevItem);
+          }
+          window._dmStore[storeKey] = arr;
+          window._dmRender && window._dmRender();
+        }
+        if (window.toast) window.toast('Erro ao excluir — item restaurado', 'error');
+      });
   };
 
   // ── Restaurar backup ─────────────────────────────────────────────────────
@@ -1567,9 +1751,12 @@ onAuthStateChanged(auth, (user) => {
       const data = snap.exists() ? snap.data() : {};
       window._dmIsAdmin = !!data.admin;
       window._dmUserData = data;
-      // Mostrar aba Usuários apenas para admins
+      // Mostrar aba Usuários e Configurações apenas para admins
       const tabUsers = document.getElementById('tab-users');
       if (tabUsers && window._dmIsAdmin) tabUsers.style.display = '';
+      // Aba Configurações: visível para todos os usuários autenticados
+      const tabSettings = document.getElementById('tab-settings');
+      if (tabSettings) tabSettings.style.display = '';
       // Atualizar nome do usuário no header
       const nameEl = document.getElementById('header-user-name');
       if (nameEl) nameEl.textContent = data.nome || user.displayName || user.email || 'Usuário';
@@ -1727,6 +1914,7 @@ onAuthStateChanged(auth, (user) => {
     <div class="mod-tab" id="tab-tracking" onclick="switchModule('tracking')">📦 Controle de Containers</div>
     <div class="mod-tab" id="tab-clients" onclick="switchModule('clients')">👥 Clientes</div>
     <div class="mod-tab" id="tab-users" onclick="switchModule('users')" style="display:none;">👨‍💼 Usuários</div>
+    <div class="mod-tab" id="tab-settings" onclick="switchModule('settings')" style="display:none;">⚙️ Configurações</div>
   </div>
 <!-- DASHBOARD MODULE -->
   <div class="page" id="mod-dashboard" style="display:none;">
@@ -1949,7 +2137,7 @@ onAuthStateChanged(auth, (user) => {
 </div><!-- /mod-billing -->
 
 <!-- MODAL: CONSOLIDATED EMAIL -->
-<div class="overlay" id="modal-consolidated">
+<div class="overlay" id="modal-consolidated" role="dialog" aria-modal="true" aria-label="Cobrança Consolidada por CNPJ">
   <div class="modal" style="width:700px;height:82vh;min-height:500px;display:flex;flex-direction:column;overflow:hidden;">
     <div class="modal-header" style="flex-shrink:0;">
       <div class="modal-title">📧 Cobrança Consolidada por CNPJ</div>
@@ -2250,7 +2438,7 @@ onAuthStateChanged(auth, (user) => {
 </div>
 
 <!-- MODAL: USER -->
-<div class="overlay" id="modal-user">
+<div class="overlay" id="modal-user" role="dialog" aria-modal="true" aria-label="Gerenciar Usuário">
   <div class="modal" style="width:500px;">
     <div class="modal-header">
       <div class="modal-title">👤 <span id="modal-user-title">Novo Usuário</span></div>
@@ -2293,7 +2481,7 @@ onAuthStateChanged(auth, (user) => {
 </div>
 
 <!-- MODAL: CLIENT -->
-<div class="overlay" id="modal-client">
+<div class="overlay" id="modal-client" role="dialog" aria-modal="true" aria-label="Gerenciar Cliente">
   <div class="modal" style="width:560px;">
     <div class="modal-header">
       <div class="modal-title">👥 <span id="modal-client-title">Novo Cliente</span></div>
@@ -2325,7 +2513,7 @@ onAuthStateChanged(auth, (user) => {
 </div>
 
 <!-- MODAL: TRACKING IMPORT -->
-<div class="overlay" id="modal-trk-import">
+<div class="overlay" id="modal-trk-import" role="dialog" aria-modal="true" aria-label="Importar Planilha de Tracking">
   <div class="modal">
     <div class="modal-header">
       <div class="modal-title">📦 Importar Controle de Containers</div>
@@ -2376,7 +2564,7 @@ onAuthStateChanged(auth, (user) => {
 </div>
 
 <!-- MODAL: BL -->
-<div class="overlay" id="modal-bl">
+<div class="overlay" id="modal-bl" role="dialog" aria-modal="true" aria-label="Cadastrar ou Editar BL">
   <div class="modal wide">
     <div class="modal-header">
       <div class="modal-title">📋 <span id="modal-bl-title">Novo BL</span></div>
@@ -2513,7 +2701,7 @@ onAuthStateChanged(auth, (user) => {
 </div>
 
 <!-- MODAL: RATE TABLE -->
-<div class="overlay" id="modal-rates">
+<div class="overlay" id="modal-rates" role="dialog" aria-modal="true" aria-label="Tabela de Taxas D&D">
   <div class="modal xl">
     <div class="modal-header">
       <div class="modal-title">📋 Tabela Demurrage & Detention — BRASIL</div>
@@ -2528,7 +2716,7 @@ onAuthStateChanged(auth, (user) => {
 </div>
 
 <!-- MODAL: IMPORT -->
-<div class="overlay" id="modal-import">
+<div class="overlay" id="modal-import" role="dialog" aria-modal="true" aria-label="Importar Clientes">
   <div class="modal">
     <div class="modal-header">
       <div class="modal-title">📄 Importar Planilha</div>
@@ -2632,7 +2820,7 @@ function downloadTemplate() {
 </script>
 
 <!-- MODAL: ALERT PANEL -->
-<div class="overlay" id="modal-alert-panel">
+<div class="overlay" id="modal-alert-panel" role="dialog" aria-modal="true" aria-label="Painel de Alertas">
   <div class="modal" style="width:780px;height:86vh;min-height:520px;display:flex;flex-direction:column;overflow:hidden;">
     <div class="modal-header" style="flex-shrink:0;">
       <div class="modal-title">🔔 Alertas de Free Time</div>
@@ -2666,7 +2854,7 @@ function downloadTemplate() {
 </div>
 
 <!-- MODAL: ALERT EMAIL -->
-<div class="overlay" id="modal-alert-email">
+<div class="overlay" id="modal-alert-email" role="dialog" aria-modal="true" aria-label="Configurar E-mail de Alerta">
   <div class="modal" style="width:720px;height:84vh;min-height:500px;display:flex;flex-direction:column;overflow:hidden;">
     <div class="modal-header" style="flex-shrink:0;">
       <div class="modal-title">🔔 Envio de Alertas de Free Time</div>
@@ -2689,7 +2877,7 @@ function downloadTemplate() {
 </div>
 
 <!-- MODAL: EDIT VALUE -->
-<div class="overlay" id="modal-editval">
+<div class="overlay" id="modal-editval" role="dialog" aria-modal="true" aria-label="Editar Valor">
   <div class="modal" style="width:400px">
     <div class="modal-header">
       <div class="modal-title">✏️ Editar Valor Total</div>
@@ -2778,6 +2966,26 @@ function getRate(typeStr) {
   const prefix = RATES.find(r => r.aliases.some(a => t.startsWith(a.replace(/[\s\-\/]+/g,''))));
   if (prefix) return prefix;
   return RATES[1];
+}
+
+// Retorna a rate do tipo de container, sobrescrevendo freeUntil com o free time
+// negociado do BL quando ele for diferente do padrão da tabela.
+function getRateForBL(bl, typeStr) {
+  const base = getRate(typeStr);
+  const blFreeTime = bl && bl.freeTime != null ? parseInt(bl.freeTime, 10) : NaN;
+  if (!isNaN(blFreeTime) && blFreeTime >= 0 && blFreeTime !== base.freeUntil) {
+    // Ajusta os ranges das faixas para manter consistência com o novo freeUntil.
+    // Faixa P1 começa no dia seguinte ao fim do free time.
+    const p1Start = blFreeTime + 1;
+    const p1End   = blFreeTime + (base.p1.range[1] - base.p1.range[0] + 1);
+    const p2Start = p1End + 1;
+    return Object.assign({}, base, {
+      freeUntil: blFreeTime,
+      p1: { range: [p1Start, p1End], usd: base.p1.usd },
+      p2: { range: [p2Start, Infinity], usd: base.p2.usd }
+    });
+  }
+  return base;
 }
 
 // dc = dias corridos (Data Retorno - Data Descarga)
@@ -3025,6 +3233,29 @@ function toast(msg, t='') {
 }
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// Modal genérico reutilizável (para histórico e outras funcionalidades)
+function showGenericModal(title, html, width) {
+  let m = document.getElementById('generic-modal-overlay');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'generic-modal-overlay';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:20px;';
+    m.innerHTML = `<div id="generic-modal-box" style="background:white;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-height:80vh;display:flex;flex-direction:column;overflow:hidden;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--border);background:#f9fafb;">
+        <h3 id="generic-modal-title" style="font-size:15px;font-weight:700;margin:0;color:var(--text);"></h3>
+        <button onclick="document.getElementById('generic-modal-overlay').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1;padding:4px;">×</button>
+      </div>
+      <div id="generic-modal-body" style="padding:22px;overflow-y:auto;flex:1;"></div>
+    </div>`;
+    m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+    document.body.appendChild(m);
+  }
+  document.getElementById('generic-modal-title').textContent = title;
+  document.getElementById('generic-modal-body').innerHTML = html;
+  document.getElementById('generic-modal-box').style.width = width || '520px';
+  m.style.display = 'flex';
+}
 function fmtDate(s) { return s ? new Date(s+'T12:00:00').toLocaleDateString('pt-BR') : ''; }
 function fmtBRL(v) { return 'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function parseDs(v) {
@@ -3064,7 +3295,7 @@ function blTotal(b, roeOv) {
   let t = 0;
   (b.containers||[]).forEach(c => {
     const dc = daysBetween(c.discharge, c.emptyReturn);
-    const calc = calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null);
+    const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null);
     t += calc.totalUSD * roe;
   });
   // Apply discount if present
@@ -3204,7 +3435,7 @@ function renderList() {
     // Only containers that generated demurrage
     const billableCtrs = ctrs.filter(c => {
       const dc = daysBetween(c.discharge, c.emptyReturn);
-      return calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null).totalUSD > 0;
+      return calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD > 0;
     });
     const tot = blTotal(b, null);
     const totStr = tot > 0 ? ` · Total: ${fmtBRL(tot)}` : '';
@@ -3241,7 +3472,7 @@ function renderList() {
         <button class="act-btn invoice" onclick="viewDoc('${b.id}','invoice')">📄 Fatura</button>
         <button class="act-btn receipt" onclick="viewDoc('${b.id}','receipt')">🧾 Recibo</button>
         <button class="act-btn edit" onclick="openEditBL('${b.id}')">Editar</button>
-        <button class="act-btn del" onclick="deleteBL('${b.id}')">Excluir</button>
+        <button class="act-btn del" onclick="deleteBL('${b.id}')" aria-label="Excluir BL ${b.blNum||b.id}">Excluir</button>
       </div>
     </div>`;
   }).join('');
@@ -3503,14 +3734,14 @@ function exportReport() {
     // Only containers that generated demurrage
     const billable = (b.containers || []).filter(c => {
       const dc = daysBetween(c.discharge, c.emptyReturn);
-      return calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null).totalUSD > 0;
+      return calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD > 0;
     });
 
     if (!billable.length) return; // skip BLs with no demurrage at all
 
     billable.forEach((c, idx) => {
       const dc = daysBetween(c.discharge, c.emptyReturn);
-      const calc = calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null);
+      const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null);
       const brl = calc.totalUSD * roe;
       blBRL += brl;
 
@@ -3977,7 +4208,7 @@ function sendInvoiceEmail() {
   let totalBRL = 0;
   (b.containers || []).forEach(c => {
     const dc = daysBetween(c.discharge, c.emptyReturn);
-    const calc = calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null);
+    const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null);
     totalBRL += calc.totalUSD * roe;
   });
   if ((b.paid || b.billed) && b.frozenTotal != null) totalBRL = b.frozenTotal;
@@ -4053,7 +4284,7 @@ function renderDoc(b, type) {
 
   const rows = (b.containers||[]).map(c => {
     const dc = daysBetween(c.discharge, c.emptyReturn);
-    const calc = calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null);
+    const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null);
     const brl = calc.totalUSD * roe;
     totalBRL += brl;
     return {c, calc, brl};
@@ -5081,7 +5312,7 @@ function renderClients() {
       <td>${blCount > 0 ? `<span style="font-weight:600;color:var(--blue)">${blCount}</span>` : '—'}</td>
       <td>
         <button class="act-btn edit" onclick="openEditClient('${c.id}')" style="padding:4px 10px;font-size:12px;">Editar</button>
-        <button class="act-btn del"  onclick="deleteClient('${c.id}')"  style="padding:4px 10px;font-size:12px;">Excluir</button>
+        <button class="act-btn del"  onclick="deleteClient('${c.id}')"  style="padding:4px 10px;font-size:12px;" aria-label="Excluir cliente ${c.name||c.id}">Excluir</button>
       </td>
     </tr>`;
   }).join('');
@@ -5404,7 +5635,7 @@ function blTotalBRL(b) {
   (b.containers || []).forEach(c => {
     const dc = daysBetween(c.discharge, c.emptyReturn);
     if (dc === null) return;
-    total += calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
+    total += calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
   });
   return total;
 }
@@ -5604,7 +5835,7 @@ function buildInvoiceHTML(b) {
 
   const rows = (b.containers||[]).filter(c => {
     const dc = daysBetween(c.discharge, c.emptyReturn);
-    return dc !== null && calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null).totalUSD > 0;
+    return dc !== null && calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD > 0;
   }).map(c => {
     const dc   = daysBetween(c.discharge, c.emptyReturn);
     const rate = getRate(c.type);
@@ -5750,7 +5981,7 @@ function printAllInvoices() {
     const roe=(b.paid||b.billed)&&b.frozenRoe!=null?b.frozenRoe:effectiveROE(b);
     let tot=0;
     if(b.frozenTotal!=null&&(b.paid||b.billed))tot=b.frozenTotal;
-    else(b.containers||[]).forEach(c=>{const dc=daysBetween(c.discharge,c.emptyReturn);if(dc!==null)tot+=calcUSD(dc,getRate(c.type),b.ov1||null,b.ov2||null).totalUSD*roe;});
+    else(b.containers||[]).forEach(c=>{const dc=daysBetween(c.discharge,c.emptyReturn);if(dc!==null)tot+=calcUSD(dc,getRateForBL(b,c.type),b.ov1||null,b.ov2||null).totalUSD*roe;});
     return{docnum,invHTML,pixPayload:buildPixPayload('06352972000121','TRANSHIPPING AGENC MARITIMO','VIT',parseFloat(tot.toFixed(2)))};
   });
   currentBL=prevBL;currentType=prevType;ovRoe=prevRoe;ovTotal=prevTot;
@@ -5796,9 +6027,9 @@ function getClientByCnpj(cnpj) {
   return clients.find(c => normalizeCnpj(c.cnpj) === norm) || null;
 }
 
-// ── SWITCH MODULE (with dashboard + users) ─────────────────────────────────
+// ── SWITCH MODULE (dashboard + users + settings) ───────────────────────────
 function switchModule(mod) {
-  ['dashboard','billing','tracking','clients','users'].forEach(m => {
+  ['dashboard','billing','tracking','clients','users','settings'].forEach(m => {
     const el = document.getElementById('mod-'+m);
     if (el) el.style.display = mod === m ? '' : 'none';
     const tab = document.getElementById('tab-'+m);
@@ -5808,7 +6039,341 @@ function switchModule(mod) {
   if (mod === 'clients')   renderClients();
   if (mod === 'dashboard') renderDashboard();
   if (mod === 'users')     renderUsers();
+  if (mod === 'settings')  initCfgModule();
 }
+
+// ══════════════════════════════════════════════════════════════════
+// MELHORIA #1 — ALERTAS VISUAIS PARA CONTAINERS CRÍTICOS
+// ══════════════════════════════════════════════════════════════════
+function applyContainerAlerts() {
+  if (!Array.isArray(trkData)) return;
+  trkData.forEach(r => {
+    const rowEl = document.querySelector(`tr[data-trk-id="${r.id}"]`);
+    if (!rowEl) return;
+    rowEl.classList.remove('row-alert-medium','row-alert-high');
+    const existing = rowEl.querySelector('.badge-overdue');
+    if (existing) existing.remove();
+
+    const ft = r.freeTime || 21;
+    const elapsed = trkDaysElapsed(r.discharge);
+    if (elapsed === null || r.emptyReturn) return;
+
+    const daysOver = elapsed - ft;
+    if (daysOver <= 0) return;
+
+    if (daysOver > 10) {
+      rowEl.classList.add('row-alert-high');
+      const badge = document.createElement('span');
+      badge.className = 'badge-overdue high';
+      badge.textContent = `🔴 ${daysOver}d`;
+      const firstTd = rowEl.querySelector('td');
+      if (firstTd) firstTd.appendChild(badge);
+    } else if (daysOver > 5) {
+      rowEl.classList.add('row-alert-medium');
+      const badge = document.createElement('span');
+      badge.className = 'badge-overdue medium';
+      badge.textContent = `⚠️ ${daysOver}d`;
+      const firstTd = rowEl.querySelector('td');
+      if (firstTd) firstTd.appendChild(badge);
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════
+// MELHORIA #4 — HISTÓRICO DE MODIFICAÇÕES (ACCOUNTABILITY)
+// ══════════════════════════════════════════════════════════════════
+async function logModification(collection, docId, action, details) {
+  try {
+    const user = window._dmUser || firebase.auth().currentUser;
+    if (!user) return;
+    const entry = {
+      action: action,
+      by: user.email || user.uid,
+      at: firebase.firestore.FieldValue.serverTimestamp(),
+      details: details || {}
+    };
+    await firebase.firestore()
+      .collection(collection).doc(docId)
+      .update({ modificationHistory: firebase.firestore.FieldValue.arrayUnion(entry) });
+  } catch(e) { /* silently fail if field doesn't exist yet — will be created on next full save */ }
+}
+
+async function showModificationHistory(collection, docId, label) {
+  try {
+    const snap = await firebase.firestore().collection(collection).doc(docId).get();
+    const history = (snap.data() || {}).modificationHistory || [];
+    const sorted  = [...history].reverse();
+
+    let html = `<div style="padding:4px 0 16px;font-size:13px;font-weight:600;color:var(--muted);">Histórico de alterações em <strong style="color:var(--text);">${label}</strong></div>`;
+    html += `<ul class="mod-hist-list">`;
+
+    if (sorted.length === 0) {
+      html += `<li class="mod-hist-empty">Nenhuma modificação registrada ainda.</li>`;
+    } else {
+      const icons = { status_changed:'🔄', amount_updated:'💰', created:'✨', paid:'✅', billed:'📄', default:'✏️' };
+      sorted.forEach((m, i) => {
+        const icon = icons[m.action] || icons.default;
+        const when = m.at && m.at.toDate ? m.at.toDate().toLocaleString('pt-BR') : '—';
+        const det  = m.details && Object.keys(m.details).length
+          ? Object.entries(m.details).map(([k,v])=>`${k}: <strong>${v}</strong>`).join(' · ') : '';
+        html += `<li class="mod-hist-item">
+          <div class="mod-hist-dot">${icon}</div>
+          <div class="mod-hist-body">
+            <div class="mod-hist-action">${m.action.replace(/_/g,' ')}</div>
+            <div class="mod-hist-meta">por <strong>${m.by}</strong> · ${when}</div>
+            ${det ? `<div class="mod-hist-meta" style="margin-top:3px;">${det}</div>` : ''}
+          </div>
+        </li>`;
+      });
+    }
+    html += `</ul>`;
+
+    showGenericModal('Histórico de Modificações', html, '540px');
+  } catch(e) {
+    showGenericModal('Erro', 'Não foi possível carregar o histórico: ' + e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// NOVA ABA — CONFIGURAÇÕES
+// ══════════════════════════════════════════════════════════════════
+function switchCfgPane(btn, paneId) {
+  document.querySelectorAll('.cfg-subtab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.cfg-pane').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  const pane = document.getElementById(paneId);
+  if (pane) pane.classList.add('active');
+
+  if (paneId === 'cfg-taxas')  renderCfgRates();
+  if (paneId === 'cfg-users')  renderCfgUsers();
+  if (paneId === 'cfg-sistema') renderCfgSistema();
+}
+
+function initCfgModule() {
+  // Versão e data de deploy vindas do badge
+  const badge = document.querySelector('.version-badge');
+  if (badge) document.getElementById('cfg-version').textContent = badge.textContent.trim();
+  // Data de deploy via meta tag inserida pelo workflow
+  const deployMeta = document.querySelector('meta[name="deploy-date"]');
+  document.getElementById('cfg-deploy-date').textContent = deployMeta
+    ? deployMeta.getAttribute('content') : new Date().toLocaleDateString('pt-BR');
+  // Usuário atual
+  const u = window._dmUser || (firebase.auth && firebase.auth().currentUser);
+  document.getElementById('cfg-current-user').textContent = u ? (u.email || u.uid) : '—';
+  // Exibir aba de usuários só para admin
+  const isAdmin = window._dmIsAdmin || false;
+  document.querySelector('[onclick*="cfg-users"]').style.display = isAdmin ? '' : 'none';
+
+  renderCfgRates();
+}
+
+// ── TAXAS EDITÁVEIS ────────────────────────────────────────────────
+function renderCfgRates() {
+  const tbody = document.getElementById('cfg-rates-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  (window._cfgRates || RATES).forEach((rate, idx) => {
+    const p1Str = rate.p1 ? `${rate.p1.range[0]}–${rate.p1.range[1] === Infinity ? '∞' : rate.p1.range[1]}` : '—';
+    tbody.innerHTML += `<tr>
+      <td><strong>${rate.type}</strong></td>
+      <td><input type="number" id="cfg-r-ft-${idx}" value="${rate.freeUntil}" min="0" max="60" style="width:70px;"></td>
+      <td style="color:var(--muted);font-size:12px;">${p1Str}</td>
+      <td><input type="number" id="cfg-r-p1-${idx}" value="${rate.p1 ? rate.p1.usd : ''}" min="0" step="1"></td>
+      <td><input type="number" id="cfg-r-p2-${idx}" value="${rate.p2 ? rate.p2.usd : ''}" min="0" step="1"></td>
+      <td><button class="btn btn-primary btn-sm" onclick="saveCfgRate(${idx})">💾 Salvar</button></td>
+    </tr>`;
+  });
+}
+
+async function saveCfgRate(idx) {
+  const rates = window._cfgRates || RATES;
+  const rate  = rates[idx];
+  const ft    = parseInt(document.getElementById(`cfg-r-ft-${idx}`)?.value) || rate.freeUntil;
+  const p1usd = parseFloat(document.getElementById(`cfg-r-p1-${idx}`)?.value) || (rate.p1 ? rate.p1.usd : 0);
+  const p2usd = parseFloat(document.getElementById(`cfg-r-p2-${idx}`)?.value) || (rate.p2 ? rate.p2.usd : 0);
+
+  // Atualiza na memória
+  rate.freeUntil = ft;
+  if (rate.p1) rate.p1.usd = p1usd;
+  if (rate.p2) rate.p2.usd = p2usd;
+
+  // Persiste no Firestore
+  try {
+    await firebase.firestore().collection('config').doc('rates').set(
+      { rates: (window._cfgRates || RATES).map(r => ({
+          type: r.type, freeUntil: r.freeUntil,
+          p1usd: r.p1 ? r.p1.usd : null, p1from: r.p1 ? r.p1.range[0] : null,
+          p2usd: r.p2 ? r.p2.usd : null
+        })),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedBy: (window._dmUser || firebase.auth().currentUser)?.email || '?'
+      }, { merge: true }
+    );
+    toast('Taxa "' + rate.type + '" salva com sucesso!', 'success');
+  } catch(e) {
+    toast('Erro ao salvar taxa: ' + e.message, 'error');
+  }
+}
+
+async function loadCfgRatesFromFirestore() {
+  try {
+    const snap = await firebase.firestore().collection('config').doc('rates').get();
+    if (!snap.exists) return;
+    const saved = snap.data().rates || [];
+    saved.forEach(s => {
+      const r = RATES.find(r => r.type === s.type);
+      if (!r) return;
+      if (s.freeUntil != null) r.freeUntil = s.freeUntil;
+      if (r.p1 && s.p1usd  != null) r.p1.usd = s.p1usd;
+      if (r.p2 && s.p2usd  != null) r.p2.usd = s.p2usd;
+    });
+  } catch(e) { /* usar rates padrão */ }
+}
+
+// ── USUÁRIOS ──────────────────────────────────────────────────────
+async function renderCfgUsers() {
+  const tbody = document.getElementById('cfg-users-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--muted);">Carregando...</td></tr>`;
+  try {
+    const snap = await firebase.firestore().collection('users').get();
+    if (snap.empty) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--muted);">Nenhum usuário cadastrado</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = '';
+    snap.forEach(doc => {
+      const u = doc.data();
+      const lastLogin = u.lastLogin ? new Date(u.lastLogin.seconds*1000).toLocaleString('pt-BR') : '—';
+      const role = u.role === 'admin' ? '<span class="cfg-badge admin">Admin</span>' : '<span class="cfg-badge user">Usuário</span>';
+      const status = u.active !== false
+        ? '<span style="color:var(--green);font-weight:600;">● Ativo</span>'
+        : '<span style="color:var(--muted);">○ Inativo</span>';
+      tbody.innerHTML += `<tr>
+        <td>${u.email || doc.id}</td>
+        <td>${u.displayName || '—'}</td>
+        <td>${role}</td>
+        <td style="font-size:12px;color:var(--muted);">${lastLogin}</td>
+        <td>${status}</td>
+      </tr>`;
+    });
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--red);">Erro ao carregar usuários. Permissão necessária.</td></tr>`;
+  }
+}
+
+// ── BACKUP ────────────────────────────────────────────────────────
+async function cfgExportBackupJSON() {
+  toast('Preparando backup...', 'info');
+  try {
+    const [blSnap, trkSnap, clientSnap] = await Promise.all([
+      firebase.firestore().collection('bls').get(),
+      firebase.firestore().collection('tracking').get(),
+      firebase.firestore().collection('clients').get()
+    ]);
+    const backup = {
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      exportedBy: (window._dmUser || firebase.auth().currentUser)?.email || '?',
+      data: {
+        bls:      blSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+        tracking: trkSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+        clients:  clientSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      }
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `demurrage-backup-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('Backup exportado com sucesso!', 'success');
+  } catch(e) {
+    toast('Erro ao exportar: ' + e.message, 'error');
+  }
+}
+
+function cfgExportContainersCSV() {
+  if (!Array.isArray(trkData) || trkData.length === 0) {
+    toast('Nenhum container para exportar', 'error'); return;
+  }
+  const cols = ['Container','Tipo','Navio','POL','POD','Cliente','CNPJ','Descarga','FreeTime','Status','D&D Over','Devolvido'];
+  const rows = trkData.map(r => [
+    r.container, r.type, r.vessel, r.pol, r.pod, r.client, r.cnpj,
+    r.discharge ? new Date(r.discharge).toLocaleDateString('pt-BR') : '',
+    r.freeTime || 21,
+    r.status || '',
+    r.emptyReturn ? '' : Math.max(0, (trkDaysElapsed(r.discharge)||0) - (r.freeTime||21)),
+    r.emptyReturn ? new Date(r.emptyReturn).toLocaleDateString('pt-BR') : ''
+  ]);
+  const csv = [cols, ...rows].map(r => r.map(v => `"${String(v||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `containers-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('CSV exportado com sucesso!', 'success');
+}
+
+async function cfgImportBackup(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (!confirm('⚠️ Isso irá SUBSTITUIR os dados atuais pelo backup selecionado.\n\nTem certeza que deseja continuar?')) {
+    event.target.value = ''; return;
+  }
+  toast('Importando backup...', 'info');
+  try {
+    const text   = await file.text();
+    const backup = JSON.parse(text);
+    if (!backup.data) throw new Error('Formato de backup inválido');
+    const db     = firebase.firestore();
+    const batch  = db.batch();
+    (backup.data.bls || []).forEach(d => {
+      const {id, ...data} = d;
+      batch.set(db.collection('bls').doc(id), data);
+    });
+    (backup.data.tracking || []).forEach(d => {
+      const {id, ...data} = d;
+      batch.set(db.collection('tracking').doc(id), data);
+    });
+    (backup.data.clients || []).forEach(d => {
+      const {id, ...data} = d;
+      batch.set(db.collection('clients').doc(id), data);
+    });
+    await batch.commit();
+    toast('Backup restaurado! Recarregando...', 'success');
+    setTimeout(() => location.reload(), 1800);
+  } catch(e) {
+    toast('Erro ao importar: ' + e.message, 'error');
+  }
+  event.target.value = '';
+}
+
+// ── SISTEMA ───────────────────────────────────────────────────────
+async function renderCfgSistema() {
+  try {
+    const [blSnap, trkSnap, clientSnap] = await Promise.all([
+      firebase.firestore().collection('bls').get(),
+      firebase.firestore().collection('tracking').get(),
+      firebase.firestore().collection('clients').get()
+    ]);
+    const total = blSnap.size + trkSnap.size + clientSnap.size;
+    const el = document.getElementById('cfg-db-count');
+    if (el) el.textContent = `${total} registros (${blSnap.size} BLs · ${trkSnap.size} containers · ${clientSnap.size} clientes)`;
+  } catch(e) { /* ignore */ }
+}
+
+function cfgClearCache() {
+  if (confirm('Limpar cache local (localStorage/sessionStorage)?')) {
+    try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}
+    toast('Cache limpo com sucesso!', 'success');
+  }
+}
+function cfgReloadRates() { loadCfgRatesFromFirestore().then(() => { renderCfgRates(); toast('Taxas recarregadas!', 'success'); }); }
+function cfgShowAuditLog() { switchModule('users'); /* o log de auditoria já existe no módulo de usuários */ }
 
 // ── ALERT SYSTEM ──────────────────────────────────────────────────────────
 // ── STORAGE: Alert days (Firestore via window._dmStore) ───────────────────
@@ -6165,7 +6730,7 @@ function sendMultipleEmails() {
         let total = 0;
         (b.containers||[]).forEach(c => {
           const dc = daysBetween(c.discharge, c.emptyReturn);
-          if (dc !== null) total += calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
+          if (dc !== null) total += calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
         });
         if ((b.paid||b.billed)&&b.frozenTotal!=null) total = b.frozenTotal;
         grand += total;
@@ -6206,7 +6771,7 @@ function dispararTodasCobranças() {
         let total = 0;
         (b.containers || []).forEach(c => {
           const dc = daysBetween(c.discharge, c.emptyReturn);
-          if (dc !== null) total += calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
+          if (dc !== null) total += calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
         });
         if ((b.paid || b.billed) && b.frozenTotal != null) total = b.frozenTotal;
         grand += total;
@@ -6237,7 +6802,7 @@ function exportClientsReport() {
       let tot = b.frozenTotal != null && b.billed ? b.frozenTotal : 0;
       if (!tot) (b.containers||[]).forEach(ct => {
         const dc = daysBetween(ct.discharge, ct.emptyReturn);
-        if (dc !== null) tot += calcUSD(dc, getRate(ct.type), b.ov1||null, b.ov2||null).totalUSD * roe;
+        if (dc !== null) tot += calcUSD(dc, getRateForBL(b, ct.type), b.ov1||null, b.ov2||null).totalUSD * roe;
       });
       totalAberto += tot;
     });
@@ -6285,7 +6850,7 @@ function renderDashboard() {
     let tot = b.frozenTotal != null && b.billed ? b.frozenTotal : 0;
     if (!tot) (b.containers||[]).forEach(c => {
       const dc = daysBetween(c.discharge, c.emptyReturn);
-      if (dc !== null) tot += calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
+      if (dc !== null) tot += calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
     });
     totalAberto += tot;
 
@@ -6373,7 +6938,7 @@ function renderDashboard() {
     let tot = b.frozenTotal != null && b.billed ? b.frozenTotal : 0;
     if (!tot) (b.containers||[]).forEach(c => {
       const dc = daysBetween(c.discharge, c.emptyReturn);
-      if (dc !== null) tot += calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
+      if (dc !== null) tot += calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
     });
     byClient[key].total += tot; byClient[key].count++;
   });
@@ -6857,6 +7422,10 @@ window._dmOnReady = function() {
   loadPTAX();
   renderTracking();
   updateAlertBadge();
+  // MELHORIA #1: aplicar alertas visuais nos containers críticos
+  setTimeout(applyContainerAlerts, 500);
+  // MELHORIA TAXAS: carregar taxas customizadas do Firestore (se existirem)
+  loadCfgRatesFromFirestore();
   switchModule('dashboard');
   // Hide loading overlay
   const overlay = document.getElementById('dm-loading-overlay');
@@ -6913,6 +7482,206 @@ window._dmOnReady = function() {
   }
 </style>
 <div class="version-badge">v1.0.4</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     MÓDULO: CONFIGURAÇÕES
+     ══════════════════════════════════════════════════════════════ -->
+<div id="mod-settings" style="display:none;">
+
+  <!-- Header -->
+  <div class="cfg-header">
+    <div class="cfg-header-icon">⚙️</div>
+    <div class="cfg-header-text">
+      <h1>Configurações do Sistema</h1>
+      <p>Gerencie taxas, usuários, backup e informações do aplicativo</p>
+    </div>
+  </div>
+
+  <!-- Sub-tabs -->
+  <div class="cfg-subtabs">
+    <div class="cfg-subtab active" onclick="switchCfgPane(this,'cfg-geral')">📊 Geral</div>
+    <div class="cfg-subtab" onclick="switchCfgPane(this,'cfg-taxas')">💰 Taxas</div>
+    <div class="cfg-subtab" onclick="switchCfgPane(this,'cfg-users')">👥 Usuários</div>
+    <div class="cfg-subtab" onclick="switchCfgPane(this,'cfg-backup')">💾 Backup</div>
+    <div class="cfg-subtab" onclick="switchCfgPane(this,'cfg-sistema')">🔧 Sistema</div>
+  </div>
+
+  <!-- ── PANE: GERAL ── -->
+  <div id="cfg-geral" class="cfg-pane active">
+    <div class="cfg-card">
+      <div class="cfg-card-header"><h3>📋 Informações do Aplicativo</h3></div>
+      <div class="cfg-card-body">
+        <div class="cfg-info-grid">
+          <div class="cfg-info-item">
+            <label>Versão</label>
+            <span id="cfg-version">v1.0.4</span>
+          </div>
+          <div class="cfg-info-item">
+            <label>Data de Deploy</label>
+            <span id="cfg-deploy-date">—</span>
+          </div>
+          <div class="cfg-info-item">
+            <label>Ambiente</label>
+            <span>Produção</span>
+          </div>
+          <div class="cfg-info-item">
+            <label>Usuário Ativo</label>
+            <span id="cfg-current-user">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="cfg-card">
+      <div class="cfg-card-header"><h3>ℹ️ Sobre o Sistema</h3></div>
+      <div class="cfg-card-body" style="font-size:13px;color:var(--text);line-height:1.7;">
+        <p><strong>Demurrage Manager</strong> é um sistema interno desenvolvido para a <strong>Transhipping Agenciamento Marítimo Ltda.</strong> para centralizar a gestão de Demurrage &amp; Detention (D&amp;D) de containers.</p>
+        <br>
+        <p style="color:var(--muted);">Funcionalidades: controle em tempo real de containers · cálculo automático de D&D em USD · emissão de faturas com QR Code PIX · relatórios Excel · log de auditoria · sistema multiusuário com Firebase.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PANE: TAXAS ── -->
+  <div id="cfg-taxas" class="cfg-pane">
+    <div class="cfg-card">
+      <div class="cfg-card-header">
+        <h3>💰 Tabela de Taxas (USD/dia)</h3>
+        <span style="font-size:12px;color:var(--muted);">Alterações salvas automaticamente no Firestore</span>
+      </div>
+      <div class="cfg-card-body" style="padding:0;">
+        <table class="cfg-table" id="cfg-rates-table">
+          <thead>
+            <tr>
+              <th>Tipo de Container</th>
+              <th>Free Time (dias)</th>
+              <th>P1: Período (dias)</th>
+              <th>P1: USD/dia</th>
+              <th>P2: USD/dia</th>
+              <th>Ação</th>
+            </tr>
+          </thead>
+          <tbody id="cfg-rates-tbody">
+            <!-- preenchido via JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:12px 16px;font-size:12px;color:#92400e;">
+      ⚠️ <strong>Atenção:</strong> As taxas editadas aqui são carregadas dinamicamente. Para garantir persistência entre sessões, as alterações são salvas no Firestore (<code>config/rates</code>).
+    </div>
+  </div>
+
+  <!-- ── PANE: USUÁRIOS ── -->
+  <div id="cfg-users" class="cfg-pane">
+    <div class="cfg-card">
+      <div class="cfg-card-header">
+        <h3>👥 Usuários do Sistema</h3>
+        <span style="font-size:12px;color:var(--muted);">Apenas administradores podem visualizar esta seção</span>
+      </div>
+      <div class="cfg-card-body" style="padding:0;">
+        <table class="cfg-table">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Nome</th>
+              <th>Função</th>
+              <th>Último Acesso</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="cfg-users-tbody">
+            <tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);">Carregando usuários...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PANE: BACKUP ── -->
+  <div id="cfg-backup" class="cfg-pane">
+    <div class="cfg-card">
+      <div class="cfg-card-header"><h3>💾 Exportar Dados</h3></div>
+      <div class="cfg-card-body">
+        <div class="cfg-backup-grid">
+          <button class="cfg-backup-btn export" onclick="cfgExportBackupJSON()">
+            <span class="b-icon">📦</span>
+            <div>
+              <span class="b-label">Backup Completo (JSON)</span>
+              <span class="b-desc">Exporta containers, BLs, clientes e config</span>
+            </div>
+          </button>
+          <button class="cfg-backup-btn export" onclick="cfgExportContainersCSV()">
+            <span class="b-icon">📊</span>
+            <div>
+              <span class="b-label">Containers (CSV)</span>
+              <span class="b-desc">Planilha com todos os containers ativos</span>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="cfg-card">
+      <div class="cfg-card-header"><h3>📤 Restaurar Backup</h3></div>
+      <div class="cfg-card-body">
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px;">Importe um arquivo de backup JSON para restaurar os dados. <strong style="color:var(--red);">Atenção: os dados atuais serão substituídos.</strong></p>
+        <label class="cfg-backup-btn import" style="cursor:pointer;">
+          <span class="b-icon">📥</span>
+          <div>
+            <span class="b-label">Selecionar Arquivo de Backup</span>
+            <span class="b-desc">Formatos aceitos: .json (gerado por este sistema)</span>
+          </div>
+          <input type="file" id="cfg-backup-file" accept=".json" style="display:none;" onchange="cfgImportBackup(event)">
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PANE: SISTEMA ── -->
+  <div id="cfg-sistema" class="cfg-pane">
+    <div class="cfg-card">
+      <div class="cfg-card-header"><h3>🔧 Informações de Infraestrutura</h3></div>
+      <div class="cfg-card-body">
+        <div class="cfg-sys-row">
+          <span class="cfg-sys-label">Banco de Dados</span>
+          <span class="cfg-sys-val">Firebase Firestore (NoSQL, tempo real)</span>
+        </div>
+        <div class="cfg-sys-row">
+          <span class="cfg-sys-label">Autenticação</span>
+          <span class="cfg-sys-val">Firebase Authentication (email/senha)</span>
+        </div>
+        <div class="cfg-sys-row">
+          <span class="cfg-sys-label">Hospedagem</span>
+          <span class="cfg-sys-val">Firebase Hosting · demurragemanager.web.app</span>
+        </div>
+        <div class="cfg-sys-row">
+          <span class="cfg-sys-label">Deploy</span>
+          <span class="cfg-sys-val">GitHub Actions (automático no push para main)</span>
+        </div>
+        <div class="cfg-sys-row">
+          <span class="cfg-sys-label">Tecnologia</span>
+          <span class="cfg-sys-val">HTML5 · CSS3 · JavaScript Vanilla</span>
+        </div>
+        <div class="cfg-sys-row">
+          <span class="cfg-sys-label">Status do Servidor</span>
+          <span class="cfg-sys-val"><span class="cfg-status-dot"></span>Online</span>
+        </div>
+        <div class="cfg-sys-row">
+          <span class="cfg-sys-label">Registros no Banco</span>
+          <span class="cfg-sys-val" id="cfg-db-count">Carregando...</span>
+        </div>
+      </div>
+    </div>
+    <div class="cfg-card">
+      <div class="cfg-card-header"><h3>🧹 Manutenção</h3></div>
+      <div class="cfg-card-body" style="display:flex;gap:12px;flex-wrap:wrap;">
+        <button class="btn btn-outline btn-sm" onclick="cfgClearCache()">🗑️ Limpar Cache Local</button>
+        <button class="btn btn-outline btn-sm" onclick="cfgReloadRates()">🔄 Recarregar Taxas</button>
+        <button class="btn btn-outline btn-sm" onclick="cfgShowAuditLog()">📋 Ver Log de Auditoria</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /mod-settings -->
 
 </body>
 </html>
@@ -7595,4 +8364,4 @@ users      → mod-users (visível apenas para admins)
 
 ---
 
-*Snapshot atualizado em 2026-03-26 | Transhipping Agenciamento Marítimo Ltda. | by ljuliatti*
+*Snapshot atualizado em 2026-03-27 (v1.0.5) | Transhipping Agenciamento Marítimo Ltda. | by ljuliatti*
