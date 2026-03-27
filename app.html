@@ -716,7 +716,8 @@ import { getAuth, onAuthStateChanged, signOut }
 import {
   getFirestore,
   collection, doc,
-  onSnapshot, writeBatch, setDoc, deleteDoc, getDoc
+  onSnapshot, writeBatch, setDoc, deleteDoc, getDoc,
+  enableIndexedDbPersistence
 } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -731,6 +732,15 @@ const firebaseConfig = {
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getFirestore(app);
+
+// Persistência offline: mantém último snapshot no IndexedDB quando Firebase indisponível
+enableIndexedDbPersistence(db).catch(err => {
+  if (err.code === 'failed-precondition') {
+    console.warn('[DB] Offline persistence desativada: múltiplas abas abertas.');
+  } else if (err.code === 'unimplemented') {
+    console.warn('[DB] Offline persistence não suportada neste browser.');
+  }
+});
 
 // ── Sanitiza objeto para Firestore: remove undefined, converte NaN → null ──
 function sanitize(obj) {
@@ -907,19 +917,35 @@ onAuthStateChanged(auth, (user) => {
   // FIX #10: atualiza o store in-memory imediatamente após deleteDoc para que a UI
   // não exiba o registro como existente enquanto o onSnapshot não chega.
   window._dmFireDelete = function(type, id) {
-    const colMap = { bls: 'bls', trk: 'containers', clients: 'clients' };
-    // Remove do store imediatamente (optimistic update)
-    if (window._dmStore) {
-      const storeKey = { bls: 'bls', trk: 'trk', clients: 'clients' }[type];
-      const idKey    = { bls: 'id',  trk: 'container', clients: 'id' }[type];
-      if (storeKey && idKey) {
-        window._dmStore[storeKey] = (window._dmStore[storeKey] || []).filter(
-          r => String(r[idKey]) !== String(id)
-        );
-      }
+    const colMap   = { bls: 'bls', trk: 'containers', clients: 'clients' };
+    const storeKey = { bls: 'bls', trk: 'trk', clients: 'clients' }[type];
+    const idKey    = { bls: 'id',  trk: 'container', clients: 'id' }[type];
+    // Salvar cópia do item antes de remover (para rollback)
+    let prevItem = null;
+    let prevIndex = -1;
+    if (window._dmStore && storeKey && idKey) {
+      const arr = window._dmStore[storeKey] || [];
+      prevIndex = arr.findIndex(r => String(r[idKey]) === String(id));
+      if (prevIndex !== -1) prevItem = arr[prevIndex];
+      // Optimistic update: remove imediatamente
+      window._dmStore[storeKey] = arr.filter(r => String(r[idKey]) !== String(id));
     }
     deleteDoc(uDoc(colMap[type] || type, id))
-      .catch(e => console.error('[DB] delete:', e));
+      .catch(e => {
+        console.error('[DB] delete:', e);
+        // Rollback: restaura o item na posição original se a deleção falhar
+        if (prevItem !== null && window._dmStore && storeKey) {
+          const arr = window._dmStore[storeKey] || [];
+          if (prevIndex >= 0 && prevIndex <= arr.length) {
+            arr.splice(prevIndex, 0, prevItem);
+          } else {
+            arr.push(prevItem);
+          }
+          window._dmStore[storeKey] = arr;
+          window._dmRender && window._dmRender();
+        }
+        if (window.toast) window.toast('Erro ao excluir — item restaurado', 'error');
+      });
   };
 
   // ── Restaurar backup ─────────────────────────────────────────────────────
@@ -1383,7 +1409,7 @@ onAuthStateChanged(auth, (user) => {
 </div><!-- /mod-billing -->
 
 <!-- MODAL: CONSOLIDATED EMAIL -->
-<div class="overlay" id="modal-consolidated">
+<div class="overlay" id="modal-consolidated" role="dialog" aria-modal="true" aria-label="Cobrança Consolidada por CNPJ">
   <div class="modal" style="width:700px;height:82vh;min-height:500px;display:flex;flex-direction:column;overflow:hidden;">
     <div class="modal-header" style="flex-shrink:0;">
       <div class="modal-title">📧 Cobrança Consolidada por CNPJ</div>
@@ -1684,7 +1710,7 @@ onAuthStateChanged(auth, (user) => {
 </div>
 
 <!-- MODAL: USER -->
-<div class="overlay" id="modal-user">
+<div class="overlay" id="modal-user" role="dialog" aria-modal="true" aria-label="Gerenciar Usuário">
   <div class="modal" style="width:500px;">
     <div class="modal-header">
       <div class="modal-title">👤 <span id="modal-user-title">Novo Usuário</span></div>
@@ -1727,7 +1753,7 @@ onAuthStateChanged(auth, (user) => {
 </div>
 
 <!-- MODAL: CLIENT -->
-<div class="overlay" id="modal-client">
+<div class="overlay" id="modal-client" role="dialog" aria-modal="true" aria-label="Gerenciar Cliente">
   <div class="modal" style="width:560px;">
     <div class="modal-header">
       <div class="modal-title">👥 <span id="modal-client-title">Novo Cliente</span></div>
@@ -1759,7 +1785,7 @@ onAuthStateChanged(auth, (user) => {
 </div>
 
 <!-- MODAL: TRACKING IMPORT -->
-<div class="overlay" id="modal-trk-import">
+<div class="overlay" id="modal-trk-import" role="dialog" aria-modal="true" aria-label="Importar Planilha de Tracking">
   <div class="modal">
     <div class="modal-header">
       <div class="modal-title">📦 Importar Controle de Containers</div>
@@ -1810,7 +1836,7 @@ onAuthStateChanged(auth, (user) => {
 </div>
 
 <!-- MODAL: BL -->
-<div class="overlay" id="modal-bl">
+<div class="overlay" id="modal-bl" role="dialog" aria-modal="true" aria-label="Cadastrar ou Editar BL">
   <div class="modal wide">
     <div class="modal-header">
       <div class="modal-title">📋 <span id="modal-bl-title">Novo BL</span></div>
@@ -1947,7 +1973,7 @@ onAuthStateChanged(auth, (user) => {
 </div>
 
 <!-- MODAL: RATE TABLE -->
-<div class="overlay" id="modal-rates">
+<div class="overlay" id="modal-rates" role="dialog" aria-modal="true" aria-label="Tabela de Taxas D&D">
   <div class="modal xl">
     <div class="modal-header">
       <div class="modal-title">📋 Tabela Demurrage & Detention — BRASIL</div>
@@ -1962,7 +1988,7 @@ onAuthStateChanged(auth, (user) => {
 </div>
 
 <!-- MODAL: IMPORT -->
-<div class="overlay" id="modal-import">
+<div class="overlay" id="modal-import" role="dialog" aria-modal="true" aria-label="Importar Clientes">
   <div class="modal">
     <div class="modal-header">
       <div class="modal-title">📄 Importar Planilha</div>
@@ -2066,7 +2092,7 @@ function downloadTemplate() {
 </script>
 
 <!-- MODAL: ALERT PANEL -->
-<div class="overlay" id="modal-alert-panel">
+<div class="overlay" id="modal-alert-panel" role="dialog" aria-modal="true" aria-label="Painel de Alertas">
   <div class="modal" style="width:780px;height:86vh;min-height:520px;display:flex;flex-direction:column;overflow:hidden;">
     <div class="modal-header" style="flex-shrink:0;">
       <div class="modal-title">🔔 Alertas de Free Time</div>
@@ -2100,7 +2126,7 @@ function downloadTemplate() {
 </div>
 
 <!-- MODAL: ALERT EMAIL -->
-<div class="overlay" id="modal-alert-email">
+<div class="overlay" id="modal-alert-email" role="dialog" aria-modal="true" aria-label="Configurar E-mail de Alerta">
   <div class="modal" style="width:720px;height:84vh;min-height:500px;display:flex;flex-direction:column;overflow:hidden;">
     <div class="modal-header" style="flex-shrink:0;">
       <div class="modal-title">🔔 Envio de Alertas de Free Time</div>
@@ -2123,7 +2149,7 @@ function downloadTemplate() {
 </div>
 
 <!-- MODAL: EDIT VALUE -->
-<div class="overlay" id="modal-editval">
+<div class="overlay" id="modal-editval" role="dialog" aria-modal="true" aria-label="Editar Valor">
   <div class="modal" style="width:400px">
     <div class="modal-header">
       <div class="modal-title">✏️ Editar Valor Total</div>
@@ -2212,6 +2238,26 @@ function getRate(typeStr) {
   const prefix = RATES.find(r => r.aliases.some(a => t.startsWith(a.replace(/[\s\-\/]+/g,''))));
   if (prefix) return prefix;
   return RATES[1];
+}
+
+// Retorna a rate do tipo de container, sobrescrevendo freeUntil com o free time
+// negociado do BL quando ele for diferente do padrão da tabela.
+function getRateForBL(bl, typeStr) {
+  const base = getRate(typeStr);
+  const blFreeTime = bl && bl.freeTime != null ? parseInt(bl.freeTime, 10) : NaN;
+  if (!isNaN(blFreeTime) && blFreeTime >= 0 && blFreeTime !== base.freeUntil) {
+    // Ajusta os ranges das faixas para manter consistência com o novo freeUntil.
+    // Faixa P1 começa no dia seguinte ao fim do free time.
+    const p1Start = blFreeTime + 1;
+    const p1End   = blFreeTime + (base.p1.range[1] - base.p1.range[0] + 1);
+    const p2Start = p1End + 1;
+    return Object.assign({}, base, {
+      freeUntil: blFreeTime,
+      p1: { range: [p1Start, p1End], usd: base.p1.usd },
+      p2: { range: [p2Start, Infinity], usd: base.p2.usd }
+    });
+  }
+  return base;
 }
 
 // dc = dias corridos (Data Retorno - Data Descarga)
@@ -2521,7 +2567,7 @@ function blTotal(b, roeOv) {
   let t = 0;
   (b.containers||[]).forEach(c => {
     const dc = daysBetween(c.discharge, c.emptyReturn);
-    const calc = calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null);
+    const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null);
     t += calc.totalUSD * roe;
   });
   // Apply discount if present
@@ -2661,7 +2707,7 @@ function renderList() {
     // Only containers that generated demurrage
     const billableCtrs = ctrs.filter(c => {
       const dc = daysBetween(c.discharge, c.emptyReturn);
-      return calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null).totalUSD > 0;
+      return calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD > 0;
     });
     const tot = blTotal(b, null);
     const totStr = tot > 0 ? ` · Total: ${fmtBRL(tot)}` : '';
@@ -2698,7 +2744,7 @@ function renderList() {
         <button class="act-btn invoice" onclick="viewDoc('${b.id}','invoice')">📄 Fatura</button>
         <button class="act-btn receipt" onclick="viewDoc('${b.id}','receipt')">🧾 Recibo</button>
         <button class="act-btn edit" onclick="openEditBL('${b.id}')">Editar</button>
-        <button class="act-btn del" onclick="deleteBL('${b.id}')">Excluir</button>
+        <button class="act-btn del" onclick="deleteBL('${b.id}')" aria-label="Excluir BL ${b.blNum||b.id}">Excluir</button>
       </div>
     </div>`;
   }).join('');
@@ -2960,14 +3006,14 @@ function exportReport() {
     // Only containers that generated demurrage
     const billable = (b.containers || []).filter(c => {
       const dc = daysBetween(c.discharge, c.emptyReturn);
-      return calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null).totalUSD > 0;
+      return calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD > 0;
     });
 
     if (!billable.length) return; // skip BLs with no demurrage at all
 
     billable.forEach((c, idx) => {
       const dc = daysBetween(c.discharge, c.emptyReturn);
-      const calc = calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null);
+      const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null);
       const brl = calc.totalUSD * roe;
       blBRL += brl;
 
@@ -3434,7 +3480,7 @@ function sendInvoiceEmail() {
   let totalBRL = 0;
   (b.containers || []).forEach(c => {
     const dc = daysBetween(c.discharge, c.emptyReturn);
-    const calc = calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null);
+    const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null);
     totalBRL += calc.totalUSD * roe;
   });
   if ((b.paid || b.billed) && b.frozenTotal != null) totalBRL = b.frozenTotal;
@@ -3510,7 +3556,7 @@ function renderDoc(b, type) {
 
   const rows = (b.containers||[]).map(c => {
     const dc = daysBetween(c.discharge, c.emptyReturn);
-    const calc = calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null);
+    const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null);
     const brl = calc.totalUSD * roe;
     totalBRL += brl;
     return {c, calc, brl};
@@ -4538,7 +4584,7 @@ function renderClients() {
       <td>${blCount > 0 ? `<span style="font-weight:600;color:var(--blue)">${blCount}</span>` : '—'}</td>
       <td>
         <button class="act-btn edit" onclick="openEditClient('${c.id}')" style="padding:4px 10px;font-size:12px;">Editar</button>
-        <button class="act-btn del"  onclick="deleteClient('${c.id}')"  style="padding:4px 10px;font-size:12px;">Excluir</button>
+        <button class="act-btn del"  onclick="deleteClient('${c.id}')"  style="padding:4px 10px;font-size:12px;" aria-label="Excluir cliente ${c.name||c.id}">Excluir</button>
       </td>
     </tr>`;
   }).join('');
@@ -4861,7 +4907,7 @@ function blTotalBRL(b) {
   (b.containers || []).forEach(c => {
     const dc = daysBetween(c.discharge, c.emptyReturn);
     if (dc === null) return;
-    total += calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
+    total += calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
   });
   return total;
 }
@@ -5061,7 +5107,7 @@ function buildInvoiceHTML(b) {
 
   const rows = (b.containers||[]).filter(c => {
     const dc = daysBetween(c.discharge, c.emptyReturn);
-    return dc !== null && calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null).totalUSD > 0;
+    return dc !== null && calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD > 0;
   }).map(c => {
     const dc   = daysBetween(c.discharge, c.emptyReturn);
     const rate = getRate(c.type);
@@ -5207,7 +5253,7 @@ function printAllInvoices() {
     const roe=(b.paid||b.billed)&&b.frozenRoe!=null?b.frozenRoe:effectiveROE(b);
     let tot=0;
     if(b.frozenTotal!=null&&(b.paid||b.billed))tot=b.frozenTotal;
-    else(b.containers||[]).forEach(c=>{const dc=daysBetween(c.discharge,c.emptyReturn);if(dc!==null)tot+=calcUSD(dc,getRate(c.type),b.ov1||null,b.ov2||null).totalUSD*roe;});
+    else(b.containers||[]).forEach(c=>{const dc=daysBetween(c.discharge,c.emptyReturn);if(dc!==null)tot+=calcUSD(dc,getRateForBL(b,c.type),b.ov1||null,b.ov2||null).totalUSD*roe;});
     return{docnum,invHTML,pixPayload:buildPixPayload('06352972000121','TRANSHIPPING AGENC MARITIMO','VIT',parseFloat(tot.toFixed(2)))};
   });
   currentBL=prevBL;currentType=prevType;ovRoe=prevRoe;ovTotal=prevTot;
@@ -5956,7 +6002,7 @@ function sendMultipleEmails() {
         let total = 0;
         (b.containers||[]).forEach(c => {
           const dc = daysBetween(c.discharge, c.emptyReturn);
-          if (dc !== null) total += calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
+          if (dc !== null) total += calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
         });
         if ((b.paid||b.billed)&&b.frozenTotal!=null) total = b.frozenTotal;
         grand += total;
@@ -5997,7 +6043,7 @@ function dispararTodasCobranças() {
         let total = 0;
         (b.containers || []).forEach(c => {
           const dc = daysBetween(c.discharge, c.emptyReturn);
-          if (dc !== null) total += calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
+          if (dc !== null) total += calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
         });
         if ((b.paid || b.billed) && b.frozenTotal != null) total = b.frozenTotal;
         grand += total;
@@ -6028,7 +6074,7 @@ function exportClientsReport() {
       let tot = b.frozenTotal != null && b.billed ? b.frozenTotal : 0;
       if (!tot) (b.containers||[]).forEach(ct => {
         const dc = daysBetween(ct.discharge, ct.emptyReturn);
-        if (dc !== null) tot += calcUSD(dc, getRate(ct.type), b.ov1||null, b.ov2||null).totalUSD * roe;
+        if (dc !== null) tot += calcUSD(dc, getRateForBL(b, ct.type), b.ov1||null, b.ov2||null).totalUSD * roe;
       });
       totalAberto += tot;
     });
@@ -6076,7 +6122,7 @@ function renderDashboard() {
     let tot = b.frozenTotal != null && b.billed ? b.frozenTotal : 0;
     if (!tot) (b.containers||[]).forEach(c => {
       const dc = daysBetween(c.discharge, c.emptyReturn);
-      if (dc !== null) tot += calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
+      if (dc !== null) tot += calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
     });
     totalAberto += tot;
 
@@ -6164,7 +6210,7 @@ function renderDashboard() {
     let tot = b.frozenTotal != null && b.billed ? b.frozenTotal : 0;
     if (!tot) (b.containers||[]).forEach(c => {
       const dc = daysBetween(c.discharge, c.emptyReturn);
-      if (dc !== null) tot += calcUSD(dc, getRate(c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
+      if (dc !== null) tot += calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
     });
     byClient[key].total += tot; byClient[key].count++;
   });
