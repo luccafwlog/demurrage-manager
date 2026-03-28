@@ -312,10 +312,12 @@
   .toolbar { flex-wrap:wrap; }
   .search-wrap { width:100%; }
   .bl-card { flex-wrap:wrap;gap:10px; }
-  .bl-actions { width:100%;justify-content:flex-end; }
+  .bl-actions { width:100%;justify-content:flex-end;flex-wrap:wrap;gap:6px; }
+  .bl-action-divider { display:none; }
   input,select,textarea { font-size:16px !important; }
   .btn { min-height:44px; }
-  .act-btn { min-height:40px; }
+  .act-btn { min-height:38px; padding:5px 10px; }
+  .act-btn.edit, .act-btn.del { min-height:38px; }
   .ptax-banner { flex-wrap:wrap;padding:8px 12px; }
 }
 @media (max-width:480px) {
