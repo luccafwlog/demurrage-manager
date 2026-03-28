@@ -106,34 +106,105 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 .bl-client { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 580px; margin-bottom: 6px; }
 .bl-meta { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .container-tag { background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 2px 8px; font-size: 11px; font-weight: 500; color: var(--text); }
-.bl-actions { display: flex; gap: 8px; flex-shrink: 0; }
-.act-btn { display: inline-flex; align-items: center; gap: 5px; padding: 7px 13px; border-radius: 7px; font-size: 13px; font-family: var(--font); font-weight: 500; cursor: pointer; border: 1px solid var(--border); transition: all 0.15s; background: white; color: var(--text); }
+.bl-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.bl-action-group { display: flex; align-items: center; gap: 4px; }
+.bl-action-divider { width: 1px; height: 26px; background: #e5e7eb; margin: 0 5px; flex-shrink: 0; }
 
-/* ── Pago: verde — estado de quitação ── */
-.act-btn.unpaid  { border-color: #86efac; color: #15803d; background: #f0fdf4; }
-.act-btn.unpaid:hover  { background: #dcfce7; border-color: #4ade80; }
-.act-btn.paid    { background: #16a34a; color: white; border-color: #15803d; font-weight: 600; }
-.act-btn.paid:hover    { background: #15803d; }
+/* ── Base act-btn ─────────────────────────────────────────────────────────── */
+.act-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 6px 13px; border-radius: 8px; font-size: 12.5px;
+  font-family: var(--font); font-weight: 600; cursor: pointer;
+  border: 1.5px solid transparent;
+  transition: all 0.18s cubic-bezier(0.4,0,0.2,1);
+  white-space: nowrap; line-height: 1.4; position: relative;
+  background: white; color: var(--text);
+}
+.act-btn:active { transform: translateY(1px) !important; }
 
-/* ── Faturado: âmbar — estado de faturamento ── */
-.act-btn.unbilled { border-color: #fcd34d; color: #b45309; background: #fffbeb; }
-.act-btn.unbilled:hover { background: #fef3c7; border-color: #f59e0b; }
-.act-btn.billed   { background: #f59e0b; color: #111; border-color: #d97706; font-weight: 600; }
-.act-btn.billed:hover  { background: #d97706; }
+/* ── STATUS: Pago/Não Pago ────────────────────────────────────────────────── */
+.act-btn.unpaid {
+  background: #f0fdf4; color: #16a34a; border-color: #86efac;
+  box-shadow: 0 1px 3px rgba(22,163,74,0.12);
+}
+.act-btn.unpaid:hover {
+  background: #dcfce7; border-color: #4ade80;
+  box-shadow: 0 3px 8px rgba(22,163,74,0.2);
+  transform: translateY(-1px);
+}
+.act-btn.paid {
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+  color: white; border-color: #15803d;
+  box-shadow: 0 2px 8px rgba(21,128,61,0.35), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.act-btn.paid:hover {
+  background: linear-gradient(135deg, #15803d 0%, #166534 100%);
+  box-shadow: 0 4px 14px rgba(21,128,61,0.45);
+  transform: translateY(-1px);
+}
 
-/* ── Fatura: outline navy — ação de documento ── */
-.act-btn.invoice  { background: white; color: var(--navy); border-color: #94a3b8; }
-.act-btn.invoice:hover { background: #f1f5f9; border-color: var(--navy); }
+/* ── STATUS: Faturado/Não Faturado ───────────────────────────────────────── */
+.act-btn.unbilled {
+  background: #fffbeb; color: #92400e; border-color: #fde68a;
+  box-shadow: 0 1px 3px rgba(217,119,6,0.1);
+}
+.act-btn.unbilled:hover {
+  background: #fef3c7; border-color: #fcd34d;
+  box-shadow: 0 3px 8px rgba(217,119,6,0.2);
+  transform: translateY(-1px);
+}
+.act-btn.billed {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #fff; border-color: #d97706;
+  box-shadow: 0 2px 8px rgba(217,119,6,0.35), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.act-btn.billed:hover {
+  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+  box-shadow: 0 4px 14px rgba(217,119,6,0.45);
+  transform: translateY(-1px);
+}
 
-/* ── Recibo: outline neutro ── */
-.act-btn.receipt:hover { background: var(--bg); }
+/* ── DOCUMENTOS: Fatura ───────────────────────────────────────────────────── */
+.act-btn.invoice {
+  background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe;
+  box-shadow: 0 1px 3px rgba(29,78,216,0.1);
+}
+.act-btn.invoice:hover {
+  background: #dbeafe; border-color: #93c5fd;
+  box-shadow: 0 3px 8px rgba(29,78,216,0.2);
+  transform: translateY(-1px);
+}
 
-/* ── Editar: outline neutro ── */
-.act-btn.edit:hover  { background: var(--bg); }
+/* ── DOCUMENTOS: Recibo ───────────────────────────────────────────────────── */
+.act-btn.receipt {
+  background: #f8fafc; color: #475569; border-color: #cbd5e1;
+}
+.act-btn.receipt:hover {
+  background: #f1f5f9; border-color: #94a3b8; color: #334155;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.1);
+  transform: translateY(-1px);
+}
 
-/* ── Excluir: destrutivo discreto ── */
-.act-btn.del  { color: var(--red); border-color: transparent; background: transparent; }
-.act-btn.del:hover { background: var(--red-light); border-color: #fca5a5; }
+/* ── EDITAR: ícone compacto ───────────────────────────────────────────────── */
+.act-btn.edit {
+  background: white; color: #6b7280; border-color: #e5e7eb;
+  padding: 6px 10px; font-size: 14px;
+}
+.act-btn.edit:hover {
+  background: #f3f4f6; border-color: #9ca3af; color: #1f2937;
+  transform: translateY(-1px);
+}
+
+/* ── EXCLUIR: destrutivo ghost ────────────────────────────────────────────── */
+.act-btn.del {
+  background: transparent; color: #ef4444; border-color: transparent;
+  padding: 6px 10px; font-size: 14px;
+}
+.act-btn.del:hover {
+  background: #fef2f2; border-color: #fca5a5; color: #dc2626;
+  box-shadow: 0 2px 6px rgba(239,68,68,0.15);
+  transform: translateY(-1px);
+}
 
 /* ── Card com BL pago ── */
 .bl-card.is-paid { border-left: 4px solid var(--green); background: #f0fdf4; }
