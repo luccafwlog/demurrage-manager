@@ -1512,26 +1512,29 @@ function renderTrkGroupedByBL(filtered) {
 window._dmOnReady = function() {
   // ── Reload all global arrays from Firestore ──
   bls = load();              // ← critical: reatribui bls com dados do Firebase
-  _backfillVenc();           // ← backfill seguro: só salva se houver mudança real
-  // FIX #3: migracoes agora rodam APOS bls ser carregado do Firestore
-  (function migrateDotcnum() {
+
+  // FIX-QUOTA: Todas as migrações de startup em UMA passagem, com 1 save consolidado
+  // (antes: _backfillVenc + migrateDotcnum + backfillMigratedAt = até 3 saves separados)
+  (function runStartupMigrations() {
     let changed = false;
+
+    // 1) backfill venc
+    bls.forEach(b => { if (!b.venc) { b.venc = nextBusinessDay(null); changed = true; } });
+
+    // 2) backfill docnum
     bls.forEach(b => { if (!b.docnum) { b.docnum = genDocnum(b.bl); changed = true; } });
-    if (changed) save(bls);
-  })();
-  
-  // Migração: atribuir migratedAt a BLs vindos do tracking que não possuem a data
-  (function backfillMigratedAt() {
-    let changed = false;
+
+    // 3) backfill migratedAt
     bls.forEach(b => {
       if (b.migratedFromTracking && !b.migratedAt) {
-        // Usa createdAt como data de migração (timestamp → YYYY-MM-DD)
         b.migratedAt = b.createdAt
           ? new Date(b.createdAt).toISOString().slice(0, 10)
           : new Date().toISOString().slice(0, 10);
         changed = true;
       }
     });
+
+    // Um único save para todas as migrações (0 writes se nada precisar de backfill)
     if (changed) save(bls);
   })();
   const rawTrk = trkLoad();
