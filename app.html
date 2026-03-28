@@ -143,8 +143,6 @@ var MiniZip = (function() {
       </div>
     </div>
     <div class="header-right">
-      <div class="header-rate-link" onclick="backupData()" title="Exportar backup completo dos dados" style="color:rgba(255,255,255,.7);">💾 Backup</div>
-      <div class="header-rate-link" onclick="restoreData()" title="Restaurar dados de backup" style="color:rgba(255,255,255,.7);">📂 Restaurar</div>
       <div class="header-rate-link" onclick="openModal('modal-rates')">📋 Tabela de Taxas</div>
       <div class="header-logout" onclick="doLogout()">↪ Sair</div>
     </div>
@@ -345,7 +343,6 @@ var MiniZip = (function() {
         <input type="text" id="search-input" placeholder="Buscar por BL, contêiner ou cliente..." oninput="renderList()">
       </div>
       <button class="btn btn-primary" onclick="openNewBL()">+ Novo BL</button>
-      <button class="btn btn-outline" onclick="openImport()">📄 Importar</button>
       <button class="btn btn-outline" onclick="exportReport()" title="Exportar relatório Excel">📊 Relatório</button>
       <button class="btn btn-outline" onclick="openConsolidatedEmail()" title="Enviar cobrança consolidada por CNPJ">📧 Cobrança Consolidada</button>
       <button class="btn btn-danger" onclick="clearAllBLs()" title="Excluir todos os BLs">🗑️ Limpar tudo</button>
@@ -440,6 +437,7 @@ var MiniZip = (function() {
       <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
         <span id="cons-selected-count" style="font-size:12px;color:var(--muted);display:none;"></span>
         <button class="btn btn-outline" id="cons-pdf-btn" onclick="printAllInvoices()" disabled>🖨️ Abrir todas as faturas</button>
+        <button class="btn btn-outline" id="cons-receipts-btn" onclick="printAllReceipts()" disabled>🧾 Imprimir Recibos</button>
         <button class="btn btn-outline" id="cons-multi-send-btn" onclick="sendMultipleEmails()" disabled style="display:none;">🚀 Disparar Selecionados</button>
         <button class="btn btn-primary" id="cons-send-btn" onclick="sendConsolidatedEmail()" disabled>✉️ Abrir no E-mail</button>
       </div>
@@ -479,7 +477,7 @@ var MiniZip = (function() {
   </div>
   <div class="trk-table-wrap">
     <table class="trk-table" id="trk-table-el" style="display:none;">
-      <colgroup>
+      <colgroup id="trk-colgroup">
         <col style="width:8%">  <!-- CONTAINER -->
         <col style="width:10%"> <!-- BL -->
         <col style="width:11%"> <!-- CNEE -->
@@ -496,7 +494,7 @@ var MiniZip = (function() {
         <col style="width:11%"> <!-- STATUS -->
         <col style="width:7%">  <!-- ENVIADO EM -->
       </colgroup>
-      <thead>
+      <thead id="trk-thead">
         <tr>
           <th>CONTAINER</th><th>BL</th><th>CNEE</th><th>TIPO</th>
           <th>POL</th><th>POD</th><th>NAVIO</th>
