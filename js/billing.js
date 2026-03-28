@@ -348,9 +348,18 @@ function attachDiscountListeners() {
 // ============================================================
 // AUDIT LOGGING
 // ============================================================
+// FIX-QUOTA #E: só loga ações críticas no Firestore (evita writes por edições rotineiras)
+// Ações de alta frequência (edicao_bl, criacao_bl, exportacao_relatorio) vão apenas ao console.
+const _AUDIT_FIRESTORE_ACTIONS = new Set([
+  'exclusao_bl', 'exclusao_todos_bls',
+  'marcacao_pagamento', 'marcacao_fatura',
+  'envio_email', 'importacao_planilha'
+]);
 function logAuditAction(action, details = {}) {
   console.log('[AUDIT]', action, details);
-  if (window._dmFireLog) window._dmFireLog(action, details);
+  if (window._dmFireLog && _AUDIT_FIRESTORE_ACTIONS.has(action)) {
+    window._dmFireLog(action, details);
+  }
 }
 
 function wrapWithAuditLog(action, fn) {
