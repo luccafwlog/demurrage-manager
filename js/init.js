@@ -36,7 +36,16 @@ function getClientByCnpj(cnpj) {
 
 // ── SWITCH MODULE (dashboard + users + settings) ───────────────────────────
 function switchModule(mod) {
-  ['dashboard','billing','tracking','clients','users','settings'].forEach(m => {
+  // 'users' foi integrado em Configurações — redireciona automaticamente
+  if (mod === 'users') {
+    switchModule('settings');
+    setTimeout(function() {
+      var btn = document.querySelector('.cfg-subtab[onclick*="cfg-users"]');
+      if (btn) switchCfgPane(btn, 'cfg-users');
+    }, 50);
+    return;
+  }
+  ['dashboard','billing','tracking','clients','settings'].forEach(m => {
     const el = document.getElementById('mod-'+m);
     if (el) el.style.display = mod === m ? '' : 'none';
     const tab = document.getElementById('tab-'+m);
@@ -45,7 +54,6 @@ function switchModule(mod) {
   if (mod === 'tracking')  renderTracking();
   if (mod === 'clients')   renderClients();
   if (mod === 'dashboard') renderDashboard();
-  if (mod === 'users')     renderUsers();
   if (mod === 'settings')  initCfgModule();
 }
 
@@ -152,18 +160,28 @@ function switchCfgPane(btn, paneId) {
   if (pane) pane.classList.add('active');
 
   if (paneId === 'cfg-taxas')  renderCfgRates();
-  if (paneId === 'cfg-users')  renderCfgUsers();
+  if (paneId === 'cfg-users')  { if (typeof renderUsers === 'function') renderUsers(); }
   if (paneId === 'cfg-sistema') renderCfgSistema();
 }
 
 function initCfgModule() {
-  // Versão e data de deploy vindas do badge
-  const badge = document.querySelector('.version-badge');
-  if (badge) document.getElementById('cfg-version').textContent = badge.textContent.trim();
-  // Data de deploy via meta tag inserida pelo workflow
+  // Versão dinâmica a partir da meta tag de deploy
   const deployMeta = document.querySelector('meta[name="deploy-date"]');
-  document.getElementById('cfg-deploy-date').textContent = deployMeta
-    ? deployMeta.getAttribute('content') : new Date().toLocaleDateString('pt-BR');
+  if (deployMeta) {
+    const d = new Date(deployMeta.getAttribute('content'));
+    if (!isNaN(d.getTime())) {
+      const ver = 'v' + d.getFullYear() + '.' +
+        String(d.getMonth()+1).padStart(2,'0') + '.' +
+        String(d.getDate()).padStart(2,'0') + '-' +
+        String(d.getHours()).padStart(2,'0') + 'h' +
+        String(d.getMinutes()).padStart(2,'0');
+      const cfgVer = document.getElementById('cfg-version');
+      if (cfgVer) cfgVer.textContent = ver;
+      document.getElementById('cfg-deploy-date').textContent = d.toLocaleString('pt-BR');
+    }
+  } else {
+    document.getElementById('cfg-deploy-date').textContent = new Date().toLocaleDateString('pt-BR');
+  }
   // Usuário atual
   const u = window._dmUser || (firebase.auth && firebase.auth().currentUser);
   document.getElementById('cfg-current-user').textContent = u ? (u.email || u.uid) : '—';
@@ -380,7 +398,7 @@ function cfgClearCache() {
   }
 }
 function cfgReloadRates() { loadCfgRatesFromFirestore().then(() => { renderCfgRates(); toast('Taxas recarregadas!', 'success'); }); }
-function cfgShowAuditLog() { switchModule('users'); /* o log de auditoria já existe no módulo de usuários */ }
+function cfgShowAuditLog() { switchModule('settings'); setTimeout(function(){ var btn=document.querySelector('.cfg-subtab[onclick*="cfg-users"]'); if(btn) switchCfgPane(btn,'cfg-users'); },50); }
 
 // ── ALERT SYSTEM ──────────────────────────────────────────────────────────
 // ── STORAGE: Alert days (Firestore via window._dmStore) ───────────────────
