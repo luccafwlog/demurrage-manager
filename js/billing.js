@@ -162,6 +162,21 @@ function setFilter(f) {
     if (el) el.style.borderColor = k===f ? 'var(--navy)' : '';
     if (el) el.style.color       = k===f ? 'var(--navy)' : '';
   });
+  // Quando "Todos" é selecionado, desmarca filtros adicionais automaticamente
+  if (f === 'all') {
+    if (showOnlyWithDiscount) {
+      showOnlyWithDiscount = false;
+      document.querySelectorAll('#filter-discount-btn, #filter-discount-btn-paid').forEach(btn => {
+        btn.style.fontWeight = '400'; btn.style.borderColor = ''; btn.style.color = ''; btn.style.background = '';
+      });
+    }
+    if (showOnlyWithDispute) {
+      showOnlyWithDispute = false;
+      document.querySelectorAll('#filter-dispute-btn, #filter-dispute-btn-paid').forEach(btn => {
+        btn.style.fontWeight = '400'; btn.style.borderColor = ''; btn.style.color = ''; btn.style.background = '';
+      });
+    }
+  }
   renderList();
 }
 
@@ -1243,7 +1258,6 @@ Encaminhamos em anexo a Fatura de Sobreestadia de Container referente ao BL abai
 Para pagamento via PIX, utilize a chave: 06.352.972/0001-21 (CNPJ)
 Banco: ITAÚ | Agência: 0870 - Praia do Canto | CC: 37293-5
 
-Para imprimir/salvar a fatura em PDF, abra-a no sistema e clique em "Imprimir / PDF".
 
 Atenciosamente,
 TRANSHIPPING AGENCIAMENTO MARÍTIMO Ltda.
