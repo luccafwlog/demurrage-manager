@@ -337,9 +337,7 @@ onAuthStateChanged(auth, (user) => {
       const data = snap.exists() ? snap.data() : {};
       window._dmIsAdmin = !!data.admin;
       window._dmUserData = data;
-      // Mostrar aba Usuários e Configurações apenas para admins
-      const tabUsers = document.getElementById('tab-users');
-      if (tabUsers && window._dmIsAdmin) tabUsers.style.display = '';
+      // Mostrar aba Configurações (Usuários foi integrado em Configurações → sub-aba)
       // Aba Configurações: visível para todos os usuários autenticados
       const tabSettings = document.getElementById('tab-settings');
       if (tabSettings) tabSettings.style.display = '';
