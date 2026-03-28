@@ -129,54 +129,82 @@ onAuthStateChanged(auth, (user) => {
       const newIds   = new Set(newData.map(b => String(b.id)));
       console.log(`[DB-SAVE] BLs: ${oldStore.length} anterior → ${newData.length} novo`);
 
+      // FIX-QUOTA #A: diff de conteúdo — só deleta docs removidos
       oldStore.forEach(b => {
         if (!newIds.has(String(b.id))) {
           batch.delete(uDoc('bls', b.id));
           deleteCount++;
         }
       });
+      // FIX-QUOTA #A: diff de conteúdo — só escreve docs que realmente mudaram
+      const oldBLsMap = new Map(oldStore.map(b => [String(b.id), JSON.stringify(sanitize(b))]));
       newData.forEach(b => {
-        batch.set(uDoc('bls', b.id), sanitize(b));
-        setCount++;
+        const key    = String(b.id);
+        const newStr = JSON.stringify(sanitize(b));
+        if (!oldBLsMap.has(key) || oldBLsMap.get(key) !== newStr) {
+          batch.set(uDoc('bls', b.id), sanitize(b));
+          setCount++;
+        }
       });
-      prevStore = oldStore; // FIX #1: store atualizado APOS commit (ver .then abaixo)
+      prevStore = oldStore;
 
     } else if (type === 'trk') {
       const oldStore = window._dmStore.trk;
       const newIds   = new Set(newData.map(c => String(c.container)));
       console.log(`[DB-SAVE] Containers: ${oldStore.length} anterior → ${newData.length} novo`);
 
+      // FIX-QUOTA #A: só deleta containers que foram removidos
       oldStore.forEach(c => {
         if (!newIds.has(String(c.container))) {
           batch.delete(uDoc('containers', c.container));
           deleteCount++;
         }
       });
+      // FIX-QUOTA #A: só escreve containers que mudaram (evita 300 writes num re-import)
+      const oldTrkMap = new Map(oldStore.map(c => [String(c.container), JSON.stringify(sanitize(c))]));
       newData.forEach(c => {
-        batch.set(uDoc('containers', c.container), sanitize(c));
-        setCount++;
+        const key    = String(c.container);
+        const newStr = JSON.stringify(sanitize(c));
+        if (!oldTrkMap.has(key) || oldTrkMap.get(key) !== newStr) {
+          batch.set(uDoc('containers', c.container), sanitize(c));
+          setCount++;
+        }
       });
-      prevStore = oldStore; // FIX #1: store atualizado APOS commit (ver .then abaixo)
+      prevStore = oldStore;
 
     } else if (type === 'clients') {
       const oldStore = window._dmStore.clients;
       const newIds   = new Set(newData.map(c => String(c.id)));
       console.log(`[DB-SAVE] Clientes: ${oldStore.length} anterior → ${newData.length} novo`);
 
+      // FIX-QUOTA #A: só deleta clientes removidos
       oldStore.forEach(c => {
         if (!newIds.has(String(c.id))) {
           batch.delete(uDoc('clients', c.id));
           deleteCount++;
         }
       });
+      // FIX-QUOTA #A: só escreve clientes que mudaram
+      const oldCliMap = new Map(oldStore.map(c => [String(c.id), JSON.stringify(sanitize(c))]));
       newData.forEach(c => {
-        batch.set(uDoc('clients', c.id), sanitize(c));
-        setCount++;
+        const key    = String(c.id);
+        const newStr = JSON.stringify(sanitize(c));
+        if (!oldCliMap.has(key) || oldCliMap.get(key) !== newStr) {
+          batch.set(uDoc('clients', c.id), sanitize(c));
+          setCount++;
+        }
       });
-      prevStore = oldStore; // FIX #1: store atualizado APOS commit (ver .then abaixo)
+      prevStore = oldStore;
     }
 
     console.log(`[DB-SAVE] Operações em batch: ${deleteCount} deletes + ${setCount} sets`);
+
+    // FIX-QUOTA #B: se nada mudou, não envia batch (evita write desnecessário)
+    if (deleteCount === 0 && setCount === 0) {
+      console.log(`[DB-SAVE] ✓ Nenhuma alteração detectada — batch ignorado (0 writes).`);
+      return;
+    }
+
     console.log(`[DB-SAVE] Iniciando batch.commit()...`);
 
     // Timeout de 10 segundos para evitar que fique pendurado
@@ -296,20 +324,9 @@ onAuthStateChanged(auth, (user) => {
     } catch (e) { console.warn('[LOG]', action, e); }
   };
 
-  // ── Registrar início de sessão ────────────────────────────────────────────
-  (async () => {
-    try {
-      const { addDoc, collection: col2, serverTimestamp } =
-        await import("https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js");
-      const ref = await addDoc(col2(db, 'sessoes'), {
-        usuario_id:   uid,
-        usuario_nome: user.displayName || user.email || uid,
-        iniciada_em:  serverTimestamp(),
-        encerrada_em: null
-      });
-      currentSessionId = ref.id;
-    } catch(e) { console.warn('[SESSAO]', e); }
-  })();
+  // FIX-QUOTA #C: session tracking via localStorage (sem writes Firestore por login)
+  currentSessionId = 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
+  try { localStorage.setItem('_dmSession', JSON.stringify({ id: currentSessionId, uid, inicio: new Date().toISOString() })); } catch(_) {}
 
   // ── Verificar se usuário é admin ──────────────────────────────────────────
   // FIX #20: valor padrão seguro ANTES do getDoc resolver, para que código que
@@ -360,27 +377,9 @@ onAuthStateChanged(auth, (user) => {
     });
 
     try {
-      // 1. Registrar encerramento de sessão (não-bloqueante, timeout de 2s)
-      if (currentSessionId && db) {
-        try {
-          const sessionPromise = (async () => {
-            const { updateDoc, doc: docFn, serverTimestamp } =
-              await import("https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js");
-            await updateDoc(docFn(db, 'sessoes', currentSessionId), {
-              encerrada_em: serverTimestamp()
-            });
-          })();
-
-          await Promise.race([
-            sessionPromise,
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
-          ]);
-          console.log('[LOGOUT] Encerramento de sessão registrado');
-        } catch(e) {
-          console.warn('[LOGOUT] Não foi possível registrar encerramento:', e.message);
-          // Continua mesmo assim
-        }
-      }
+      // FIX-QUOTA #C: encerramento via localStorage (sem write Firestore)
+      try { localStorage.removeItem('_dmSession'); } catch(_) {}
+      console.log('[LOGOUT] Sessão encerrada (localStorage).');
 
       // 2. Chamar _dmFireLog (não-bloqueante, timeout de 1.5s)
       if (window._dmFireLog && typeof window._dmFireLog === 'function') {
@@ -427,8 +426,9 @@ onAuthStateChanged(auth, (user) => {
     try {
       const { getDocs, collection: col2, query, orderBy, where, limit } =
         await import("https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js");
-      let q = query(col2(db, 'logs'), orderBy('criado_em', 'desc'), limit(1000));
-      if (filters.acao) q = query(col2(db, 'logs'), where('acao','==',filters.acao), orderBy('criado_em','desc'), limit(1000));
+      // FIX-QUOTA #D: limite 200 (era 1000) — reduz reads no painel de admin
+      let q = query(col2(db, 'logs'), orderBy('criado_em', 'desc'), limit(200));
+      if (filters.acao) q = query(col2(db, 'logs'), where('acao','==',filters.acao), orderBy('criado_em','desc'), limit(200));
       const snap = await getDocs(q);
       return snap.docs.map(d => ({ _docId: d.id, id: d.id, ...d.data() }));
     } catch(e) { console.warn('[LOGS]', e); return []; }
