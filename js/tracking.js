@@ -304,6 +304,8 @@ function checkAndMigrateBLs() {
 }
 
 function renderTracking() {
+  // Ensure table header always matches current view (handles page-reload edge cases)
+  if (typeof _updateTrkTableHeader === 'function') _updateTrkTableHeader();
   const q = (document.getElementById('trk-search')?.value || '').toLowerCase();
   const sf = document.getElementById('trk-filter-status')?.value || 'all';
   const today = new Date(); today.setHours(12,0,0,0);
