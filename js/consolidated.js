@@ -56,6 +56,7 @@ function openConsolidatedEmail() {
   document.getElementById('cons-empty').style.display   = 'none';
   document.getElementById('cons-send-btn').disabled     = true;
   document.getElementById('cons-pdf-btn').disabled      = true;
+  document.getElementById('cons-receipts-btn').disabled = true;
   _consSelected.clear();
   openModal('modal-consolidated');
   renderConsClientList('');
@@ -130,6 +131,7 @@ function clearConsolidatedSelection() {
   document.getElementById('cons-empty').style.display   = 'none';
   document.getElementById('cons-send-btn').disabled     = true;
   document.getElementById('cons-pdf-btn').disabled      = true;
+  document.getElementById('cons-receipts-btn').disabled = true;
   document.getElementById('cons-search').focus();
 }
 
@@ -148,6 +150,8 @@ function _renderConsPreview(cnpj) {
     empty.style.display   = '';
     sendBtn.disabled = true;
     pdfBtn.disabled  = true;
+    const receiptsBtnDis = document.getElementById('cons-receipts-btn');
+    if (receiptsBtnDis) receiptsBtnDis.disabled = true;
     return;
   }
 
@@ -157,6 +161,8 @@ function _renderConsPreview(cnpj) {
   empty.style.display   = 'none';
   sendBtn.disabled = false;
   pdfBtn.disabled  = false;
+  const receiptsBtn = document.getElementById('cons-receipts-btn');
+  if (receiptsBtn) receiptsBtn.disabled = false;
 
   let grand = 0;
   document.getElementById('cons-tbody').innerHTML = eligible.map(b => {
@@ -218,8 +224,6 @@ ${linhas}
 ─────────────────────────────────────
 TOTAL GERAL: R$ ${grandFmt}
 ─────────────────────────────────────
-
-Para gerar cada PDF: acesse o BL no sistema → "Imprimir / PDF".
 
 PIX — Chave CNPJ: 06.352.972/0001-21
 Banco: ITAÚ | Agência: 0870 - Praia do Canto | CC: 37293-5
@@ -405,3 +409,34 @@ function printAllInvoices() {
   else toast('Permita pop-ups para este site.','error');
 }
 
+
+function printAllReceipts() {
+  const cnpj = document.getElementById('cons-cnpj-hidden').value;
+  if (!cnpj) { toast('Nenhum cliente selecionado.', 'error'); return; }
+  const eligible = bls.filter(b => b.cnpj === cnpj && b.paid);
+  if (!eligible.length) {
+    toast('Nenhum BL pago encontrado. Recibos são gerados após confirmação de pagamento.', 'error');
+    return;
+  }
+  const prevBL=currentBL,prevType=currentType,prevRoe=ovRoe,prevTot=ovTotal;
+  const receiptData = eligible.map(b => {
+    currentBL=b; currentType='receipt'; ovRoe=null; ovTotal=null;
+    renderDoc(b,'receipt');
+    const docnum = b.docnum || genDocnum(b.bl);
+    const recHTML = document.getElementById('doc-content').innerHTML;
+    return { docnum, recHTML };
+  });
+  currentBL=prevBL; currentType=prevType; ovRoe=prevRoe; ovTotal=prevTot;
+  if(prevBL) renderDoc(prevBL, prevType||'invoice');
+  else document.getElementById('doc-content').innerHTML='';
+  const css = Array.from(document.querySelectorAll('style')).map(s=>s.innerHTML).join('\n');
+  const info = _consMap[cnpj] || {};
+  const nome = (info.name||cnpj).replace(/[^\w\s\u00C0-\u00FF-]/g,'').trim().substring(0,40);
+  const n = eligible.length;
+  const ttl = `Recibos Demurrage — ${nome} — ${n} recibo${n>1?'s':''}`;
+  const body = receiptData.map(({recHTML},i) => `<div class="pp${i===receiptData.length-1?' lp':''}">${recHTML}</div>`).join('');
+  const docHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${ttl}</title><style>${css}html,body{margin:0;padding:0;background:#f1f5f9}.top-bar{position:sticky;top:0;z-index:200;display:flex;align-items:center;gap:12px;padding:10px 20px;background:#0f2a4a;color:#fff;font-family:Arial,sans-serif;font-size:13px}.top-bar strong{flex:1}.top-bar button{padding:7px 20px;background:#f59e0b;color:#111;border:none;border-radius:6px;cursor:pointer;font-weight:700}.pp{background:#fff;margin:20px auto;max-width:900px;page-break-after:always;break-after:page}.lp{page-break-after:avoid;break-after:avoid}@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}html,body{background:#fff;margin:0;padding:0}.top-bar{display:none!important}.pp{margin:0;padding:0;max-width:100%;page-break-after:always;break-after:page}.lp{page-break-after:avoid;break-after:avoid}}</style></head><body><div class="top-bar"><strong>\u{1F9FE} ${ttl}</strong><span style="opacity:.75;font-size:12px">Ctrl+P para PDF</span><button onclick="window.print()">\u{1F5A8}\uFE0F Imprimir / PDF</button></div>${body}</body></html>`;
+  const w = window.open('','_blank');
+  if(w){w.document.write(docHtml);w.document.close();closeModal('modal-consolidated');toast(`${n} recibo${n>1?'s':''} aberto${n>1?'s':''} — Ctrl+P para PDF.`,'success');}
+  else toast('Permita pop-ups para este site.','error');
+}
