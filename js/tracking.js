@@ -176,6 +176,7 @@ function doTrkImport() {
 
   // Match imported CNPJs with client registry + update billing BLs
   let clientsLinked = 0;
+  let blsModified = false;
   // Group cnpj by BL number (take first valid cnpj per BL)
   const cnpjByBL = {};
   imported.forEach(imp => {
@@ -204,14 +205,20 @@ function doTrkImport() {
           if (!b.email) b.email = (clientRec.emails || []).join(', ');
           if (!b.client || b.client === b.cnee) b.client = clientRec.name || b.client;
         }
+        blsModified = true;
       }
     });
   });
-  if (Object.keys(cnpjByBL).length) save(bls);
+  // FIX-QUOTA #F: não chama save(bls) aqui — checkAndMigrateBLs pode modificar bls
+  // também; fazemos UMA save unificada depois (conteúdo diff vai ignorar se nada mudou)
 
   closeModal('modal-trk-import');
-  const migrated = checkAndMigrateBLs();
+  const migrated = checkAndMigrateBLs(); // pode adicionar BLs ao array `bls`
   renderTracking();
+  // FIX-QUOTA #F: save unificado — 1 write batch para bls (em vez de 2 separados)
+  // O diff de conteúdo em _dmFireSave vai ignorar BLs que não mudaram
+  if (blsModified || migrated > 0) save(bls);
+
   let msg = `Importado: ${added} novo(s), ${updated} atualizado(s)${skippedFt > 0 ? `, ${skippedFt} ignorado(s) (devolvidos no free time)` : ''}.`;
   if (migrated > 0) msg += ` ${migrated} BL(s) migrado(s) para Faturamento!`;
   if (clientsLinked > 0) msg += ` ${clientsLinked} CNPJ(s) vinculado(s) a clientes.`;
@@ -292,7 +299,7 @@ function checkAndMigrateBLs() {
     migrated++;
   });
 
-  if (migrated > 0) save(bls);
+  // FIX-QUOTA #F: save removido daqui — chamador (doTrkImport) faz save unificado
   return migrated;
 }
 
