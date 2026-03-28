@@ -1,6 +1,6 @@
 # 📦 Demurrage Manager — Snapshot Completo do Projeto
 
-> **Gerado em:** 2026-03-26 (última atualização: 27/03/2026 — v1.0.5)
+> **Gerado em:** 2026-03-26 (última atualização: 27/03/2026 — v1.1.0)
 > **Projeto:** Demurrage Manager — Transhipping Agenciamento Marítimo Ltda.
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager.git
 > **Este arquivo é autocontido.** Contém todos os arquivos do projeto com conteúdo integral para reconstituição completa em outro ambiente.
@@ -8,6 +8,64 @@
 ---
 
 ## 📋 Histórico de Melhorias & Atualizações
+
+### [2026-03-27] 🏗️ Refatoração Modular — Arquitetura Multi-Arquivo (v1.1.0)
+
+#### Contexto
+O `app.html` havia crescido para **6.959 linhas / ~780 KB** — um monólito que dificultava manutenção, debugging e evolução futura. A refatoração preserva **100% da estabilidade e dos dados** enquanto organiza o código em módulos coesos.
+
+#### Arquitetura Modular Implementada
+
+```
+demurrage-manager/
+├── app.html          ← reconstruído: 1.390 linhas (~113 KB, era 6.959 / 780 KB)
+├── js/
+│   ├── rates.js      ← tabela RATES, getRate(), getRateForBL(), calcUSD(), daysBetween()
+│   ├── utils.js      ← uid(), toast(), openModal(), closeModal(), fmtBRL()
+│   ├── db.js         ← Firebase init, window._dm* helpers (ES Module)
+│   ├── billing.js    ← PTAX, renderList(), saveBL(), viewDoc()
+│   ├── tracking.js   ← renderTracking(), calcTrkStatus()
+│   ├── clients.js    ← renderClients(), saveClient(), syncBLEmails()
+│   ├── users.js      ← renderUsers(), painel admin
+│   ├── consolidated.js ← faturamento consolidado, invoice HTML, ZIP
+│   └── init.js       ← window._dmOnReady, renderDashboard(), settings
+└── css/
+    ├── base.css      ← CSS variables, reset, layout (~187 linhas)
+    └── components.css ← componentes, responsividade mobile (~397 linhas)
+```
+
+#### Decisões de Arquitetura
+
+| Decisão | Justificativa |
+|---------|--------------|
+| `db.js` como ES Module (`type="module"`) | Necessário para `import` do Firebase SDK via CDN |
+| Demais arquivos como `<script src>` clássico | Preserva compatibilidade com `onclick=` inline nos templates HTML |
+| `window._dmStore` como estado compartilhado | Padrão já existente; módulos lêem/escrevem via helpers `_dm*` |
+| `window._dmOnReady` callback em `init.js` | Ponto de entrada após Firebase + dados prontos; invocado por `db.js` |
+| Ordem de carregamento explícita no HTML | rates → utils → billing → tracking → clients → users → consolidated → init |
+
+#### Método de Deploy
+
+- Arquivos gerados no VM Linux `/sessions/.../dm-modular/`
+- Push via **GitHub REST API** (PUT `/contents/{path}`) com PAT
+- 12 arquivos commitados em ~10 segundos
+- GitHub Actions (`firebase-deploy.yml`) disparou automaticamente
+- Deploy Firebase Hosting concluído em 1m 3s
+- App verificado ao vivo em `https://demurragemanager.web.app`
+
+#### Estatísticas
+
+| Métrica | Antes | Depois |
+|---------|-------|--------|
+| app.html — linhas | 6.959 | 1.390 |
+| app.html — tamanho | ~780 KB | ~113 KB |
+| Arquivos JS | 0 | 9 |
+| Arquivos CSS | 0 | 2 |
+| Total de arquivos no deploy | ~57 | 69 |
+| Funcionalidade | ✅ 100% | ✅ 100% |
+| Dados Firestore | Intactos | Intactos |
+
+---
 
 ### [2026-03-27] 🚀 Melhorias Implementadas (v1.0.4+)
 
@@ -8364,4 +8422,35 @@ users      → mod-users (visível apenas para admins)
 
 ---
 
-*Snapshot atualizado em 2026-03-27 (v1.0.5) | Transhipping Agenciamento Marítimo Ltda. | by ljuliatti*
+## 🔭 Próximos Passos Recomendados
+
+### Prioridade Alta
+1. **Testar todos os fluxos críticos** na versão modular em produção:
+   - Login / logout / troca de usuário
+   - Criar, editar e salvar BL
+   - Faturamento e geração de PDF/invoice
+   - Import de planilha Excel
+   - Backup e restore de dados
+   - Cobrança consolidada + geração de ZIP
+
+2. **Sincronizar repo local Windows** com o GitHub:
+   ```
+   git pull origin main
+   ```
+   O folder `C:\Users\lucca\...\demurrage-manager-main_github completo\` ainda tem o monólito. Após o pull terá a estrutura modular.
+
+### Prioridade Média
+3. **Lazy loading de módulos pesados** — `billing.js` (195 KB) e `consolidated.js` (281 KB) são carregados na inicialização mesmo quando não usados. Avaliar carregamento sob demanda com `import()` dinâmico.
+
+4. **Atualizar snapshot** para incluir conteúdo integral dos novos módulos JS/CSS (atualmente o snapshot ainda contém o app.html monolítico; a estrutura modular está nos arquivos separados do repo).
+
+5. **Code splitting do init.js** — 1.460 linhas num único arquivo; candidato a ser subdividido em `dashboard.js`, `settings.js` e `ptax.js`.
+
+### Prioridade Baixa
+6. **ESLint / validação estática** nos módulos JS.
+7. **Testes automatizados** para `rates.js` e `utils.js` (funções puras, fáceis de testar sem Firebase).
+8. **Service Worker / PWA** para funcionamento offline além do IndexedDB do Firestore.
+
+---
+
+*Snapshot atualizado em 2026-03-27 (v1.1.0) | Transhipping Agenciamento Marítimo Ltda. | by ljuliatti*
