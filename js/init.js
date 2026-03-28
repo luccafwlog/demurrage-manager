@@ -1263,7 +1263,110 @@ function toggleTrkView() {
     btn.classList.toggle('trk-view-btn-active', window._trkView === 'bl');
   }
   window._trkExpanded.clear();
+  _updateTrkTableHeader();
   renderTracking();
+}
+
+function _updateTrkTableHeader() {
+  const thead = document.getElementById('trk-thead');
+  const colgroup = document.getElementById('trk-colgroup');
+  if (!thead || !colgroup) return;
+  if (window._trkView === 'bl') {
+    // BL view: 8 meaningful columns
+    colgroup.innerHTML = `
+      <col style="width:14%"> <!-- BL -->
+      <col style="width:18%"> <!-- CNEE -->
+      <col style="width:12%"> <!-- NAVIO -->
+      <col style="width:8%">  <!-- ROTA -->
+      <col style="width:7%">  <!-- QTDE -->
+      <col style="width:9%">  <!-- DESCARGA -->
+      <col style="width:9%">  <!-- DEADLINE -->
+      <col style="width:23%"> <!-- STATUS -->
+    `;
+    thead.innerHTML = `
+      <tr>
+        <th>BL</th>
+        <th>CNEE</th>
+        <th>NAVIO</th>
+        <th>ROTA</th>
+        <th style="text-align:center;">CTRS</th>
+        <th>DESCARGA</th>
+        <th>DEADLINE</th>
+        <th>STATUS</th>
+      </tr>
+      <tr class="trk-filter-row">
+        <th><input type="text" id="tf-bl"     placeholder="filtrar..." oninput="renderTracking()"></th>
+        <th><input type="text" id="tf-cnee"   placeholder="filtrar..." oninput="renderTracking()"></th>
+        <th><input type="text" id="tf-vessel" placeholder="filtrar..." oninput="renderTracking()"></th>
+        <th></th>
+        <th></th>
+        <th><input type="text" id="tf-discharge" placeholder="DD/MM..." oninput="renderTracking()"></th>
+        <th><input type="text" id="tf-deadline"  placeholder="DD/MM..." oninput="renderTracking()"></th>
+        <th>
+          <select id="tf-status" onchange="renderTracking()" style="font-size:10px;">
+            <option value="">todos</option>
+            <option value="dd_open">D&D n/dev</option>
+            <option value="dd_returned">D&D dev</option>
+            <option value="returned">devolvido</option>
+            <option value="grace">atenção</option>
+          </select>
+        </th>
+      </tr>
+    `;
+  } else {
+    // Container view: restore original 15-column header
+    colgroup.innerHTML = `
+      <col style="width:8%">
+      <col style="width:10%">
+      <col style="width:11%">
+      <col style="width:4%">
+      <col style="width:3%">
+      <col style="width:3%">
+      <col style="width:8%">
+      <col style="width:6%">
+      <col style="width:6%">
+      <col style="width:6%">
+      <col style="width:4%">
+      <col style="width:4%">
+      <col style="width:4%">
+      <col style="width:11%">
+      <col style="width:7%">
+    `;
+    thead.innerHTML = `
+      <tr>
+        <th>CONTAINER</th><th>BL</th><th>CNEE</th><th>TIPO</th>
+        <th>POL</th><th>POD</th><th>NAVIO</th>
+        <th>DESCARGA</th><th>DEADLINE</th><th>DEVOLUÇÃO</th>
+        <th>USE DAYS</th><th>FREE TIME</th><th>DIAS</th><th>STATUS</th>
+        <th>ENVIADO EM</th>
+      </tr>
+      <tr class="trk-filter-row">
+        <th><input type="text" id="tf-container" placeholder="filtrar..." oninput="renderTracking()"></th>
+        <th><input type="text" id="tf-bl"        placeholder="filtrar..." oninput="renderTracking()"></th>
+        <th><input type="text" id="tf-cnee"      placeholder="filtrar..." oninput="renderTracking()"></th>
+        <th><input type="text" id="tf-type"      placeholder="tipo..."    oninput="renderTracking()"></th>
+        <th><input type="text" id="tf-pol"       placeholder="..."        oninput="renderTracking()"></th>
+        <th><input type="text" id="tf-pod"       placeholder="..."        oninput="renderTracking()"></th>
+        <th><input type="text" id="tf-vessel"    placeholder="filtrar..." oninput="renderTracking()"></th>
+        <th><input type="text" id="tf-discharge" placeholder="DD/MM..."   oninput="renderTracking()"></th>
+        <th><input type="text" id="tf-deadline"  placeholder="DD/MM..."   oninput="renderTracking()"></th>
+        <th><input type="text" id="tf-return"    placeholder="DD/MM..."   oninput="renderTracking()"></th>
+        <th><input type="text" id="tf-usedays"   placeholder="..."        oninput="renderTracking()"></th>
+        <th><input type="text" id="tf-freetime"  placeholder="..."        oninput="renderTracking()"></th>
+        <th><input type="text" id="tf-dias"      placeholder="..."        oninput="renderTracking()"></th>
+        <th>
+          <select id="tf-status" onchange="renderTracking()" style="font-size:10px;">
+            <option value="">todos</option>
+            <option value="dd_open">D&D n/dev</option>
+            <option value="dd_returned">D&D dev</option>
+            <option value="returned">devolvido</option>
+            <option value="grace">atenção</option>
+          </select>
+        </th>
+        <th><input type="text" id="tf-migratedat" placeholder="DD/MM..." oninput="renderTracking()"></th>
+      </tr>
+    `;
+  }
 }
 
 function toggleBlGroup(key) {
@@ -1277,62 +1380,69 @@ function renderTrkGroupedByBL(filtered) {
   const groups = new Map();
   filtered.forEach(r => {
     const key = (r.bl || '—') + '||' + (r.vessel || '');
-    if (!groups.has(key)) groups.set(key, { bl: r.bl||'—', vessel: r.vessel||'—', cnee: r.cnee||'—', pol: r.pol||'—', pod: r.pod||'—', ctrs: [] });
+    if (!groups.has(key)) {
+      groups.set(key, { bl: r.bl||'—', vessel: r.vessel||'—', cnee: r.cnee||'—', pol: r.pol||'—', pod: r.pod||'—', ctrs: [] });
+    }
     groups.get(key).ctrs.push(r);
   });
 
   return [...groups.entries()].map(([key, g]) => {
-    const ctrs   = g.ctrs;
-    const isExp  = window._trkExpanded.has(key);
-    const safeKey = key.replace(/'/g, "\\'");
+    const ctrs    = g.ctrs;
+    const isExp   = window._trkExpanded.has(key);
+    const safeKey = key.replace(/'/g, "\'");
 
-    // Aggregate
+    // Aggregate status counts
     const nDD    = ctrs.filter(r => trkStatus(r) === 'dd_open').length;
     const nAlert = ctrs.filter(r => trkStatus(r) === 'grace').length;
     const nRetDD = ctrs.filter(r => trkStatus(r) === 'dd_returned').length;
     const nOk    = ctrs.filter(r => { const s=trkStatus(r); return s==='returned'||s==='free'; }).length;
-    const maxOver= Math.max(0, ...ctrs.map(r => {
+    const maxOver = Math.max(0, ...ctrs.map(r => {
       if (r.emptyReturn) return 0;
       const e = trkDaysElapsed(r.discharge);
       return e !== null ? e - (r.freeTime||21) : 0;
     }));
 
-    // Row background
-    const bg = nDD > 0 ? '#fff5f5' : nAlert > 0 ? '#fffdf0' : '#fafcff';
+    // Earliest discharge and latest deadline across containers
+    const discharges = ctrs.map(r => r.discharge).filter(Boolean).sort();
+    const deadlines  = ctrs.map(r => r.deadline).filter(Boolean).sort();
+    const earliestDischarge = discharges[0] ? trkFmtDate(discharges[0]) : '—';
+    const latestDeadline    = deadlines[deadlines.length-1] ? trkFmtDate(deadlines[deadlines.length-1]) : '—';
 
-    // Status summary pills
+    // Row background by urgency
+    const bg = nDD > 0 ? '#fff5f5' : nAlert > 0 ? '#fffdf0' : '#fafcff';
+    const borderColor = nDD > 0 ? '#fca5a5' : nAlert > 0 ? '#fcd34d' : '#dbeafe';
+
+    // Status pills
     const pills = [
       nDD    ? `<span style="background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;">⛔ ${nDD} em D&D${maxOver>0?' +'+maxOver+'d':''}</span>` : '',
       nAlert ? `<span style="background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;">⚠️ ${nAlert} atenção</span>` : '',
       nRetDD ? `<span style="background:#ede9fe;color:#6d28d9;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;">📦 ${nRetDD} dev c/D&D</span>` : '',
-      nOk    ? `<span style="background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;">✅ ${nOk}</span>` : '',
+      nOk    ? `<span style="background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;">✅ ${nOk} ok</span>` : '',
     ].filter(Boolean).join(' ');
 
-    // ── Summary row (full width, 15 cols): BL | CNEE | vessel | count | pills ──
+    // ── BL summary row (8 cols matching new thead) ──
     const arrow = isExp ? '▾' : '▸';
     const summaryRow = `<tr class="bl-group-row bl-group-header" onclick="toggleBlGroup('${safeKey}')"
-        style="background:${bg};cursor:pointer;">
-      <td colspan="2" style="padding:10px 12px;border-top:2px solid var(--border);">
+        style="background:${bg};cursor:pointer;border-left:3px solid ${borderColor};">
+      <td style="padding:10px 12px;border-top:2px solid var(--border);">
         <span style="font-weight:700;color:var(--navy);font-size:13px;">${arrow} ${g.bl}</span>
       </td>
-      <td colspan="2" style="padding:10px 8px;font-size:12px;border-top:2px solid var(--border);">
-        <span style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;max-width:180px;" title="${g.cnee}">${g.cnee}</span>
+      <td style="padding:10px 8px;border-top:2px solid var(--border);">
+        <span style="font-size:12px;color:#374151;font-weight:500;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${g.cnee}">${g.cnee}</span>
       </td>
-      <td colspan="2" style="padding:10px 8px;font-size:12px;color:var(--muted);border-top:2px solid var(--border);">
-        ${g.pol||'—'} → ${g.pod||'—'}
-      </td>
-      <td style="padding:10px 8px;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-top:2px solid var(--border);" title="${g.vessel}">${g.vessel}</td>
+      <td style="padding:10px 8px;font-size:12px;color:var(--muted);border-top:2px solid var(--border);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${g.vessel}">${g.vessel}</td>
+      <td style="padding:10px 8px;font-size:11px;color:var(--muted);border-top:2px solid var(--border);white-space:nowrap;">${g.pol||'—'} → ${g.pod||'—'}</td>
       <td style="padding:10px 8px;text-align:center;border-top:2px solid var(--border);">
-        <span style="background:var(--navy);color:white;border-radius:99px;padding:2px 8px;font-size:11px;font-weight:700;">${ctrs.length}</span>
+        <span style="background:var(--navy);color:white;border-radius:99px;padding:2px 10px;font-size:12px;font-weight:700;">${ctrs.length}</span>
       </td>
-      <td colspan="7" style="padding:10px 12px;border-top:2px solid var(--border);">
-        ${pills}
-      </td>
+      <td style="padding:10px 8px;font-size:12px;color:var(--muted);border-top:2px solid var(--border);">${earliestDischarge}</td>
+      <td style="padding:10px 8px;font-size:12px;color:var(--muted);border-top:2px solid var(--border);">${latestDeadline}</td>
+      <td style="padding:10px 12px;border-top:2px solid var(--border);">${pills}</td>
     </tr>`;
 
     if (!isExp) return summaryRow;
 
-    // ── Child rows: re-use exact same single-row logic ──
+    // ── Child rows: 8-col container detail ──
     const childRows = ctrs.map(r => {
       const status = trkStatus(r);
       const elapsed = trkDaysElapsed(r.discharge);
@@ -1345,38 +1455,32 @@ function renderTrkGroupedByBL(filtered) {
         ? trkDaysBetween(r.discharge, r.emptyReturn)
         : elapsed;
 
-      let daysHtml = '—';
-      if (diasCorridos !== null) {
-        const over = daysOver > 0;
-        daysHtml = `<span style="font-weight:${over?'700':'400'};color:${over?'#dc2626':'inherit'}">${diasCorridos}</span>`;
-      }
+      const over = daysOver !== null && daysOver > 0;
+      const daysHtml = diasCorridos !== null
+        ? `<span style="font-weight:${over?'700':'400'};color:${over?'#dc2626':'inherit'}">${diasCorridos}d${over?' (+'+daysOver+'d)':''}</span>`
+        : '—';
 
       const statusMap = {
-        dd_open:     '<span style="color:#dc2626;font-weight:700;white-space:nowrap;">⛔ D&D</span>',
-        dd_returned: '<span style="color:#7c3aed;white-space:nowrap;">📦 Dev c/D&D</span>',
-        returned:    '<span style="color:#16a34a;white-space:nowrap;">✅ Devolvido</span>',
-        grace:       '<span style="color:#d97706;white-space:nowrap;">⚠️ Atenção</span>',
-        free:        '<span style="color:#2563eb;white-space:nowrap;">🟢 Free Time</span>',
+        dd_open:     `<span style="background:#fee2e2;color:#b91c1c;padding:1px 7px;border-radius:99px;font-size:11px;font-weight:700;white-space:nowrap;">⛔ D&D</span>`,
+        dd_returned: `<span style="background:#ede9fe;color:#7c3aed;padding:1px 7px;border-radius:99px;font-size:11px;white-space:nowrap;">📦 Dev c/D&D</span>`,
+        returned:    `<span style="background:#dcfce7;color:#16a34a;padding:1px 7px;border-radius:99px;font-size:11px;white-space:nowrap;">✅ Devolvido</span>`,
+        grace:       `<span style="background:#fef3c7;color:#b45309;padding:1px 7px;border-radius:99px;font-size:11px;white-space:nowrap;">⚠️ Atenção (${ft - elapsed}d)</span>`,
+        free:        `<span style="background:#dbeafe;color:#1d4ed8;padding:1px 7px;border-radius:99px;font-size:11px;white-space:nowrap;">🟢 Free (${ft - elapsed}d)</span>`,
         none:        '—'
       };
       const pillHtml = statusMap[status] || '—';
 
-      return `<tr style="background:#f7faff;">
-        <td style="padding:8px 12px;padding-left:28px;font-weight:600;border-left:3px solid #bfdbfe;">${r.container}</td>
-        <td style="font-size:11px;color:var(--muted);">—</td>
-        <td style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.cnee||''}">${r.cnee||'—'}</td>
-        <td>${r.type||'—'}</td>
-        <td>${r.pol||'—'}</td>
-        <td>${r.pod||'—'}</td>
-        <td style="font-size:12px;">${r.vessel||'—'}</td>
-        <td>${trkFmtDate(r.discharge)}</td>
-        <td>${trkFmtDate(r.deadline)}</td>
-        <td>${trkFmtDate(r.emptyReturn)}</td>
-        <td style="text-align:center;">${useDays !== null ? useDays : '—'}</td>
-        <td style="text-align:center;">${ft}</td>
-        <td style="text-align:center;">${daysHtml}</td>
-        <td>${pillHtml}</td>
-        <td style="font-size:11px;color:var(--muted);">—</td>
+      const devol = r.emptyReturn ? trkFmtDate(r.emptyReturn) : (useDays !== null ? `${useDays}d usados` : '—');
+
+      return `<tr style="background:#f7faff;border-left:3px solid #bfdbfe;">
+        <td style="padding:7px 12px;padding-left:24px;font-weight:600;font-size:12px;color:var(--navy);">${r.container} <span style="font-size:10px;color:var(--muted);font-weight:400;">${r.type||''}</span></td>
+        <td style="font-size:11px;color:var(--muted);padding:7px 8px;">—</td>
+        <td style="font-size:11px;color:var(--muted);padding:7px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.vessel||''}">${r.vessel||'—'}</td>
+        <td style="font-size:11px;color:var(--muted);padding:7px 8px;">${r.pol||'—'} → ${r.pod||'—'}</td>
+        <td style="padding:7px 8px;text-align:center;font-size:11px;color:var(--muted);">—</td>
+        <td style="font-size:12px;padding:7px 8px;">${trkFmtDate(r.discharge)}</td>
+        <td style="font-size:12px;padding:7px 8px;">${trkFmtDate(r.deadline)}<br><span style="font-size:10px;color:var(--muted);">dev: ${devol}</span></td>
+        <td style="padding:7px 8px;">${daysHtml} &nbsp; ${pillHtml}</td>
       </tr>`;
     }).join('');
 
