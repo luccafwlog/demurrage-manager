@@ -121,7 +121,11 @@ function applyPTAXGlobal() {
   if (!ptaxState.roe) return;
   let changed = 0;
   bls.forEach(b => {
-    if (!b.roeManual) { b.roe = ptaxState.roe; changed++; }
+    // FIX-QUOTA: só marca como changed se o valor realmente diferir (evita writes redundantes)
+    if (!b.roeManual && b.roe !== ptaxState.roe) {
+      b.roe = ptaxState.roe;
+      changed++;
+    }
   });
   if (changed > 0) { save(bls); renderList(); }
 }
@@ -217,12 +221,8 @@ function toggleDisputeFilter() {
   });
   renderList();
 }
-// Backfill venc — called from _dmOnReady after Firebase loads
-function _backfillVenc() {
-  let changed = false;
-  bls.forEach(b => { if (!b.venc) { b.venc = nextBusinessDay(null); changed = true; } });
-  if (changed) save(bls);
-}
+// _backfillVenc was removed — startup migration consolidated into
+// runStartupMigrations() in init.js (FIX-QUOTA: single save instead of multiple)
 let editingId = null, currentBL = null, currentType = null, ovTotal = null, ovRoe = null, importData = null, currentDocnum = null;
 
 // ============================================================
@@ -1355,11 +1355,14 @@ function renderDoc(b, type) {
     </tr>`).join('');
 
   const totalCols = isInv ? 9 : 8;
-  // Garante vencimento — atribui e persiste se estiver vazio
+  // Garante vencimento — apenas atribui em memória (backfill seguro no startup)
+  // FIX-QUOTA: save() removido daqui — renderDoc é chamado em loops (printAll)
+  // e causava N writes por operação. O _backfillVenc() no startup cuida da persistência.
   if (!b.venc) {
     b.venc = nextBusinessDay(null);
-    const idx = bls.findIndex(x => x.id === b.id);
-    if (idx >= 0) { bls[idx].venc = b.venc; save(bls); }
+    // Atualiza em memória apenas; sem write aqui para evitar amplificação de writes
+    const blIdx = bls.findIndex(x => x.id === b.id);
+    if (blIdx >= 0) bls[blIdx].venc = b.venc;
   }
   const vencRow = isInv ? `<tr class="inv-venc-row"><td colspan="${totalCols-1}" style="text-align:right;padding:7px 12px;font-weight:600">VENCIMENTO DIA</td><td class="inv-venc-highlight">${fmtDate(b.venc)||'—'}</td></tr>` : '';
 
