@@ -491,12 +491,20 @@ function renderList() {
         <div class="bl-meta"><span>${billableCtrs.length} contêiner(es) c/ demurrage${ctrs.length > billableCtrs.length ? ` (${ctrs.length} total)` : ""}${totStr}</span>${tags}${more}</div>
       </div>
       <div class="bl-actions">
-        <button class="act-btn ${paidClass}"   onclick="togglePaid('${b.id}')">${paidLabel}</button>
-        <button class="act-btn ${billedClass}" onclick="toggleBilled('${b.id}')">${billedLabel}</button>
-        <button class="act-btn invoice" onclick="viewDoc('${b.id}','invoice')">📄 Fatura</button>
-        <button class="act-btn receipt" onclick="viewDoc('${b.id}','receipt')">🧾 Recibo</button>
-        <button class="act-btn edit" onclick="openEditBL('${b.id}')">Editar</button>
-        <button class="act-btn del" onclick="deleteBL('${b.id}')" aria-label="Excluir BL ${b.blNum||b.id}">Excluir</button>
+        <div class="bl-action-group bl-action-status">
+          <button class="act-btn ${paidClass}" onclick="togglePaid('${b.id}')" title="${isPaid ? 'Desmarcar pagamento' : 'Marcar como pago'}">${paidLabel}</button>
+          <button class="act-btn ${billedClass}" onclick="toggleBilled('${b.id}')" title="${isBilled ? 'Desmarcar fatura' : 'Marcar como faturado'}">${billedLabel}</button>
+        </div>
+        <div class="bl-action-divider"></div>
+        <div class="bl-action-group bl-action-docs">
+          <button class="act-btn invoice" onclick="viewDoc('${b.id}','invoice')" title="Visualizar Fatura">📄 Fatura</button>
+          <button class="act-btn receipt" onclick="viewDoc('${b.id}','receipt')" title="Visualizar Recibo">🧾 Recibo</button>
+        </div>
+        <div class="bl-action-divider"></div>
+        <div class="bl-action-group bl-action-meta">
+          <button class="act-btn edit" onclick="openEditBL('${b.id}')" title="Editar BL">✏️</button>
+          <button class="act-btn del" onclick="deleteBL('${b.id}')" aria-label="Excluir BL ${b.blNum||b.id}" title="Excluir BL">🗑️</button>
+        </div>
       </div>
     </div>`;
   }).join('');
