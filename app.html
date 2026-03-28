@@ -125,7 +125,7 @@ var MiniZip = (function() {
 </div>
 
 <!-- ── FIREBASE MODULE ─────────────────────────────────────────── -->
-<script type="module" src="js/db.js?v=104"></script>
+<script type="module" src="js/db.js?v=105"></script>
 
 
 <div id="app">
@@ -572,109 +572,6 @@ var MiniZip = (function() {
 </div>
 
 <!-- USERS MODULE (admin only) -->
-<div class="page" id="mod-users" style="display:none;">
-  <div class="trk-toolbar" style="flex-wrap:wrap;gap:10px;">
-    <h2 style="margin:0;font-size:18px;font-weight:700;color:var(--primary);">👨‍💼 Gestão de Usuários &amp; Auditoria</h2>
-    <div style="flex:1"></div>
-    <button class="btn btn-primary btn-sm" onclick="openNewUser()">+ Novo Usuário</button>
-    <button class="btn btn-outline btn-sm" onclick="exportLogsCSV()">⬇️ Exportar Logs CSV</button>
-  </div>
-
-  <!-- KPI cards -->
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin:16px 0;">
-    <div class="dk-card" style="text-align:center;padding:16px 12px;">
-      <div style="font-size:24px;font-weight:800;color:var(--primary)" id="usr-kpi-total">0</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.5px;">Usuários Ativos</div>
-    </div>
-    <div class="dk-card" style="text-align:center;padding:16px 12px;">
-      <div style="font-size:24px;font-weight:800;color:#f59e0b" id="usr-kpi-sessions">0</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.5px;">Sessões Hoje</div>
-    </div>
-    <div class="dk-card" style="text-align:center;padding:16px 12px;">
-      <div style="font-size:24px;font-weight:800;color:#10b981" id="usr-kpi-logs">0</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.5px;">Ações Auditadas</div>
-    </div>
-  </div>
-
-  <!-- User table -->
-  <div class="dk-card" style="margin-bottom:20px;">
-    <div style="font-size:14px;font-weight:700;color:var(--dark);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e5e7eb;">
-      👤 Usuários Cadastrados
-    </div>
-    <div id="usr-table-wrap">
-      <table class="trk-table" id="usr-table">
-        <thead>
-          <tr>
-            <th>NOME</th>
-            <th>E-MAIL</th>
-            <th>CARGO</th>
-            <th style="text-align:center">ADMIN</th>
-            <th style="text-align:center">ATIVO</th>
-            <th>CRIADO EM</th>
-            <th style="text-align:center">AÇÕES</th>
-          </tr>
-        </thead>
-        <tbody id="usr-body">
-          <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px;">Carregando usuários...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Log viewer -->
-  <div class="dk-card">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e5e7eb;flex-wrap:wrap;">
-      <div style="font-size:14px;font-weight:700;color:var(--dark);">📋 Log de Auditoria</div>
-      <div style="flex:1"></div>
-      <!-- Filters -->
-      <input type="text" id="log-filter-user" placeholder="Filtrar por usuário..." oninput="renderLogs()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;width:180px;">
-      <select id="log-filter-action" onchange="renderLogs()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
-        <option value="">Todas as ações</option>
-        <option value="login">login</option>
-        <option value="logout">logout</option>
-        <option value="criacao_bl">criacao_bl</option>
-        <option value="edicao_bl">edicao_bl</option>
-        <option value="exclusao_bl">exclusao_bl</option>
-        <option value="marcacao_pagamento">marcacao_pagamento</option>
-        <option value="marcacao_fatura">marcacao_fatura</option>
-        <option value="abertura_disputa">abertura_disputa</option>
-        <option value="resolucao_disputa">resolucao_disputa</option>
-        <option value="edicao_cliente">edicao_cliente</option>
-        <option value="envio_email">envio_email</option>
-        <option value="importacao_planilha">importacao_planilha</option>
-        <option value="exportacao_relatorio">exportacao_relatorio</option>
-      </select>
-      <input type="date" id="log-filter-from" onchange="renderLogs()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
-      <span style="font-size:12px;color:var(--muted);">até</span>
-      <input type="date" id="log-filter-to" onchange="renderLogs()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
-      <button class="btn btn-outline btn-sm" onclick="clearLogFilters()">✕ Limpar filtros</button>
-      <button class="btn btn-danger btn-sm" onclick="confirmClearOldLogs()">🗑️ Limpar logs antigos</button>
-    </div>
-    <div id="log-table-wrap" style="overflow-x:auto;max-height:420px;overflow-y:auto;">
-      <table class="trk-table" style="min-width:700px;">
-        <thead>
-          <tr>
-            <th style="width:140px">DATA/HORA</th>
-            <th style="width:150px">USUÁRIO</th>
-            <th style="width:160px">AÇÃO</th>
-            <th>DETALHE</th>
-          </tr>
-        </thead>
-        <tbody id="log-body">
-          <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:30px;">Carregando logs...</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div id="log-pagination" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:var(--muted);">
-      <span id="log-count-label"></span>
-      <div style="display:flex;gap:8px;">
-        <button class="btn btn-outline btn-sm" id="log-prev-btn" onclick="logPage(-1)" disabled>← Anterior</button>
-        <span id="log-page-label" style="line-height:28px;"></span>
-        <button class="btn btn-outline btn-sm" id="log-next-btn" onclick="logPage(1)">Próxima →</button>
-      </div>
-    </div>
-  </div>
-</div>
 
 <!-- MODAL: USER -->
 <div class="overlay" id="modal-user" role="dialog" aria-modal="true" aria-label="Gerenciar Usuário">
@@ -1142,28 +1039,29 @@ function downloadTemplate() {
      ════════════════════════════════════════════════════════════════ -->
 
 <!-- Utilitários puros — sem dependências externas -->
-<script src="js/utils.js?v=104"></script>
-<script src="js/rates.js?v=104"></script>
+<script src="js/utils.js?v=105"></script>
+<script src="js/rates.js?v=105"></script>
 
 <!-- Módulo de Faturamento (BLs, PTAX, Cálculo D&D) -->
-<script src="js/billing.js?v=104"></script>
+<script src="js/billing.js?v=105"></script>
 
 <!-- Módulo de Rastreamento de Containers -->
-<script src="js/tracking.js?v=104"></script>
+<script src="js/tracking.js?v=105"></script>
 
 <!-- Módulo de Clientes (CNPJ, e-mails) -->
-<script src="js/clients.js?v=104"></script>
+<script src="js/clients.js?v=105"></script>
 
 <!-- Módulo Admin: Usuários e Log de Auditoria -->
-<script src="js/users.js?v=104"></script>
+<script src="js/users.js?v=105"></script>
 
 <!-- Módulo de Cobrança Consolidada por CNPJ -->
-<script src="js/consolidated.js?v=104"></script>
+<script src="js/consolidated.js?v=105"></script>
 
 <!-- Inicialização: Dashboard, Configurações, window._dmOnReady -->
-<script src="js/init.js?v=104"></script>
+<script src="js/init.js?v=105"></script>
 
-<!-- ── Badge de versão fixo ──────────────────────────────────────────── -->
+<!-- ── Badge de versão dinâmico ──────────────────────────────────────────── -->
+<meta name="deploy-date" content="2026-03-28T15:30">
 <style>
   .version-badge {
     position: fixed;
@@ -1182,7 +1080,22 @@ function downloadTemplate() {
     box-shadow: 0 1px 4px rgba(0,0,0,0.25);
   }
 </style>
-<div class="version-badge">v1.0.4</div>
+<div class="version-badge" id="version-badge-el">v...</div>
+<script>
+(function() {
+  var meta = document.querySelector('meta[name="deploy-date"]');
+  if (!meta) return;
+  var d = new Date(meta.getAttribute('content'));
+  if (isNaN(d.getTime())) return;
+  var ver = 'v' + d.getFullYear() + '.' +
+    String(d.getMonth()+1).padStart(2,'0') + '.' +
+    String(d.getDate()).padStart(2,'0') + '-' +
+    String(d.getHours()).padStart(2,'0') + 'h' +
+    String(d.getMinutes()).padStart(2,'0');
+  var badge = document.getElementById('version-badge-el');
+  if (badge) badge.textContent = ver;
+})();
+</script>
 
 <!-- ══════════════════════════════════════════════════════════════
      MÓDULO: CONFIGURAÇÕES
@@ -1274,26 +1187,105 @@ function downloadTemplate() {
 
   <!-- ── PANE: USUÁRIOS ── -->
   <div id="cfg-users" class="cfg-pane">
-    <div class="cfg-card">
-      <div class="cfg-card-header">
-        <h3>👥 Usuários do Sistema</h3>
-        <span style="font-size:12px;color:var(--muted);">Apenas administradores podem visualizar esta seção</span>
+    <!-- Full User Management (moved from standalone tab) -->
+    <div class="trk-toolbar" style="flex-wrap:wrap;gap:10px;margin-bottom:16px;padding:0;">
+      <h2 style="margin:0;font-size:18px;font-weight:700;color:var(--primary);">👨‍💼 Gestão de Usuários &amp; Auditoria</h2>
+      <div style="flex:1"></div>
+      <button class="btn btn-primary btn-sm" onclick="openNewUser()">+ Novo Usuário</button>
+      <button class="btn btn-outline btn-sm" onclick="exportLogsCSV()">⬇️ Exportar Logs CSV</button>
+    </div>
+
+    <!-- KPI cards -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:20px;">
+      <div class="dk-card" style="text-align:center;padding:16px 12px;">
+        <div style="font-size:24px;font-weight:800;color:var(--primary)" id="usr-kpi-total">0</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.5px;">Usuários Ativos</div>
       </div>
-      <div class="cfg-card-body" style="padding:0;">
-        <table class="cfg-table">
+      <div class="dk-card" style="text-align:center;padding:16px 12px;">
+        <div style="font-size:24px;font-weight:800;color:#f59e0b" id="usr-kpi-sessions">0</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.5px;">Sessões Hoje</div>
+      </div>
+      <div class="dk-card" style="text-align:center;padding:16px 12px;">
+        <div style="font-size:24px;font-weight:800;color:#10b981" id="usr-kpi-logs">0</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.5px;">Ações Auditadas</div>
+      </div>
+    </div>
+
+    <!-- User table -->
+    <div class="dk-card" style="margin-bottom:20px;">
+      <div style="font-size:14px;font-weight:700;color:var(--dark);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e5e7eb;">
+        👤 Usuários Cadastrados
+      </div>
+      <div id="usr-table-wrap">
+        <table class="trk-table" id="usr-table">
           <thead>
             <tr>
-              <th>Email</th>
-              <th>Nome</th>
-              <th>Função</th>
-              <th>Último Acesso</th>
-              <th>Status</th>
+              <th>NOME</th>
+              <th>E-MAIL</th>
+              <th>CARGO</th>
+              <th style="text-align:center">ADMIN</th>
+              <th style="text-align:center">ATIVO</th>
+              <th>CRIADO EM</th>
+              <th style="text-align:center">AÇÕES</th>
             </tr>
           </thead>
-          <tbody id="cfg-users-tbody">
-            <tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);">Carregando usuários...</td></tr>
+          <tbody id="usr-body">
+            <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px;">Carregando usuários...</td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- Log viewer -->
+    <div class="dk-card">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e5e7eb;flex-wrap:wrap;">
+        <div style="font-size:14px;font-weight:700;color:var(--dark);">📋 Log de Auditoria</div>
+        <div style="flex:1"></div>
+        <input type="text" id="log-filter-user" placeholder="Filtrar por usuário..." oninput="renderLogs()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;width:180px;">
+        <select id="log-filter-action" onchange="renderLogs()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
+          <option value="">Todas as ações</option>
+          <option value="login">login</option>
+          <option value="logout">logout</option>
+          <option value="criacao_bl">criacao_bl</option>
+          <option value="edicao_bl">edicao_bl</option>
+          <option value="exclusao_bl">exclusao_bl</option>
+          <option value="marcacao_pagamento">marcacao_pagamento</option>
+          <option value="marcacao_fatura">marcacao_fatura</option>
+          <option value="abertura_disputa">abertura_disputa</option>
+          <option value="resolucao_disputa">resolucao_disputa</option>
+          <option value="edicao_cliente">edicao_cliente</option>
+          <option value="envio_email">envio_email</option>
+          <option value="importacao_planilha">importacao_planilha</option>
+          <option value="exportacao_relatorio">exportacao_relatorio</option>
+        </select>
+        <input type="date" id="log-filter-from" onchange="renderLogs()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
+        <span style="font-size:12px;color:var(--muted);">até</span>
+        <input type="date" id="log-filter-to" onchange="renderLogs()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
+        <button class="btn btn-outline btn-sm" onclick="clearLogFilters()">✕ Limpar filtros</button>
+        <button class="btn btn-danger btn-sm" onclick="confirmClearOldLogs()">🗑️ Limpar logs antigos</button>
+      </div>
+      <div id="log-table-wrap" style="overflow-x:auto;max-height:420px;overflow-y:auto;">
+        <table class="trk-table" style="min-width:700px;">
+          <thead>
+            <tr>
+              <th style="width:140px">DATA/HORA</th>
+              <th style="width:150px">USUÁRIO</th>
+              <th style="width:160px">AÇÃO</th>
+              <th>DETALHE</th>
+            </tr>
+          </thead>
+          <tbody id="log-body">
+            <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:30px;">Carregando logs...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="log-pagination" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:var(--muted);">
+        <span id="log-count-label"></span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline btn-sm" id="log-prev-btn" onclick="logPage(-1)" disabled>← Anterior</button>
+          <span id="log-page-label" style="line-height:28px;"></span>
+          <button class="btn btn-outline btn-sm" id="log-next-btn" onclick="logPage(1)">Próxima →</button>
+        </div>
       </div>
     </div>
   </div>
