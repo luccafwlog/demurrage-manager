@@ -375,8 +375,18 @@ body{margin:0;padding:20px;background:white;}
 </body></html>`;
 }
 
+// ── Helper: obtém CSS completo dos arquivos externos + inline ─────────────
+async function _fetchPrintCSS() {
+  const urls = ['css/base.css', 'css/components.css'];
+  const fetched = await Promise.all(
+    urls.map(u => fetch(u).then(r => r.ok ? r.text() : '').catch(() => ''))
+  );
+  const inline = Array.from(document.querySelectorAll('style')).map(s => s.innerHTML).join('\n');
+  return fetched.join('\n') + '\n' + inline;
+}
+
 // ── Generate ZIP with all invoices ───────────────────────────────────────
-function printAllInvoices() {
+async function printAllInvoices() {
   const cnpj = document.getElementById('cons-cnpj-hidden').value;
   if (!cnpj) { toast('Nenhum cliente selecionado.', 'error'); return; }
   const eligible = bls.filter(b => b.cnpj === cnpj && !b.paid);
@@ -396,7 +406,7 @@ function printAllInvoices() {
   currentBL=prevBL;currentType=prevType;ovRoe=prevRoe;ovTotal=prevTot;
   if(prevBL)renderDoc(prevBL,prevType||'invoice');
   else document.getElementById('doc-content').innerHTML='';
-  const css=Array.from(document.querySelectorAll('style')).map(s=>s.innerHTML).join('\n');
+  const css = await _fetchPrintCSS();
   const info=_consMap[cnpj]||{};
   const nome=(info.name||cnpj).replace(/[^\w\sÀ-ú-]/g,'').trim().substring(0,40);
   const n=eligible.length;
@@ -491,7 +501,7 @@ function toggleAllReceiptCheckboxes(selectAll) {
 }
 
 // Gera HTML de impressão com recibos dos BLs selecionados
-function generateSelectedReceipts() {
+async function generateSelectedReceipts() {
   const selectedIds = Array.from(document.querySelectorAll('.rsel-cb:checked')).map(cb => cb.dataset.id);
   if (!selectedIds.length) { toast('Selecione ao menos um BL.', 'error'); return; }
 
@@ -510,7 +520,8 @@ function generateSelectedReceipts() {
   if (prevBL) renderDoc(prevBL, prevType || 'invoice');
   else document.getElementById('doc-content').innerHTML = '';
 
-  const css  = Array.from(document.querySelectorAll('style')).map(s => s.innerHTML).join('\n');
+  // Busca CSS completo dos arquivos externos (mesmos estilos do recibo normal)
+  const css  = await _fetchPrintCSS();
   const cnpj = document.getElementById('cons-cnpj-hidden').value;
   const info = _consMap[cnpj] || {};
   const nome = (info.name || cnpj).replace(/[^\w\s\u00C0-\u00FF-]/g, '').trim().substring(0, 40);
