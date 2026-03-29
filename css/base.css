@@ -94,7 +94,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 .btn-primary:hover { background: #1e40af; }
 .btn-outline { background: white; color: var(--text); border: 1px solid var(--border); }
 .btn-outline:hover { border-color: var(--blue-btn); color: var(--blue-btn); }
+.btn-danger { background: white; color: #dc2626; border: 1px solid #fca5a5; }
+.btn-danger:hover { background: #fef2f2; border-color: #dc2626; }
 .btn-sm { padding: 6px 12px; font-size: 13px; }
+.toolbar-divider { width: 1px; height: 26px; background: var(--border); flex-shrink: 0; margin: 0 2px; }
 
 .results-count { font-size: 13px; color: var(--muted); margin-bottom: 14px; }
 .bl-list { display: flex; flex-direction: column; gap: 10px; }
