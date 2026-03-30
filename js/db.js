@@ -118,8 +118,12 @@ function sanitize(obj) {
             });
           }
           const rows = Array.from(rowMap.values());
-          const { error: upsErr } = await sb.from(table).upsert(rows, { onConflict: conflict });
-          if (upsErr) console.error('[DB-SAVE] upsert error:', upsErr);
+          const CHUNK = 500;
+          for (let i = 0; i < rows.length; i += CHUNK) {
+            const chunk = rows.slice(i, i + CHUNK);
+            const { error: upsErr } = await sb.from(table).upsert(chunk, { onConflict: conflict });
+            if (upsErr) { console.error('[DB-SAVE] upsert error (chunk ' + i + '):', upsErr); break; }
+          }
         }
 
         window._dmStore[sKey] = newData;
