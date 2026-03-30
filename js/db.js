@@ -26,6 +26,31 @@ function sanitize(obj) {
   return out;
 }
 
+// ============================================================
+// KEY HELPERS — chaves compostas por tipo
+// ============================================================
+// Para containers: a chave única real é (container, bl).
+// Um mesmo número de container pode existir em múltiplos BLs.
+const _KEY_FN = {
+  bls:     r => String(r.id     || ''),
+  trk:     r => String(r.container || '') + '\x00' + String(r.bl || ''),
+  clients: r => String(r.id     || r.cnpj || '')
+};
+
+// Colunas de primeira classe que vão para o banco (além de user_id, data, updated_at)
+const _COLS_FN = {
+  bls:     r => ({ id:        String(r.id     || '') }),
+  trk:     r => ({ container: String(r.container || ''), bl: String(r.bl || '') }),
+  clients: r => ({ id:        String(r.id     || r.cnpj || '') })
+};
+
+// onConflict alinhado com a nova PK de containers: (user_id, container, bl)
+const _CONFLICT = {
+  bls:     'user_id,id',
+  trk:     'user_id,container,bl',
+  clients: 'user_id,id'
+};
+
 (async function init() {
 
   const { data: { session }, error: sessErr } = await sb.auth.getSession();
@@ -45,9 +70,10 @@ function sanitize(obj) {
   window._dmIsAdmin = false;
   window._dmSession = 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 
+  // FIX: containers agora seleciona a coluna `bl` separada (nova PK composta)
   const [blsRes, trkRes, cliRes, settRes, profRes] = await Promise.all([
     sb.from('bls').select('id, data'),
-    sb.from('containers').select('container, data'),
+    sb.from('containers').select('container, bl, data'),
     sb.from('clients').select('id, data'),
     sb.from('settings').select('alert_days').eq('user_id', uid).maybeSingle(),
     sb.from('usuarios').select('*').eq('id', uid).maybeSingle()
@@ -58,8 +84,20 @@ function sanitize(obj) {
   if (cliRes.error) console.error('[DB] clients:', cliRes.error);
 
   window._dmStore.bls     = (blsRes.data  || []).map(r => r.data);
-  window._dmStore.trk     = (trkRes.data  || []).map(r => r.data);
-  window._dmStore.clients = (cliRes.data  || []).map(r => r.data);
+
+  // FIX: mescla as colunas de primeira classe (container, bl) com o jsonb data,
+  // garantindo que container e bl SEMPRE existem no objeto local.
+  window._dmStore.trk = (trkRes.data || []).map(r => ({
+    ...r.data,
+    container: r.container,
+    bl: r.bl !== undefined ? r.bl : (r.data && r.data.bl) || ''
+  }));
+
+  // FIX: garante que todo cliente tem um `id` válido ao carregar do banco
+  window._dmStore.clients = (cliRes.data || []).map(r => ({
+    ...r.data,
+    id: r.id || (r.data && r.data.id) || (r.data && r.data.cnpj) || ''
+  }));
 
   if (settRes.data) window._dmStore.alertDays = settRes.data.alert_days ?? 5;
 
@@ -69,49 +107,70 @@ function sanitize(obj) {
 
   // ================= SAVE (full array diff) =================
   window._dmFireSave = function(type, newData) {
-    const TABLE    = { bls: 'bls', trk: 'containers', clients: 'clients' };
-    const STORE    = { bls: 'bls', trk: 'trk',        clients: 'clients' };
-    const IDKEY    = { bls: 'id',  trk: 'container',   clients: 'id'     };
-    const CONFLICT = { bls: 'user_id,id', trk: 'user_id,container', clients: 'user_id,id' };
+    const TABLE = { bls: 'bls', trk: 'containers', clients: 'clients' };
+    const STORE = { bls: 'bls', trk: 'trk',        clients: 'clients' };
 
     const table    = TABLE[type];
     const sKey     = STORE[type];
-    const idKey    = IDKEY[type];
-    const conflict = CONFLICT[type];
+    const keyFn    = _KEY_FN[type];
+    const colsFn   = _COLS_FN[type];
+    const conflict = _CONFLICT[type];
 
-    // Ignore unknown types (e.g. legacy 'alertDays' calls)
-    if (!table || !sKey || !idKey) return;
+    if (!table || !sKey || !keyFn) return;
 
     const oldStore = window._dmStore[sKey] || [];
 
+    // FIX: deduplicação usa chave composta (container|bl para trk, id para os outros)
     const oldMap = new Map(
-      oldStore.map(r => [String(r[idKey]), JSON.stringify(sanitize(r))])
+      oldStore.map(r => [keyFn(r), JSON.stringify(sanitize(r))])
     );
 
-    const newIds = new Set(newData.map(r => String(r[idKey])));
+    const newKeySet = new Set(newData.map(r => keyFn(r)));
 
-    const toDelete = oldStore
-      .filter(r => !newIds.has(String(r[idKey])))
-      .map(r => String(r[idKey]));
+    // Registros a deletar: estavam no store antigo mas não estão no novo
+    const toDeleteKeys = oldStore
+      .filter(r => !newKeySet.has(keyFn(r)))
+      .map(r => keyFn(r));
 
+    // Registros a upsert: novos ou com dados diferentes
     const toUpsert = newData.filter(r => {
-      const key = String(r[idKey]);
-      return !oldMap.has(key) ||
-             oldMap.get(key) !== JSON.stringify(sanitize(r));
+      const key = keyFn(r);
+      return !oldMap.has(key) || oldMap.get(key) !== JSON.stringify(sanitize(r));
     });
 
     (async () => {
       try {
-        if (toDelete.length > 0) {
-          const { error: delErr } = await sb.from(table).delete().in(idKey, toDelete);
-          if (delErr) console.error('[DB-SAVE] delete error:', delErr);
+        // DELETE — usa filtros específicos por tipo para garantir user_id
+        if (toDeleteKeys.length > 0) {
+          if (type === 'trk') {
+            // FIX: containers precisam de delete por (container, bl) — chave composta
+            for (const key of toDeleteKeys) {
+              const [container, bl] = key.split('\x00');
+              const { error: delErr } = await sb.from(table).delete()
+                .eq('user_id', uid)
+                .eq('container', container)
+                .eq('bl', bl);
+              if (delErr) console.error('[DB-SAVE] delete container error:', delErr);
+            }
+          } else {
+            // bls e clients têm id simples — delete em batch
+            const idCol = type === 'bls' ? 'id' : 'id';
+            const ids = toDeleteKeys;
+            const { error: delErr } = await sb.from(table).delete()
+              .eq('user_id', uid)
+              .in(idCol, ids);
+            if (delErr) console.error('[DB-SAVE] delete error:', delErr);
+          }
         }
 
+        // UPSERT
         if (toUpsert.length > 0) {
+          // FIX: rowMap usa chave composta para evitar duplicatas no batch
           const rowMap = new Map();
           for (const r of toUpsert) {
-            rowMap.set(String(r[idKey]), {
-              [idKey]: String(r[idKey]),
+            const key = keyFn(r);
+            rowMap.set(key, {
+              ...colsFn(r),         // colunas de primeira classe (container+bl, ou id)
               user_id: uid,
               data: sanitize(r),
               updated_at: new Date().toISOString()
@@ -135,21 +194,20 @@ function sanitize(obj) {
 
   // ================= SAVE ONE RECORD =================
   window._dmFireSaveOne = function(type, id, data) {
-    const TABLE    = { bls: 'bls', trk: 'containers', clients: 'clients' };
-    const STORE    = { bls: 'bls', trk: 'trk',        clients: 'clients' };
-    const IDKEY    = { bls: 'id',  trk: 'container',   clients: 'id'     };
-    const CONFLICT = { bls: 'user_id,id', trk: 'user_id,container', clients: 'user_id,id' };
+    const TABLE  = { bls: 'bls', trk: 'containers', clients: 'clients' };
+    const STORE  = { bls: 'bls', trk: 'trk',        clients: 'clients' };
 
     const table    = TABLE[type];
     const sKey     = STORE[type];
-    const idKey    = IDKEY[type];
-    const conflict = CONFLICT[type];
+    const keyFn    = _KEY_FN[type];
+    const colsFn   = _COLS_FN[type];
+    const conflict = _CONFLICT[type];
     if (!table) return;
 
     (async () => {
       try {
         const row = {
-          [idKey]: String(id),
+          ...colsFn(data),       // colunas de primeira classe
           user_id: uid,
           data: sanitize(data),
           updated_at: new Date().toISOString()
@@ -157,9 +215,10 @@ function sanitize(obj) {
         const { error } = await sb.from(table).upsert(row, { onConflict: conflict });
         if (error) { console.error('[DB-SAVE-ONE]', error); return; }
 
-        // Update local store
+        // Atualiza store local
         const store = window._dmStore[sKey] || [];
-        const idx   = store.findIndex(r => String(r[idKey]) === String(id));
+        const key   = keyFn(data);
+        const idx   = store.findIndex(r => keyFn(r) === key);
         if (idx >= 0) store[idx] = data;
         else store.push(data);
       } catch(e) {
@@ -172,21 +231,36 @@ function sanitize(obj) {
   window._dmFireDelete = function(type, id) {
     const TABLE  = { bls: 'bls', trk: 'containers', clients: 'clients' };
     const STORE  = { bls: 'bls', trk: 'trk',        clients: 'clients' };
-    const IDKEY  = { bls: 'id',  trk: 'container',   clients: 'id'     };
+    const IDKEY  = { bls: 'id',  trk: null,          clients: 'id'     };
 
     const table = TABLE[type];
     const sKey  = STORE[type];
-    const idKey = IDKEY[type];
     if (!table) return;
 
     (async () => {
       try {
-        const { error } = await sb.from(table).delete().eq(idKey, String(id));
-        if (error) { console.error('[DB-DELETE]', error); return; }
-
-        // Update local store
-        if (sKey && window._dmStore[sKey]) {
-          window._dmStore[sKey] = window._dmStore[sKey].filter(r => String(r[idKey]) !== String(id));
+        if (type === 'trk') {
+          // FIX: para containers, id deve ser 'container\x00bl'
+          const [container, bl] = String(id).split('\x00');
+          const { error } = await sb.from(table).delete()
+            .eq('user_id', uid)
+            .eq('container', container)
+            .eq('bl', bl !== undefined ? bl : '');
+          if (error) { console.error('[DB-DELETE] container:', error); return; }
+          if (sKey && window._dmStore[sKey]) {
+            window._dmStore[sKey] = window._dmStore[sKey].filter(r =>
+              !(String(r.container) === container && String(r.bl || '') === (bl || ''))
+            );
+          }
+        } else {
+          const idKey = IDKEY[type];
+          const { error } = await sb.from(table).delete()
+            .eq('user_id', uid)
+            .eq(idKey, String(id));
+          if (error) { console.error('[DB-DELETE]', error); return; }
+          if (sKey && window._dmStore[sKey]) {
+            window._dmStore[sKey] = window._dmStore[sKey].filter(r => String(r[idKey]) !== String(id));
+          }
         }
       } catch(e) {
         console.error('[DB-DELETE]', e);

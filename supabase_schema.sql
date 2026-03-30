@@ -22,12 +22,14 @@ create table if not exists bls (
 );
 
 -- Containers (tracking)
+-- ATENÇÃO: a PK é (user_id, container, bl) — um container pode existir em múltiplos BLs.
 create table if not exists containers (
   container    text    not null,
+  bl           text    not null default '',
   user_id      uuid    not null references auth.users(id) on delete cascade,
   data         jsonb   not null default '{}'::jsonb,
   updated_at   timestamptz default now(),
-  primary key (user_id, container)
+  primary key (user_id, container, bl)
 );
 
 -- Clientes
