@@ -118,7 +118,9 @@ const _CONFLICT = {
 
     if (!table || !sKey || !keyFn) return;
 
-    const oldStore = window._dmStore[sKey] || [];
+    // Snapshot imutável do store atual (evita que mutações posteriores ao array
+    // do módulo invalidem o diff antes do upsert assíncrono completar)
+    const oldStore = JSON.parse(JSON.stringify(window._dmStore[sKey] || []));
 
     // FIX: deduplicação usa chave composta (container|bl para trk, id para os outros)
     const oldMap = new Map(
@@ -185,7 +187,11 @@ const _CONFLICT = {
           }
         }
 
-        window._dmStore[sKey] = newData;
+        // FIX: armazena cópia profunda — NUNCA a referência direta.
+        // Se _dmStore[sKey] === newData (mesma referência), mutações futuras
+        // no array do módulo já refletem em oldStore, tornando o diff sempre
+        // vazio e impedindo saves subsequentes.
+        window._dmStore[sKey] = JSON.parse(JSON.stringify(newData));
       } catch(e) {
         console.error('[DB-SAVE]', e);
       }
@@ -215,12 +221,14 @@ const _CONFLICT = {
         const { error } = await sb.from(table).upsert(row, { onConflict: conflict });
         if (error) { console.error('[DB-SAVE-ONE]', error); return; }
 
-        // Atualiza store local
-        const store = window._dmStore[sKey] || [];
-        const key   = keyFn(data);
-        const idx   = store.findIndex(r => keyFn(r) === key);
-        if (idx >= 0) store[idx] = data;
-        else store.push(data);
+        // Atualiza store local com cópia profunda (evita referência compartilhada)
+        const store   = JSON.parse(JSON.stringify(window._dmStore[sKey] || []));
+        const key     = keyFn(data);
+        const idx     = store.findIndex(r => keyFn(r) === key);
+        const dataCopy = JSON.parse(JSON.stringify(data));
+        if (idx >= 0) store[idx] = dataCopy;
+        else store.push(dataCopy);
+        window._dmStore[sKey] = store;
       } catch(e) {
         console.error('[DB-SAVE-ONE]', e);
       }
