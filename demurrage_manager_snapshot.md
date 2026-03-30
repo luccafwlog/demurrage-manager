@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot Completo do Projeto
 
-> **Última atualização:** 2026-03-30 (v2.2) | **Cache version:** `?v=110` | **Deploy-date meta:** `2026-03-30`
+> **Última atualização:** 2026-03-30 (v2.3) | **Cache version:** `?v=110` | **Deploy-date meta:** `2026-03-30`
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (branch: `main`)
 > **App em produção:** https://demurragemanager.web.app
 
@@ -295,6 +295,14 @@ _CONFLICT = {
 ---
 
 ## 🐛 Histórico de Correções
+
+### 2026-03-30 — Fix referência compartilhada no store (v2.3)
+
+| # | Bug | Causa Raiz | Fix |
+|---|-----|------------|-----|
+| F | Clientes: name/emails somem após refresh mesmo sendo exibidos na tela | `_dmFireSave` atribuía `_dmStore[sKey] = newData` (mesma referência). Mutações posteriores ao array do módulo (`existing.name = 'X'`) já refletiam em `oldStore`, tornando o diff vazio → nenhum upsert executado | `_dmStore[sKey] = JSON.parse(JSON.stringify(newData))` — deep copy garante independência; `oldStore` também capturado como snapshot imutável |
+| G | Mesmo bug latente em bls e trk | Mesmo mecanismo — saves subsequentes na mesma sessão poderiam ignorar mudanças | Corrigido de forma abrangente nos três tipos |
+| H | `_dmFireSaveOne` mutava `_dmStore` diretamente | `store[idx] = data` mutava o array sem deep copy | Deep copy em `_dmFireSaveOne` ao atualizar o store |
 
 ### 2026-03-30 — Fix crítico de persistência (v2.2)
 
