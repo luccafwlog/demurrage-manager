@@ -145,5 +145,15 @@ function sanitize(obj) {
   };
 
   console.log('[DB] ✓ Modo colaborativo ativo (mínimas alterações)');
+// Aguarda o app estar pronto e inicializa a UI
+function waitForAppReady() {
+  if (window._dmOnReady) {
+    console.log('[DB] Chamando _dmOnReady...');
+    window._dmOnReady();
+  } else {
+    setTimeout(waitForAppReady, 50);
+  }
+}
 
+waitForAppReady();
 })();
