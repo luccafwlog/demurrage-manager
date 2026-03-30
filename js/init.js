@@ -4,14 +4,14 @@
 // ============================================================
 // Ponto de entrada principal da aplicação.
 // Dependências: todos os módulos anteriores devem ser carregados.
-// window._dmOnReady() é chamado pelo db.js após Firebase carregar.
+// window._dmOnReady() é chamado pelo db.js após Supabase carregar.
 // ============================================================
 
 // ============================================================
 // INIT
 // ============================================================
 // FIX #3: migracoes movidas para window._dmOnReady() — veja abaixo
-// (executavam sobre bls=[] antes do Firebase carregar os dados)
+// (executavam sobre bls=[] antes do Supabase carregar os dados)
 document.addEventListener('click', e => {
   const dd = document.getElementById('cons-dropdown');
   const inp = document.getElementById('cons-search');
@@ -98,26 +98,21 @@ function applyContainerAlerts() {
 // MELHORIA #4 — HISTÓRICO DE MODIFICAÇÕES (ACCOUNTABILITY)
 // ══════════════════════════════════════════════════════════════════
 async function logModification(collection, docId, action, details) {
-  try {
-    const user = window._dmUser || firebase.auth().currentUser;
-    if (!user) return;
-    const entry = {
-      action: action,
-      by: user.email || user.uid,
-      at: firebase.firestore.FieldValue.serverTimestamp(),
-      details: details || {}
-    };
-    await firebase.firestore()
-      .collection(collection).doc(docId)
-      .update({ modificationHistory: firebase.firestore.FieldValue.arrayUnion(entry) });
-  } catch(e) { /* silently fail if field doesn't exist yet — will be created on next full save */ }
+  // Registra no log de auditoria Supabase via _dmFireLog
+  if (window._dmFireLog) {
+    await window._dmFireLog(action, { collection, docId, ...(details || {}) });
+  }
 }
 
 async function showModificationHistory(collection, docId, label) {
+  // Exibe logs de auditoria do Supabase filtrados pelo docId
   try {
-    const snap = await firebase.firestore().collection(collection).doc(docId).get();
-    const history = (snap.data() || {}).modificationHistory || [];
-    const sorted  = [...history].reverse();
+    const logs = window._dmFireLoadLogs ? await window._dmFireLoadLogs() : [];
+    const relevant = logs.filter(l => {
+      const d = l.detalhe || {};
+      return d.docId === docId || d.blId === docId || d.bl === label;
+    });
+    const sorted = relevant.slice(0, 20);
 
     let html = `<div style="padding:4px 0 16px;font-size:13px;font-weight:600;color:var(--muted);">Histórico de alterações em <strong style="color:var(--text);">${label}</strong></div>`;
     html += `<ul class="mod-hist-list">`;
@@ -126,16 +121,16 @@ async function showModificationHistory(collection, docId, label) {
       html += `<li class="mod-hist-empty">Nenhuma modificação registrada ainda.</li>`;
     } else {
       const icons = { status_changed:'🔄', amount_updated:'💰', created:'✨', paid:'✅', billed:'📄', default:'✏️' };
-      sorted.forEach((m, i) => {
-        const icon = icons[m.action] || icons.default;
-        const when = m.at && m.at.toDate ? m.at.toDate().toLocaleString('pt-BR') : '—';
-        const det  = m.details && Object.keys(m.details).length
-          ? Object.entries(m.details).map(([k,v])=>`${k}: <strong>${v}</strong>`).join(' · ') : '';
+      sorted.forEach((m) => {
+        const icon = icons[m.acao] || icons.default;
+        const when = m.criado_em ? new Date(m.criado_em).toLocaleString('pt-BR') : '—';
+        const det  = m.detalhe && Object.keys(m.detalhe).length
+          ? Object.entries(m.detalhe).map(([k,v])=>`${k}: <strong>${v}</strong>`).join(' · ') : '';
         html += `<li class="mod-hist-item">
           <div class="mod-hist-dot">${icon}</div>
           <div class="mod-hist-body">
-            <div class="mod-hist-action">${m.action.replace(/_/g,' ')}</div>
-            <div class="mod-hist-meta">por <strong>${m.by}</strong> · ${when}</div>
+            <div class="mod-hist-action">${(m.acao||'').replace(/_/g,' ')}</div>
+            <div class="mod-hist-meta">por <strong>${m.usuario_nome||'—'}</strong> · ${when}</div>
             ${det ? `<div class="mod-hist-meta" style="margin-top:3px;">${det}</div>` : ''}
           </div>
         </li>`;
@@ -183,8 +178,8 @@ function initCfgModule() {
     document.getElementById('cfg-deploy-date').textContent = new Date().toLocaleDateString('pt-BR');
   }
   // Usuário atual
-  const u = window._dmUser || (firebase.auth && firebase.auth().currentUser);
-  document.getElementById('cfg-current-user').textContent = u ? (u.email || u.uid) : '—';
+  const u = window._dmUser;
+  document.getElementById('cfg-current-user').textContent = u ? (u.email || u.id) : '—';
   // Exibir aba de usuários só para admin
   const isAdmin = window._dmIsAdmin || false;
   document.querySelector('[onclick*="cfg-users"]').style.display = isAdmin ? '' : 'none';
@@ -222,29 +217,28 @@ async function saveCfgRate(idx) {
   if (rate.p1) rate.p1.usd = p1usd;
   if (rate.p2) rate.p2.usd = p2usd;
 
-  // Persiste no Firestore
+  // Persiste no localStorage (sem dependência de tabela extra)
   try {
-    await firebase.firestore().collection('config').doc('rates').set(
-      { rates: (window._cfgRates || RATES).map(r => ({
-          type: r.type, freeUntil: r.freeUntil,
-          p1usd: r.p1 ? r.p1.usd : null, p1from: r.p1 ? r.p1.range[0] : null,
-          p2usd: r.p2 ? r.p2.usd : null
-        })),
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        updatedBy: (window._dmUser || firebase.auth().currentUser)?.email || '?'
-      }, { merge: true }
-    );
+    const allRates = (window._cfgRates || RATES).map(r => ({
+      type: r.type,
+      freeUntil: r.freeUntil,
+      p1usd: r.p1 ? r.p1.usd : null,
+      p1from: r.p1 ? r.p1.range[0] : null,
+      p2usd: r.p2 ? r.p2.usd : null
+    }));
+    localStorage.setItem('dm_rates_v2', JSON.stringify(allRates));
     toast('Taxa "' + rate.type + '" salva com sucesso!', 'success');
+    renderCfgRates();
   } catch(e) {
     toast('Erro ao salvar taxa: ' + e.message, 'error');
   }
 }
 
-async function loadCfgRatesFromFirestore() {
+function loadCfgRatesFromFirestore() {
+  // Carrega taxas customizadas do localStorage
   try {
-    const snap = await firebase.firestore().collection('config').doc('rates').get();
-    if (!snap.exists) return;
-    const saved = snap.data().rates || [];
+    const saved = JSON.parse(localStorage.getItem('dm_rates_v2') || 'null');
+    if (!saved || !Array.isArray(saved)) return;
     saved.forEach(s => {
       const r = RATES.find(r => r.type === s.type);
       if (!r) return;
@@ -255,55 +249,23 @@ async function loadCfgRatesFromFirestore() {
   } catch(e) { /* usar rates padrão */ }
 }
 
-// ── USUÁRIOS ──────────────────────────────────────────────────────
-async function renderCfgUsers() {
-  const tbody = document.getElementById('cfg-users-tbody');
-  if (!tbody) return;
-  tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--muted);">Carregando...</td></tr>`;
-  try {
-    const snap = await firebase.firestore().collection('users').get();
-    if (snap.empty) {
-      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--muted);">Nenhum usuário cadastrado</td></tr>`;
-      return;
-    }
-    tbody.innerHTML = '';
-    snap.forEach(doc => {
-      const u = doc.data();
-      const lastLogin = u.lastLogin ? new Date(u.lastLogin.seconds*1000).toLocaleString('pt-BR') : '—';
-      const role = u.role === 'admin' ? '<span class="cfg-badge admin">Admin</span>' : '<span class="cfg-badge user">Usuário</span>';
-      const status = u.active !== false
-        ? '<span style="color:var(--green);font-weight:600;">● Ativo</span>'
-        : '<span style="color:var(--muted);">○ Inativo</span>';
-      tbody.innerHTML += `<tr>
-        <td>${u.email || doc.id}</td>
-        <td>${u.displayName || '—'}</td>
-        <td>${role}</td>
-        <td style="font-size:12px;color:var(--muted);">${lastLogin}</td>
-        <td>${status}</td>
-      </tr>`;
-    });
-  } catch(e) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--red);">Erro ao carregar usuários. Permissão necessária.</td></tr>`;
-  }
-}
+// ── USUÁRIOS — delegado ao módulo users.js via renderUsers() ─────
 
 // ── BACKUP ────────────────────────────────────────────────────────
 async function cfgExportBackupJSON() {
   toast('Preparando backup...', 'info');
   try {
-    const [blSnap, trkSnap, clientSnap] = await Promise.all([
-      firebase.firestore().collection('bls').get(),
-      firebase.firestore().collection('tracking').get(),
-      firebase.firestore().collection('clients').get()
-    ]);
+    // Usa dados em memória (já carregados do Supabase)
     const backup = {
-      version: '1.0',
+      version: '2.0',
+      backend: 'supabase',
       exportedAt: new Date().toISOString(),
-      exportedBy: (window._dmUser || firebase.auth().currentUser)?.email || '?',
+      exportedBy: window._dmUser?.email || '?',
+      alertDays: getAlertDays(),
       data: {
-        bls:      blSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-        tracking: trkSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-        clients:  clientSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+        bls:      window._dmStore?.bls      || bls      || [],
+        tracking: window._dmStore?.trk      || trkData  || [],
+        clients:  window._dmStore?.clients  || clients  || []
       }
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
@@ -314,6 +276,7 @@ async function cfgExportBackupJSON() {
     a.click();
     URL.revokeObjectURL(url);
     toast('Backup exportado com sucesso!', 'success');
+    logAuditAction('exportacao_relatorio', { tipo: 'backup_json' });
   } catch(e) {
     toast('Erro ao exportar: ' + e.message, 'error');
   }
@@ -354,21 +317,27 @@ async function cfgImportBackup(event) {
     const text   = await file.text();
     const backup = JSON.parse(text);
     if (!backup.data) throw new Error('Formato de backup inválido');
-    const db     = firebase.firestore();
-    const batch  = db.batch();
-    (backup.data.bls || []).forEach(d => {
-      const {id, ...data} = d;
-      batch.set(db.collection('bls').doc(id), data);
-    });
-    (backup.data.tracking || []).forEach(d => {
-      const {id, ...data} = d;
-      batch.set(db.collection('tracking').doc(id), data);
-    });
-    (backup.data.clients || []).forEach(d => {
-      const {id, ...data} = d;
-      batch.set(db.collection('clients').doc(id), data);
-    });
-    await batch.commit();
+
+    const blsData      = backup.data.bls      || [];
+    const trackingData = backup.data.tracking || backup.data.trk || [];
+    const clientsData  = backup.data.clients  || [];
+
+    if (window._dmFireRestore) {
+      await window._dmFireRestore(backup);
+    }
+
+    // Restaura usando _dmFireSave para cada coleção
+    if (window._dmFireSave) {
+      if (blsData.length)      window._dmFireSave('bls',     blsData);
+      if (trackingData.length) window._dmFireSave('trk',     trackingData);
+      if (clientsData.length)  window._dmFireSave('clients', clientsData);
+    }
+
+    if (backup.alertDays) {
+      if (window._dmSaveAlertDays) window._dmSaveAlertDays(backup.alertDays);
+      if (window._dmStore) window._dmStore.alertDays = backup.alertDays;
+    }
+
     toast('Backup restaurado! Recarregando...', 'success');
     setTimeout(() => location.reload(), 1800);
   } catch(e) {
@@ -378,16 +347,14 @@ async function cfgImportBackup(event) {
 }
 
 // ── SISTEMA ───────────────────────────────────────────────────────
-async function renderCfgSistema() {
+function renderCfgSistema() {
   try {
-    const [blSnap, trkSnap, clientSnap] = await Promise.all([
-      firebase.firestore().collection('bls').get(),
-      firebase.firestore().collection('tracking').get(),
-      firebase.firestore().collection('clients').get()
-    ]);
-    const total = blSnap.size + trkSnap.size + clientSnap.size;
+    const nBls      = (window._dmStore?.bls     || bls      || []).length;
+    const nTrk      = (window._dmStore?.trk     || trkData  || []).length;
+    const nClients  = (window._dmStore?.clients || clients  || []).length;
+    const total     = nBls + nTrk + nClients;
     const el = document.getElementById('cfg-db-count');
-    if (el) el.textContent = `${total} registros (${blSnap.size} BLs · ${trkSnap.size} containers · ${clientSnap.size} clientes)`;
+    if (el) el.textContent = `${total} registros (${nBls} BLs · ${nTrk} containers · ${nClients} clientes)`;
   } catch(e) { /* ignore */ }
 }
 
@@ -397,7 +364,7 @@ function cfgClearCache() {
     toast('Cache limpo com sucesso!', 'success');
   }
 }
-function cfgReloadRates() { loadCfgRatesFromFirestore().then(() => { renderCfgRates(); toast('Taxas recarregadas!', 'success'); }); }
+function cfgReloadRates() { loadCfgRatesFromFirestore(); renderCfgRates(); toast('Taxas recarregadas!', 'success'); }
 function cfgShowAuditLog() { switchModule('settings'); setTimeout(function(){ var btn=document.querySelector('.cfg-subtab[onclick*="cfg-users"]'); if(btn) switchCfgPane(btn,'cfg-users'); },50); }
 
 // ── ALERT SYSTEM ──────────────────────────────────────────────────────────
@@ -408,7 +375,8 @@ function getAlertDays() {
 function saveAlertDays() {
   const v = parseInt(document.getElementById('alert-days-input')?.value) || 5;
   if (window._dmStore) window._dmStore.alertDays = v;
-  if (window._dmFireSave) window._dmFireSave('alertDays', v);
+  // Persiste no Supabase via função dedicada
+  if (window._dmSaveAlertDays) window._dmSaveAlertDays(v);
 }
 
 function computeAlerts() {
@@ -1226,7 +1194,7 @@ function restoreData() {
             setTimeout(() => location.reload(), 1200);
           }).catch(err => toast('Erro ao restaurar: ' + err.message, 'error'));
         } else {
-          toast('Firebase não inicializado.', 'error');
+          toast('Supabase não inicializado. Aguarde e tente novamente.', 'error');
         }
       } catch(err) {
         toast('Erro ao ler arquivo: ' + err.message, 'error');
@@ -1507,11 +1475,11 @@ function renderTrkGroupedByBL(filtered) {
 }
 
 
-// INIT will be called by Firebase module after data is loaded
+// INIT — chamado pelo db.js após Supabase carregar os dados
 // See: window._dmOnReady()
 window._dmOnReady = function() {
   // ── Reload all global arrays from Firestore ──
-  bls = load();              // ← critical: reatribui bls com dados do Firebase
+  bls = load();              // ← critical: reatribui bls com dados do Supabase
 
   // FIX-QUOTA: Todas as migrações de startup em UMA passagem, com 1 save consolidado
   // (antes: _backfillVenc + migrateDotcnum + backfillMigratedAt = até 3 saves separados)
@@ -1556,31 +1524,13 @@ window._dmOnReady = function() {
   updateAlertBadge();
   // MELHORIA #1: aplicar alertas visuais nos containers críticos
   setTimeout(applyContainerAlerts, 500);
-  // MELHORIA TAXAS: carregar taxas customizadas do Firestore (se existirem)
+  // Carrega taxas customizadas do localStorage
   loadCfgRatesFromFirestore();
   switchModule('dashboard');
   // Hide loading overlay
   const overlay = document.getElementById('dm-loading-overlay');
   if (overlay) overlay.style.display = 'none';
 
-  // ── Callbacks reativos: onSnapshot atualiza vars locais após carga inicial ──
- window._dmOnReady = function() {
-
-  console.log('[APP] Inicializando com Supabase');
-
-  // 🔥 usar dados já carregados do db.js
-  const store = window._dmStore;
-
-  window.bls     = store.bls || [];
-  window.trk     = store.trk || [];
-  window.clients = store.clients || [];
-
-  // 👉 aqui você chama o render do app
-  if (window.renderAll) {
-    window.renderAll();
-  }
-
-};
   // FIX-QUOTA #H: flag anti-cascata para evitar loop onSnapshot → trkSave → onSnapshot
   var _trkSaving = false;
   window._dmOnTrkUpdate = function() {

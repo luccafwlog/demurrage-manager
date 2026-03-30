@@ -225,10 +225,10 @@ async function saveUser() {
       closeModal('modal-user');
       await renderUsers();
     } else {
-      toast('Erro ao salvar usuário no Firebase.', 'error');
+      toast('Erro ao salvar usuário.', 'error');
     }
   } else {
-    toast('Firebase não disponível.', 'error');
+    toast('Supabase não inicializado. Aguarde e tente novamente.', 'error');
   }
 }
 

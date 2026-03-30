@@ -145,7 +145,7 @@ var MiniZip = (function() {
     </div>
     <div class="header-right">
       <div class="header-rate-link" onclick="openModal('modal-rates')">📋 Tabela de Taxas</div>
-      <div class="header-logout" id="logout-btn">Sair</div>
+      <div class="header-logout" id="logout-btn" onclick="if(window._dmLogout){window._dmLogout();}else{window.location.href='index.html';}">Sair</div>
     </div>
   </header>
   <div class="mod-tabs">
@@ -1373,11 +1373,11 @@ function downloadTemplate() {
       <div class="cfg-card-body">
         <div class="cfg-sys-row">
           <span class="cfg-sys-label">Banco de Dados</span>
-          <span class="cfg-sys-val">Firebase Firestore (NoSQL, tempo real)</span>
+          <span class="cfg-sys-val">Supabase (PostgreSQL · RLS ativo)</span>
         </div>
         <div class="cfg-sys-row">
           <span class="cfg-sys-label">Autenticação</span>
-          <span class="cfg-sys-val">Firebase Authentication (email/senha)</span>
+          <span class="cfg-sys-val">Supabase Auth (email/senha · sessão persistente)</span>
         </div>
         <div class="cfg-sys-row">
           <span class="cfg-sys-label">Hospedagem</span>
@@ -1412,16 +1412,5 @@ function downloadTemplate() {
   </div>
 
 </div><!-- /mod-settings -->
-<!-- SUPABASE (sempre primeiro) -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-<!-- DB (inicialização, auth, store, realtime) -->
-<script src="js/db.js"></script>
-
-<!-- SEUS SCRIPTS DO APP (UI, render, eventos) -->
-<script src="js/app.js"></script>
-
-<!-- OUTROS SCRIPTS (se houver) -->
-<script src="js/utils.js"></script>
 </body>
 </html>

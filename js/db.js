@@ -10,7 +10,6 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
   realtime: { params: { eventsPerSecond: 10 } }
 });
 
-// (sanitize igual — mantido)
 function sanitize(obj) {
   if (Array.isArray(obj)) return obj.map(sanitize);
   if (obj === null) return null;
@@ -46,7 +45,6 @@ function sanitize(obj) {
   window._dmIsAdmin = false;
   window._dmSession = 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 
-  // 🔥 ALTERAÇÃO 1 — REMOVIDO filtro user_id
   const [blsRes, trkRes, cliRes, settRes, profRes] = await Promise.all([
     sb.from('bls').select('id, data'),
     sb.from('containers').select('container, data'),
@@ -69,9 +67,8 @@ function sanitize(obj) {
   window._dmIsAdmin  = !!profile?.admin;
   window._dmUserData = profile || {};
 
-  // ================= SAVE =================
+  // ================= SAVE (full array diff) =================
   window._dmFireSave = function(type, newData) {
-
     const TABLE  = { bls: 'bls', trk: 'containers', clients: 'clients' };
     const STORE  = { bls: 'bls', trk: 'trk',        clients: 'clients' };
     const IDKEY  = { bls: 'id',  trk: 'container',   clients: 'id'     };
@@ -79,6 +76,9 @@ function sanitize(obj) {
     const table  = TABLE[type];
     const sKey   = STORE[type];
     const idKey  = IDKEY[type];
+
+    // Ignore unknown types (e.g. legacy 'alertDays' calls)
+    if (!table || !sKey || !idKey) return;
 
     const oldStore = window._dmStore[sKey] || [];
 
@@ -100,13 +100,11 @@ function sanitize(obj) {
 
     (async () => {
       try {
-
-        // 🔥 ALTERAÇÃO 2 — remove user_id do delete
         if (toDelete.length > 0) {
-          await sb.from(table).delete().in(idKey, toDelete);
+          const { error: delErr } = await sb.from(table).delete().in(idKey, toDelete);
+          if (delErr) console.error('[DB-SAVE] delete error:', delErr);
         }
 
-        // 🔥 ALTERAÇÃO 3 — adiciona updated_at
         if (toUpsert.length > 0) {
           const rows = toUpsert.map(r => ({
             [idKey]: String(r[idKey]),
@@ -114,46 +112,195 @@ function sanitize(obj) {
             data: sanitize(r),
             updated_at: new Date().toISOString()
           }));
-
-          await sb.from(table).upsert(rows);
+          const { error: upsErr } = await sb.from(table).upsert(rows);
+          if (upsErr) console.error('[DB-SAVE] upsert error:', upsErr);
         }
 
         window._dmStore[sKey] = newData;
-
       } catch(e) {
         console.error('[DB-SAVE]', e);
       }
     })();
   };
 
-  // 🔥 ALTERAÇÃO 4 — delete sem user_id
-  window._dmFireDelete = function(type, id) {
+  // ================= SAVE ONE RECORD =================
+  window._dmFireSaveOne = function(type, id, data) {
     const TABLE  = { bls: 'bls', trk: 'containers', clients: 'clients' };
+    const STORE  = { bls: 'bls', trk: 'trk',        clients: 'clients' };
     const IDKEY  = { bls: 'id',  trk: 'container',   clients: 'id'     };
 
     const table = TABLE[type];
+    const sKey  = STORE[type];
     const idKey = IDKEY[type];
+    if (!table) return;
 
-    sb.from(table).delete().eq(idKey, String(id));
+    (async () => {
+      try {
+        const row = {
+          [idKey]: String(id),
+          user_id: uid,
+          data: sanitize(data),
+          updated_at: new Date().toISOString()
+        };
+        const { error } = await sb.from(table).upsert(row);
+        if (error) { console.error('[DB-SAVE-ONE]', error); return; }
+
+        // Update local store
+        const store = window._dmStore[sKey] || [];
+        const idx   = store.findIndex(r => String(r[idKey]) === String(id));
+        if (idx >= 0) store[idx] = data;
+        else store.push(data);
+      } catch(e) {
+        console.error('[DB-SAVE-ONE]', e);
+      }
+    })();
   };
 
-  // 🔥 ALTERAÇÃO 5 — restore global
+  // ================= DELETE ONE RECORD =================
+  window._dmFireDelete = function(type, id) {
+    const TABLE  = { bls: 'bls', trk: 'containers', clients: 'clients' };
+    const STORE  = { bls: 'bls', trk: 'trk',        clients: 'clients' };
+    const IDKEY  = { bls: 'id',  trk: 'container',   clients: 'id'     };
+
+    const table = TABLE[type];
+    const sKey  = STORE[type];
+    const idKey = IDKEY[type];
+    if (!table) return;
+
+    (async () => {
+      try {
+        const { error } = await sb.from(table).delete().eq(idKey, String(id));
+        if (error) { console.error('[DB-DELETE]', error); return; }
+
+        // Update local store
+        if (sKey && window._dmStore[sKey]) {
+          window._dmStore[sKey] = window._dmStore[sKey].filter(r => String(r[idKey]) !== String(id));
+        }
+      } catch(e) {
+        console.error('[DB-DELETE]', e);
+      }
+    })();
+  };
+
+  // ================= RESTORE (limpa tudo) =================
   window._dmFireRestore = async function(bkp) {
     await sb.from('bls').delete().neq('id', '');
     await sb.from('containers').delete().neq('container', '');
     await sb.from('clients').delete().neq('id', '');
   };
 
-  console.log('[DB] ✓ Modo colaborativo ativo (mínimas alterações)');
-// Aguarda o app estar pronto e inicializa a UI
-function waitForAppReady() {
-  if (window._dmOnReady) {
-    console.log('[DB] Chamando _dmOnReady...');
-    window._dmOnReady();
-  } else {
-    setTimeout(waitForAppReady, 50);
-  }
-}
+  // ================= AUDIT LOG =================
+  window._dmFireLog = async function(action, details) {
+    try {
+      const nome = window._dmUserData?.nome || window._dmUser?.email || uid;
+      const { error } = await sb.from('logs').insert({
+        user_id:       uid,
+        usuario_nome:  nome,
+        sessao_id:     window._dmSession,
+        acao:          action,
+        detalhe:       sanitize(details || {})
+      });
+      if (error) console.error('[DB-LOG]', error);
+    } catch(e) {
+      console.error('[DB-LOG]', e);
+    }
+  };
 
-waitForAppReady();
+  // ================= ALERT DAYS =================
+  window._dmSaveAlertDays = async function(days) {
+    try {
+      const { error } = await sb.from('settings').upsert({ user_id: uid, alert_days: days });
+      if (error) console.error('[DB-SETTINGS]', error);
+      else if (window._dmStore) window._dmStore.alertDays = days;
+    } catch(e) {
+      console.error('[DB-SETTINGS]', e);
+    }
+  };
+
+  // ================= USUARIOS =================
+  window._dmFireLoadUsuarios = async function() {
+    try {
+      const { data, error } = await sb.from('usuarios').select('*').order('nome');
+      if (error) { console.error('[DB] loadUsuarios:', error); return []; }
+      return (data || []).map(r => ({ ...r, uid: r.id }));
+    } catch(e) {
+      console.error('[DB] loadUsuarios:', e);
+      return [];
+    }
+  };
+
+  window._dmFireSaveUsuario = async function(userData) {
+    try {
+      if (!userData.uid && !userData.id) {
+        console.error('[DB] saveUsuario: id ausente');
+        return false;
+      }
+      const row = {
+        id:    userData.uid || userData.id,
+        nome:  userData.nome  || '',
+        email: userData.email || '',
+        cargo: userData.cargo || '',
+        admin: !!userData.admin,
+        ativo: userData.ativo !== false
+      };
+      const { error } = await sb.from('usuarios').upsert(row);
+      if (error) { console.error('[DB] saveUsuario:', error); return false; }
+      return true;
+    } catch(e) {
+      console.error('[DB] saveUsuario:', e);
+      return false;
+    }
+  };
+
+  // ================= LOGS DE AUDITORIA =================
+  window._dmFireLoadLogs = async function() {
+    try {
+      const { data, error } = await sb
+        .from('logs')
+        .select('*')
+        .order('criado_em', { ascending: false })
+        .limit(500);
+      if (error) { console.error('[DB] loadLogs:', error); return []; }
+      return data || [];
+    } catch(e) {
+      console.error('[DB] loadLogs:', e);
+      return [];
+    }
+  };
+
+  window._dmFireDeleteLogs = async function(ids) {
+    try {
+      if (!ids || !ids.length) return 0;
+      const { error } = await sb.from('logs').delete().in('id', ids);
+      if (error) { console.error('[DB] deleteLogs:', error); return 0; }
+      return ids.length;
+    } catch(e) {
+      console.error('[DB] deleteLogs:', e);
+      return 0;
+    }
+  };
+
+  // ================= LOGOUT =================
+  window._dmLogout = async function() {
+    try {
+      await sb.auth.signOut();
+    } catch(e) {
+      console.error('[DB] logout:', e);
+      window.location.href = 'index.html';
+    }
+  };
+
+  console.log('[DB] ✓ Supabase inicializado — usuário:', user.email);
+
+  // Aguarda o app estar pronto e inicializa a UI
+  function waitForAppReady() {
+    if (window._dmOnReady) {
+      console.log('[DB] Chamando _dmOnReady...');
+      window._dmOnReady();
+    } else {
+      setTimeout(waitForAppReady, 50);
+    }
+  }
+
+  waitForAppReady();
 })();
