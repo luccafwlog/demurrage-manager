@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot Completo do Projeto
 
-> **Última atualização:** 2026-03-30 | **Cache version:** `?v=107` | **Deploy-date meta:** `2026-03-30T18:00`
+> **Última atualização:** 2026-03-30 | **Cache version:** `?v=108` | **Deploy-date meta:** `2026-03-30T21:30`
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (branch: `main`)
 > **App em produção:** https://demurragemanager.web.app
 > **Firebase project:** `demurragemanager` (Firestore + Hosting + Auth)
@@ -40,17 +40,17 @@ Web app single-page de gestão de **Demurrage & Detention (D&D)** para a Transhi
 
 **Ordem de carregamento dos scripts em app.html:**
 ```html
-<script type="module" src="js/db.js?v=107"></script>   <!-- Firebase SDK, Auth, Firestore -->
-<script src="js/utils.js?v=107"></script>
-<script src="js/rates.js?v=107"></script>
-<script src="js/billing.js?v=107"></script>
-<script src="js/tracking.js?v=107"></script>
-<script src="js/clients.js?v=107"></script>
-<script src="js/users.js?v=107"></script>
-<script src="js/consolidated.js?v=107"></script>
-<script src="js/init.js?v=107"></script>               <!-- último: inicia tudo -->
+<script type="module" src="js/db.js?v=108"></script>   <!-- Firebase SDK, Auth, Firestore -->
+<script src="js/utils.js?v=108"></script>
+<script src="js/rates.js?v=108"></script>
+<script src="js/billing.js?v=108"></script>
+<script src="js/tracking.js?v=108"></script>
+<script src="js/clients.js?v=108"></script>
+<script src="js/users.js?v=108"></script>
+<script src="js/consolidated.js?v=108"></script>
+<script src="js/init.js?v=108"></script>               <!-- último: inicia tudo -->
 ```
-> **Regra de cache:** Para forçar recarga após deploy, incrementar `?v=NNN` em **todos os 9 scripts** em `app.html`. Versão atual: `107`.
+> **Regra de cache:** Para forçar recarga após deploy, incrementar `?v=NNN` em **todos os 9 scripts** em `app.html`. Versão atual: `108`.
 
 ---
 
@@ -142,8 +142,8 @@ const settingsDoc = doc(db, 'users', uid, 'settings', 'alerts');
 
 ### PTAX / ROE
 - `loadPTAX()` → busca cotação BCB (CotacaoDolarPeriodo, últimos 10 dias)
-- `applyPTAXGlobal()` → **só** atualiza `b.roe` se `b.roe !== ptaxState.roe` (evita writes desnecessários)
-- `effectiveROE(b)` → ROE manual (`b.roeManual=true`) > PTAX BCB
+- `applyPTAXGlobal()` → **0 writes** — apenas chama `renderList()`. ROE automático é sempre calculado via `effectiveROE()` em runtime; persistir `b.roe` no Firestore seria redundante e causava explosion de writes a cada sessão (FIX-QUOTA #K).
+- `effectiveROE(b)` → ROE manual (`b.roeManual=true`) > PTAX BCB (`ptaxState.roe`) — **único ponto de verdade para cálculos**
 - Badge `#ptax-badge` no topo da página
 
 ### Funções de Persistência em `billing.js`
@@ -164,7 +164,7 @@ function deleteBLById(id) // _dmFireDelete('bls', id) — 1 delete direto
 | `deleteBL(id)` | `deleteBLById(id)` | 1 delete |
 | `clearAllBLs()` | `save(bls)` | bulk |
 | `doImport()` | `save(bls)` | bulk (diff) |
-| `applyPTAXGlobal()` | `save(bls)` | N (apenas ROE mudou) |
+| `applyPTAXGlobal()` | *(sem write)* | 0 — apenas `renderList()` |
 
 ### Objeto BL (dados armazenados no Firestore)
 ```js
@@ -330,7 +330,7 @@ Cards KPI: Total BLs | A Faturar | Pagos | Receita | Vencidos | Faturados s/ Pag
 
 ```html
 <!-- Em app.html: -->
-<meta name="deploy-date" content="2026-03-30T18:00">
+<meta name="deploy-date" content="2026-03-30T21:30">
 <div class="version-badge" id="version-badge-el">v...</div>
 <script>
   // Script inline lê a meta e gera: v2026.03.30-18h00
@@ -364,7 +364,8 @@ Todas as correções aplicadas para eliminar writes desnecessários:
 | FIX-QUOTA #H | `init.js` | `trkSave` dentro de `_dmOnTrkUpdate` causava cascata | Flag `_trkSaving` anti-loop |
 | FIX-QUOTA #I | `tracking.js` | `trkSave` na IIFE antes da autenticação | Removido; filtro real no `_dmOnReady` |
 | FIX-QUOTA #J | `users.js` | N `deleteDoc` sequenciais na limpeza de logs | `writeBatch` em chunks de 400 |
-| FIX-QUOTA #1 | `billing.js` | `applyPTAXGlobal()` salvava todos BLs mesmo sem mudança de ROE | Condição `b.roe !== ptaxState.roe` |
+| FIX-QUOTA #K | `billing.js` | `applyPTAXGlobal()` chamava `save(bls)` em **toda sessão** ao carregar PTAX do BCB — explosion de writes | Removido `save(bls)`; `effectiveROE()` já usa `ptaxState.roe` em runtime — ROE automático não precisa ser persistido |
+| FIX-QUOTA #1 | `billing.js` | `renderDoc()` modificava `bls[blIdx].venc` via `findIndex` | Simplificado: `b.venc` é atribuído diretamente (b já é referência); sem side effects |
 | FIX-QUOTA #2 | `billing.js` | `renderDoc()` chamava `save(bls)` no loop de print | Removido; apenas memória |
 | FIX-QUOTA #4 | `init.js` | 3 migrações de startup = até 3 saves | `runStartupMigrations()`: 1 passagem, 1 save |
 
@@ -478,7 +479,7 @@ git push origin main
 ### Regras de cache após deploy
 - Após qualquer alteração em JS ou CSS → incrementar `?v=NNN` em **todos os 9 scripts** de `app.html`
 - Após deploy significativo → atualizar `<meta name="deploy-date" content="YYYY-MM-DDTHH:MM">`
-- Versão atual: `?v=107` | Deploy-date: `2026-03-30T18:00`
+- Versão atual: `?v=108` | Deploy-date: `2026-03-30T21:30`
 
 ---
 

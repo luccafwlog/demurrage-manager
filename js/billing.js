@@ -117,17 +117,13 @@ function applyPTAXManual() {
 }
 
 // Aplica ROE automático nos BLs sem ROE manual
+// FIX-QUOTA #K: ZERO writes aqui. effectiveROE(b) já retorna ptaxState.roe em runtime
+// para BLs sem roeManual — persistir b.roe no Firestore é totalmente redundante e causava
+// save(bls) em TODA sessão (explosion de writes logo após o PTAX do BCB carregar).
+// Apenas re-renderiza para refletir o novo ROE na tela.
 function applyPTAXGlobal() {
   if (!ptaxState.roe) return;
-  let changed = 0;
-  bls.forEach(b => {
-    // FIX-QUOTA: só marca como changed se o valor realmente diferir (evita writes redundantes)
-    if (!b.roeManual && b.roe !== ptaxState.roe) {
-      b.roe = ptaxState.roe;
-      changed++;
-    }
-  });
-  if (changed > 0) { save(bls); renderList(); }
+  renderList();
 }
 
 // ROE efetivo para um BL: manual > PTAX oficial do BCB
@@ -1364,15 +1360,10 @@ function renderDoc(b, type) {
     </tr>`).join('');
 
   const totalCols = isInv ? 9 : 8;
-  // Garante vencimento — apenas atribui em memória (backfill seguro no startup)
-  // FIX-QUOTA: save() removido daqui — renderDoc é chamado em loops (printAll)
-  // e causava N writes por operação. O _backfillVenc() no startup cuida da persistência.
-  if (!b.venc) {
-    b.venc = nextBusinessDay(null);
-    // Atualiza em memória apenas; sem write aqui para evitar amplificação de writes
-    const blIdx = bls.findIndex(x => x.id === b.id);
-    if (blIdx >= 0) bls[blIdx].venc = b.venc;
-  }
+  // Garante vencimento — apenas atribui no objeto local (b já é referência a bls[idx])
+  // FIX-QUOTA #K: sem write aqui. renderDoc é puro — só lê/renderiza.
+  // Startup migration garante venc em todos os BLs antes de qualquer renderização.
+  if (!b.venc) b.venc = nextBusinessDay(null);
   const vencRow = isInv ? `<tr class="inv-venc-row"><td colspan="${totalCols-1}" style="text-align:right;padding:7px 12px;font-weight:600">VENCIMENTO DIA</td><td class="inv-venc-highlight">${fmtDate(b.venc)||'—'}</td></tr>` : '';
 
   document.getElementById('doc-content').innerHTML = `
