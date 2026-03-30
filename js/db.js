@@ -69,13 +69,15 @@ function sanitize(obj) {
 
   // ================= SAVE (full array diff) =================
   window._dmFireSave = function(type, newData) {
-    const TABLE  = { bls: 'bls', trk: 'containers', clients: 'clients' };
-    const STORE  = { bls: 'bls', trk: 'trk',        clients: 'clients' };
-    const IDKEY  = { bls: 'id',  trk: 'container',   clients: 'id'     };
+    const TABLE    = { bls: 'bls', trk: 'containers', clients: 'clients' };
+    const STORE    = { bls: 'bls', trk: 'trk',        clients: 'clients' };
+    const IDKEY    = { bls: 'id',  trk: 'container',   clients: 'id'     };
+    const CONFLICT = { bls: 'user_id,id', trk: 'user_id,container', clients: 'user_id,id' };
 
-    const table  = TABLE[type];
-    const sKey   = STORE[type];
-    const idKey  = IDKEY[type];
+    const table    = TABLE[type];
+    const sKey     = STORE[type];
+    const idKey    = IDKEY[type];
+    const conflict = CONFLICT[type];
 
     // Ignore unknown types (e.g. legacy 'alertDays' calls)
     if (!table || !sKey || !idKey) return;
@@ -112,7 +114,7 @@ function sanitize(obj) {
             data: sanitize(r),
             updated_at: new Date().toISOString()
           }));
-          const { error: upsErr } = await sb.from(table).upsert(rows);
+          const { error: upsErr } = await sb.from(table).upsert(rows, { onConflict: conflict });
           if (upsErr) console.error('[DB-SAVE] upsert error:', upsErr);
         }
 
@@ -125,13 +127,15 @@ function sanitize(obj) {
 
   // ================= SAVE ONE RECORD =================
   window._dmFireSaveOne = function(type, id, data) {
-    const TABLE  = { bls: 'bls', trk: 'containers', clients: 'clients' };
-    const STORE  = { bls: 'bls', trk: 'trk',        clients: 'clients' };
-    const IDKEY  = { bls: 'id',  trk: 'container',   clients: 'id'     };
+    const TABLE    = { bls: 'bls', trk: 'containers', clients: 'clients' };
+    const STORE    = { bls: 'bls', trk: 'trk',        clients: 'clients' };
+    const IDKEY    = { bls: 'id',  trk: 'container',   clients: 'id'     };
+    const CONFLICT = { bls: 'user_id,id', trk: 'user_id,container', clients: 'user_id,id' };
 
-    const table = TABLE[type];
-    const sKey  = STORE[type];
-    const idKey = IDKEY[type];
+    const table    = TABLE[type];
+    const sKey     = STORE[type];
+    const idKey    = IDKEY[type];
+    const conflict = CONFLICT[type];
     if (!table) return;
 
     (async () => {
@@ -142,7 +146,7 @@ function sanitize(obj) {
           data: sanitize(data),
           updated_at: new Date().toISOString()
         };
-        const { error } = await sb.from(table).upsert(row);
+        const { error } = await sb.from(table).upsert(row, { onConflict: conflict });
         if (error) { console.error('[DB-SAVE-ONE]', error); return; }
 
         // Update local store
