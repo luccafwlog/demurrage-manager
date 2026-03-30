@@ -454,34 +454,31 @@ body {
   </div>
 </div>
 
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
-  import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, sendPasswordResetEmail }
-    from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+  // ── CONFIGURAÇÃO SUPABASE — mesmos valores de js/db.js ────────────────────
+  const SUPABASE_URL  = 'COLE_AQUI_A_PROJECT_URL';
+  const SUPABASE_ANON = 'COLE_AQUI_A_ANON_KEY';
 
-  // PREENCHA COM AS CREDENCIAIS DO SEU PROJETO:
-  const firebaseConfig = {
-    apiKey:            "AIzaSyBWXLvUspGo1rRDSWYJ3rGMRUOGUH6bARI",
-    authDomain:        "demurragemanager.firebaseapp.com",
-    projectId:         "demurragemanager",
-    storageBucket:     "demurragemanager.firebasestorage.app",
-    messagingSenderId: "951449004275",
-    appId:             "1:951449004275:web:c01cc83d02ba87d9bcaf86"
-  };
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-  const app  = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-
-  onAuthStateChanged(auth, user => { if (user) window.location.href = 'app.html'; });
+  // Redireciona se já logado
+  sb.auth.getSession().then(({ data: { session } }) => {
+    if (session) window.location.href = 'app.html';
+  });
 
   const msgs = {
-    'auth/invalid-credential':     'E-mail ou senha incorretos.',
-    'auth/user-not-found':         'Usuário não encontrado.',
-    'auth/wrong-password':         'Senha incorreta.',
-    'auth/too-many-requests':      'Muitas tentativas. Aguarde alguns minutos.',
-    'auth/user-disabled':          'Esta conta foi desativada.',
-    'auth/network-request-failed': 'Erro de conexão. Verifique a internet.',
+    'Invalid login credentials': 'E-mail ou senha incorretos.',
+    'Email not confirmed':        'E-mail não confirmado. Verifique sua caixa de entrada.',
+    'Too many requests':          'Muitas tentativas. Aguarde alguns minutos.',
+    'User not found':             'Usuário não encontrado.',
   };
+
+  function _errMsg(e) {
+    const msg = e?.message || String(e);
+    for (const [k, v] of Object.entries(msgs)) { if (msg.includes(k)) return v; }
+    return msg;
+  }
 
   window.doLogin = async function() {
     const email = document.getElementById('email').value.trim();
@@ -493,14 +490,14 @@ body {
     if (!email || !pw) { err.textContent = 'Preencha e-mail e senha.'; err.classList.add('visible'); return; }
     btn.disabled = true;
     btn.innerHTML = '<span class="btn-spinner"></span>Verificando...';
-    try {
-      await signInWithEmailAndPassword(auth, email, pw);
-      window.location.href = 'app.html';
-    } catch (e) {
-      err.textContent = msgs[e.code] || e.message;
+    const { error } = await sb.auth.signInWithPassword({ email, password: pw });
+    if (error) {
+      err.textContent = _errMsg(error);
       err.classList.add('visible');
       btn.disabled = false;
       btn.textContent = 'Entrar no sistema';
+    } else {
+      window.location.href = 'app.html';
     }
   };
 
@@ -510,12 +507,13 @@ body {
     const ok    = document.getElementById('reset-success');
     err.classList.remove('visible'); ok.classList.remove('visible');
     if (!email) { err.textContent = 'Digite seu e-mail acima.'; err.classList.add('visible'); return; }
-    try { await sendPasswordResetEmail(auth, email); ok.classList.add('visible'); }
-    catch (e) { err.textContent = e.message; err.classList.add('visible'); }
+    const { error } = await sb.auth.resetPasswordForEmail(email);
+    if (error) { err.textContent = _errMsg(error); err.classList.add('visible'); }
+    else        { ok.classList.add('visible'); }
   };
 
   document.getElementById('password').addEventListener('keydown', e => { if (e.key === 'Enter') window.doLogin(); });
-  document.getElementById('email').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('password').focus(); });
+  document.getElementById('email').addEventListener('keydown',    e => { if (e.key === 'Enter') document.getElementById('password').focus(); });
 </script>
 </body>
 </html>

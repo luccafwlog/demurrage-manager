@@ -274,30 +274,21 @@ function confirmClearOldLogs() {
     `Você está prestes a excluir permanentemente todos os logs anteriores a ${dias} dias. Estes registros de auditoria não poderão ser recuperados.`,
     toDelete.length,
     () => {
-      // FIX-QUOTA #J: deleta logs em batches de 400 (limite Firestore = 500)
-      // Antes: N deletes sequenciais. Agora: ceil(N/400) batch commits.
-      if (window._dmDb && window._dmFireLog) {
+      if (window._dmFireDeleteLogs) {
         (async () => {
-          const { writeBatch, doc: docFn } = await import("https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js");
-          let deleted = 0;
-          const CHUNK = 400;
-          const docsToDelete = toDelete.filter(l => l._docId);
-          for (let i = 0; i < docsToDelete.length; i += CHUNK) {
-            const batch = writeBatch(window._dmDb);
-            docsToDelete.slice(i, i + CHUNK).forEach(l => {
-              batch.delete(docFn(window._dmDb, 'logs', l._docId));
-            });
-            try {
-              await batch.commit();
-              deleted += Math.min(CHUNK, docsToDelete.length - i);
-            } catch(e) { console.error('[LOGS-DELETE]', e); }
+          try {
+            const ids = toDelete.filter(l => l._docId).map(l => l._docId);
+            const deleted = await window._dmFireDeleteLogs(ids);
+            toast(`✓ ${deleted} log(s) excluído(s) permanentemente.`, 'success');
+            logAuditAction('limpeza_logs', { diasCutoff: dias, deletados: deleted });
+            await renderUsers();
+          } catch(e) {
+            console.error('[LOGS-DELETE]', e);
+            toast('Erro ao excluir logs: ' + (e.message || e), 'error');
           }
-          toast(`✓ ${deleted} log(s) excluído(s) permanentemente.`, 'success');
-          logAuditAction('limpeza_logs', { diasCutoff: dias, deletados: deleted });
-          await renderUsers();
         })();
       } else {
-        toast('Firebase não disponível para exclusão.', 'error');
+        toast('Função de exclusão não disponível.', 'error');
       }
     }
   );
