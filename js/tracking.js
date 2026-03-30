@@ -19,6 +19,9 @@ function trkSave(d) {
   if (window._dmFireSave) window._dmFireSave('trk', d);
   else if (window._dmStore) window._dmStore.trk = d;
 }
+// FIX-QUOTA #I: removido trkSave do IIFE de inicialização — era perigoso pois
+// rodava no parse do módulo (antes da auth). O filtro de containers devolvidos
+// no free time é aplicado em _dmOnReady (init.js) após dados carregarem.
 let trkData = (() => {
   const raw = trkLoad();
   const clean = raw.filter(r => {
@@ -29,7 +32,7 @@ let trkData = (() => {
     }
     return true;
   });
-  if (clean.length < raw.length) trkSave(clean);
+  // NÃO chama trkSave aqui — store vazio neste momento; filtro real no _dmOnReady
   return clean;
 })();
 let trkImportRaw = null;
@@ -509,6 +512,8 @@ function clearTrkFilters() {
 function manualMigrate() {
   const migrated = checkAndMigrateBLs();
   if (migrated > 0) {
+    // FIX: checkAndMigrateBLs não faz save — precisamos persistir os BLs migrados
+    save(bls);
     renderTracking();
     renderList();
     toast(`${migrated} BL(s) migrado(s) para Faturamento com sucesso!`, 'success');

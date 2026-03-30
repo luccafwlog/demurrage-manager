@@ -1570,7 +1570,10 @@ window._dmOnReady = function() {
     renderDashboard();
     updateAlertBadge();
   };
+  // FIX-QUOTA #H: flag anti-cascata para evitar loop onSnapshot → trkSave → onSnapshot
+  var _trkSaving = false;
   window._dmOnTrkUpdate = function() {
+    if (_trkSaving) return; // Ignora callbacks causados pelo nosso próprio save
     // FIX #7: aplica filtro de containers devolvidos dentro do free time
     // (mesmo filtro do carregamento inicial em _dmOnReady)
     var raw7 = trkLoad();
@@ -1582,7 +1585,11 @@ window._dmOnReady = function() {
       }
       return true;
     });
-    if (clean7.length < raw7.length) trkSave(clean7);
+    if (clean7.length < raw7.length) {
+      _trkSaving = true;
+      trkSave(clean7);
+      setTimeout(function() { _trkSaving = false; }, 2000);
+    }
     trkData = clean7;
     renderTracking();
     updateAlertBadge();

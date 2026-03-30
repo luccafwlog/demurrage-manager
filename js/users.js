@@ -274,15 +274,23 @@ function confirmClearOldLogs() {
     `Você está prestes a excluir permanentemente todos os logs anteriores a ${dias} dias. Estes registros de auditoria não poderão ser recuperados.`,
     toDelete.length,
     () => {
-      // Delete via Firebase
+      // FIX-QUOTA #J: deleta logs em batches de 400 (limite Firestore = 500)
+      // Antes: N deletes sequenciais. Agora: ceil(N/400) batch commits.
       if (window._dmDb && window._dmFireLog) {
         (async () => {
-          const { deleteDoc, doc: docFn } = await import("https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js");
+          const { writeBatch, doc: docFn } = await import("https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js");
           let deleted = 0;
-          for (const l of toDelete) {
-            if (l._docId) {
-              try { await deleteDoc(docFn(window._dmDb, 'logs', l._docId)); deleted++; } catch(e) {}
-            }
+          const CHUNK = 400;
+          const docsToDelete = toDelete.filter(l => l._docId);
+          for (let i = 0; i < docsToDelete.length; i += CHUNK) {
+            const batch = writeBatch(window._dmDb);
+            docsToDelete.slice(i, i + CHUNK).forEach(l => {
+              batch.delete(docFn(window._dmDb, 'logs', l._docId));
+            });
+            try {
+              await batch.commit();
+              deleted += Math.min(CHUNK, docsToDelete.length - i);
+            } catch(e) { console.error('[LOGS-DELETE]', e); }
           }
           toast(`✓ ${deleted} log(s) excluído(s) permanentemente.`, 'success');
           logAuditAction('limpeza_logs', { diasCutoff: dias, deletados: deleted });

@@ -149,6 +149,11 @@ function save(b) {
   if (window._dmFireSave) window._dmFireSave('bls', b);
   else if (window._dmStore) window._dmStore.bls = b; // fallback se Firebase não inicializou
 }
+// FIX-QUOTA #G: salva apenas 1 BL (1 write, sem diff de toda a coleção)
+function saveOne(bl) {
+  if (window._dmFireSaveOne) window._dmFireSaveOne('bls', bl.id, bl);
+  else save(bls); // fallback para save completo
+}
 function deleteBLById(id) {
   if (window._dmFireDelete) window._dmFireDelete('bls', id);
 }
@@ -745,7 +750,8 @@ function saveBL() {
     logAuditAction('criacao_bl', {blId: obj.id, bl: obj.bl, hasDiscount: !!obj.discount});
     toast('BL criado!','success');
   }
-  save(bls);
+  // FIX-QUOTA #G: salva apenas o BL criado/editado (1 write)
+  saveOne(obj);
   // Auto-register client in client registry if CNPJ provided
   if (obj.cnpj) autoRegisterClient(obj.cnpj, obj.client, obj.email);
   closeModal('modal-bl'); renderList();
@@ -959,7 +965,8 @@ function togglePaid(id) {
     logAuditAction('marcacao_pagamento', {blId: id, bl: b.bl, total: total});
     toast('Fatura marcada como paga! Valores congelados. ✔', 'success');
   }
-  save(bls);
+  // FIX-QUOTA #G: apenas 1 write (documento modificado) em vez de diff de toda a coleção
+  saveOne(b);
   renderList();
 }
 
@@ -1078,7 +1085,8 @@ function toggleBilled(id) {
     logAuditAction('marcacao_fatura', {blId: id, bl: b.bl, total: total});
     toast('Fatura marcada como Faturada! Valores congelados. 📄', 'success');
   }
-  save(bls);
+  // FIX-QUOTA #G: apenas 1 write (documento modificado)
+  saveOne(b);
   renderList();
 }
 
@@ -1087,7 +1095,8 @@ function deleteBL(id) {
   const bl = bls.find(x=>x.id===id);
   logAuditAction('exclusao_bl', {blId: id, bl: bl?.bl});
   bls = bls.filter(x=>x.id!==id);
-  save(bls);
+  // FIX-QUOTA #G: deleta apenas o doc específico (1 delete) em vez de diff de toda a coleção
+  deleteBLById(id);
   renderList();
   toast('BL excluído.');
 }

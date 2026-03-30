@@ -238,6 +238,35 @@ onAuthStateChanged(auth, (user) => {
       });
   };
 
+  // ── Salvar doc único (1 write em vez de diff completo) ───────────────────
+  // FIX-QUOTA #G: para operações em 1 único documento (togglePaid, saveBL, etc.)
+  // evita o overhead de JSON.stringify de TODOS os docs para diff.
+  window._dmFireSaveOne = function(type, id, data) {
+    const colMap   = { bls: 'bls', trk: 'containers', clients: 'clients' };
+    const storeKey = { bls: 'bls', trk: 'trk', clients: 'clients' }[type];
+    const idKey    = { bls: 'id',  trk: 'container', clients: 'id' }[type];
+    const colName  = colMap[type] || type;
+
+    const sanitized = sanitize(data);
+
+    // Optimistic update: atualiza store local imediatamente
+    if (window._dmStore && storeKey && idKey) {
+      const arr = window._dmStore[storeKey] || [];
+      const idx = arr.findIndex(r => String(r[idKey]) === String(id));
+      if (idx >= 0) arr[idx] = sanitized;
+      else arr.push(sanitized);
+    }
+
+    setDoc(uDoc(colName, id), sanitized, { merge: true })
+      .then(() => {
+        console.log(`[DB-SAVE-ONE] ✓ ${type}/${id} salvo (1 write)`);
+      })
+      .catch(e => {
+        console.error(`[DB-SAVE-ONE] ✗ ${type}/${id}:`, e);
+        if (window.toast) window.toast('Erro ao salvar: ' + (e.code || e.message), 'error');
+      });
+  };
+
   // ── Deletar doc único ────────────────────────────────────────────────────
   // FIX #10: atualiza o store in-memory imediatamente após deleteDoc para que a UI
   // não exiba o registro como existente enquanto o onSnapshot não chega.
