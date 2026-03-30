@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot Completo do Projeto
 
-> **Última atualização:** 2026-03-30 (v2.3) | **Cache version:** `?v=110` | **Deploy-date meta:** `2026-03-30`
+> **Última atualização:** 2026-03-30 (v2.4) | **Cache version:** `?v=110` | **Deploy-date meta:** `2026-03-30`
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (branch: `main`)
 > **App em produção:** https://demurragemanager.web.app
 
@@ -296,6 +296,13 @@ _CONFLICT = {
 
 ## 🐛 Histórico de Correções
 
+### 2026-03-30 — Fix merge de emails na importação (v2.4)
+
+| # | Bug | Causa Raiz | Fix |
+|---|-----|------------|-----|
+| I | Importar planilha com CNPJ existente sobrescrevia emails anteriores | `processClientRows` usava `existing.emails = emails` — atribuição direta apagava os e-mails já cadastrados | Substituído por Set-based merge: emails existentes + novos sem duplicatas |
+| J | `db.js` com composite-key fix não chegava ao browser | `app.html` mantinha `?v=109` em todos os `<script src>` — browser servia versão em cache | Bump para `?v=110` em todos os 9 scripts |
+
 ### 2026-03-30 — Fix referência compartilhada no store (v2.3)
 
 | # | Bug | Causa Raiz | Fix |
@@ -332,7 +339,7 @@ _CONFLICT = {
 ## 🔧 Manutenção e Configuração
 
 ### Atualizar versão de cache
-Em `app.html`, alterar `?v=110` para o próximo número em todos os `<script src>`.
+Em `app.html`, alterar `?v=110` para o próximo número em todos os `<script src>` (atualmente 9 tags).
 
 ### Adicionar novo usuário
 1. Criar conta no Supabase Auth (Dashboard → Authentication → Users)
