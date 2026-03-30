@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot Completo do Projeto
 
-> **Última atualização:** 2026-03-28 | **Cache version:** `?v=106` | **Deploy-date meta:** `2026-03-28T15:30`
+> **Última atualização:** 2026-03-30 | **Cache version:** `?v=107` | **Deploy-date meta:** `2026-03-30T18:00`
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (branch: `main`)
 > **App em produção:** https://demurragemanager.web.app
 > **Firebase project:** `demurragemanager` (Firestore + Hosting + Auth)
@@ -40,17 +40,17 @@ Web app single-page de gestão de **Demurrage & Detention (D&D)** para a Transhi
 
 **Ordem de carregamento dos scripts em app.html:**
 ```html
-<script type="module" src="js/db.js?v=106"></script>   <!-- Firebase SDK, Auth, Firestore -->
-<script src="js/utils.js?v=106"></script>
-<script src="js/rates.js?v=106"></script>
-<script src="js/billing.js?v=106"></script>
-<script src="js/tracking.js?v=106"></script>
-<script src="js/clients.js?v=106"></script>
-<script src="js/users.js?v=106"></script>
-<script src="js/consolidated.js?v=106"></script>
-<script src="js/init.js?v=106"></script>               <!-- último: inicia tudo -->
+<script type="module" src="js/db.js?v=107"></script>   <!-- Firebase SDK, Auth, Firestore -->
+<script src="js/utils.js?v=107"></script>
+<script src="js/rates.js?v=107"></script>
+<script src="js/billing.js?v=107"></script>
+<script src="js/tracking.js?v=107"></script>
+<script src="js/clients.js?v=107"></script>
+<script src="js/users.js?v=107"></script>
+<script src="js/consolidated.js?v=107"></script>
+<script src="js/init.js?v=107"></script>               <!-- último: inicia tudo -->
 ```
-> **Regra de cache:** Para forçar recarga após deploy, incrementar `?v=NNN` em **todos os 9 scripts** em `app.html`. Versão atual: `106`.
+> **Regra de cache:** Para forçar recarga após deploy, incrementar `?v=NNN` em **todos os 9 scripts** em `app.html`. Versão atual: `107`.
 
 ---
 
@@ -99,7 +99,6 @@ users/{uid}/containers/{ctr}     → Containers de tracking (chave = número do 
 users/{uid}/clients/{clientId}   → Cadastro de clientes
 users/{uid}/settings/alerts      → { days: N } — dias críticos para alerta D&D
 users/{uid}/logs/{logId}         → Audit log de ações do usuário
-users/{uid}/users/{userDocId}    → Usuários do sistema (apenas admin)
 config/rates                     → Taxas D&D customizadas (compartilhado)
 ```
 
@@ -112,7 +111,7 @@ const settingsDoc = doc(db, 'users', uid, 'settings', 'alerts');
 
 ### Auth Flow
 1. `onAuthStateChanged` → não autenticado → redireciona para `index.html`
-2. Lê `users/{uid}` → `admin: bool`, `active: bool`, `nome`
+2. Lê `usuarios/{uid}` → `admin: bool`, `active: bool`, `nome`
 3. Se `active === false` → alert e logout
 4. `window._dmIsAdmin = !!data.admin`
 5. Exibe `tab-settings` para todos autenticados
@@ -122,7 +121,8 @@ const settingsDoc = doc(db, 'users', uid, 'settings', 'alerts');
 | Global | Descrição |
 |--------|-----------|
 | `window._dmStore` | `{bls:[], trk:[], clients:[], alertDays:5}` — cache in-memory |
-| `window._dmFireSave(type, data)` | Salva com diff — só escreve docs que mudaram |
+| `window._dmFireSave(type, data)` | Salva array com diff — só escreve docs que mudaram |
+| `window._dmFireSaveOne(type, id, data)` | Salva **1 documento** com `setDoc+merge` (1 write, sem diff) |
 | `window._dmFireDelete(type, id)` | Remove doc com rollback no store |
 | `window._dmIsAdmin` | bool — controle de acesso |
 | `window._dmUser` | FirebaseUser atual |
@@ -132,8 +132,9 @@ const settingsDoc = doc(db, 'users', uid, 'settings', 'alerts');
 | `window._dmOnTrkUpdate` | Callback reativo quando Firestore atualiza containers |
 | `window._dmOnClientsUpdate` | Callback reativo quando Firestore atualiza clientes |
 
-### Sistema de Diff (evita writes redundantes)
-`_dmFireSave` compara `JSON.stringify(sanitize(old))` vs `JSON.stringify(sanitize(new))` por documento. Só escreve docs que realmente mudaram. Bail-out se `setCount === 0 && deleteCount === 0`.
+### Sistema de Persistência (dois modos)
+- **`_dmFireSave(type, array)`** → batch com diff JSON por doc; apenas docs alterados são escritos. Usar em operações bulk (import, clear, PTAX global, migrações).
+- **`_dmFireSaveOne(type, id, data)`** → `setDoc + merge:true` em 1 doc. Usar para operações em entidade única (criar, editar, togglePaid, toggleBilled). 1 write garantido.
 
 ---
 
@@ -144,6 +145,26 @@ const settingsDoc = doc(db, 'users', uid, 'settings', 'alerts');
 - `applyPTAXGlobal()` → **só** atualiza `b.roe` se `b.roe !== ptaxState.roe` (evita writes desnecessários)
 - `effectiveROE(b)` → ROE manual (`b.roeManual=true`) > PTAX BCB
 - Badge `#ptax-badge` no topo da página
+
+### Funções de Persistência em `billing.js`
+```js
+function save(b)       // bulk: _dmFireSave('bls', array) — para operações em múltiplos BLs
+function saveOne(bl)   // single: _dmFireSaveOne('bls', bl.id, bl) — para 1 BL (1 write)
+function deleteBLById(id) // _dmFireDelete('bls', id) — 1 delete direto
+```
+
+**Regra de ouro:** Se apenas 1 BL mudou → usar `saveOne(bl)`. Se múltiplos BLs mudam → usar `save(bls)`.
+
+### Mapa de saves em `billing.js`
+| Função | Método de save | Writes |
+|--------|---------------|--------|
+| `saveBL()` | `saveOne(obj)` | 1 |
+| `togglePaid(id)` | `saveOne(b)` | 1 |
+| `toggleBilled(id)` | `saveOne(b)` | 1 |
+| `deleteBL(id)` | `deleteBLById(id)` | 1 delete |
+| `clearAllBLs()` | `save(bls)` | bulk |
+| `doImport()` | `save(bls)` | bulk (diff) |
+| `applyPTAXGlobal()` | `save(bls)` | N (apenas ROE mudou) |
 
 ### Objeto BL (dados armazenados no Firestore)
 ```js
@@ -193,27 +214,6 @@ const settingsDoc = doc(db, 'users', uid, 'settings', 'alerts');
 - **Filtros extras:** Com Desconto | Em Disputa
 - Selecionar "Todos" → **reseta automaticamente** Com Desconto e Em Disputa
 
-### BL Card — Botões de Ação (design atual)
-```html
-<div class="bl-actions">
-  <div class="bl-action-group bl-action-status">
-    <button class="act-btn unpaid|paid">○/✔ Pago</button>
-    <button class="act-btn unbilled|billed">○/📄 Faturado</button>
-  </div>
-  <div class="bl-action-divider"></div>
-  <div class="bl-action-group bl-action-docs">
-    <button class="act-btn invoice">📄 Fatura</button>
-    <button class="act-btn receipt">🧾 Recibo</button>
-  </div>
-  <div class="bl-action-divider"></div>
-  <div class="bl-action-group bl-action-meta">
-    <button class="act-btn edit">✏️</button>
-    <button class="act-btn del">🗑️</button>
-  </div>
-</div>
-```
-Classes CSS: `unpaid/paid` (verde gradiente quando ativo), `unbilled/billed` (âmbar gradiente), `invoice` (azul outline), `receipt` (cinza outline), `edit`/`del` (ícone-only, ghost).
-
 ### Documentos (Fatura / Recibo)
 - `viewDoc(id, 'invoice'|'receipt')` → `renderDoc(b, type)` → preenche `#doc-content`
 - `renderDoc()` **NÃO chama `save()`** — apenas atualiza `b.venc` em memória se vazio
@@ -237,10 +237,21 @@ Classes CSS: `unpaid/paid` (verde gradiente quando ativo), `unbilled/billed` (â
   freeTime,    // dias free time por BL
   type,        // tipo de container
   cnpj,        // CNPJ do importador
-  status,      // dd_open | alert | ok | returned
   useDays,     // dias usados
 }
 ```
+
+### Inicialização de `trkData`
+```js
+// tracking.js — IIFE de inicialização (sem trkSave aqui — store vazio neste momento)
+let trkData = (() => {
+  const raw = trkLoad();
+  const clean = raw.filter(r => { /* filtra devolvidos no free time */ });
+  // NÃO chama trkSave — filtro real é feito em _dmOnReady (init.js)
+  return clean;
+})();
+```
+> **Importante:** O `trkSave` foi **removido** do IIFE de tracking.js. O filtro com escrita acontece apenas em `_dmOnReady` após autenticação completa.
 
 ### Dual View (Container / BL)
 - `window._trkView`: `'container'` | `'bl'` (padrão: `'container'`)
@@ -248,12 +259,17 @@ Classes CSS: `unpaid/paid` (verde gradiente quando ativo), `unbilled/billed` (â
 - `_updateTrkTableHeader()` (em `init.js`): troca `#trk-thead` e `#trk-colgroup` dinamicamente
   - **Container:** 15 colunas com filtros por linha
   - **BL:** 8 colunas — BL | CNEE | NAVIO | ROTA | CTRS | DESCARGA | DEADLINE | STATUS
-- `renderTracking()` chama `_updateTrkTableHeader()` no início
 - `window._trkExpanded`: Set de BL keys expandidas na visão BL
-- Linhas de BL têm cor por urgência: vermelho (D&D aberto), amarelo (alerta), azul (ok)
 
 ### Migração Automática para Faturamento
-`checkAndMigrateBLs()` — quando todos containers de um BL são devolvidos, cria BL automaticamente em Faturamento.
+`checkAndMigrateBLs()` — quando todos containers de um BL são devolvidos com D&D, cria BL automaticamente em Faturamento. **Não faz `save(bls)` internamente** — o chamador é responsável pelo save.
+
+### Mapa de saves em `tracking.js`
+| Função | Save | Writes |
+|--------|------|--------|
+| `doTrkImport()` | `trkSave(trkData)` + `save(bls)` se houve migração | bulk |
+| `manualMigrate()` | `save(bls)` após `checkAndMigrateBLs()` | bulk (diff) |
+| `clearTracking()` | `trkSave([])` | bulk |
 
 ---
 
@@ -280,8 +296,7 @@ Integrado como sub-aba `cfg-users` em Configurações (não é tab standalone).
 - Tabela `#usr-body` com colunas: NOME, E-MAIL, CARGO, ADMIN, ATIVO, CRIADO EM, AÇÕES
 - Log `#log-body` com filtros: usuário, tipo de ação, período
 - `exportLogsCSV()` → baixa logs em CSV
-- `confirmClearOldLogs()` → limpa logs com mais de 90 dias
-- Sub-aba `cfg-users` oculta para não-admins via `initCfgModule()`
+- `confirmClearOldLogs()` → limpa logs com mais de 90 dias usando **writeBatch** (chunks de 400)
 
 ---
 
@@ -290,7 +305,7 @@ Integrado como sub-aba `cfg-users` em Configurações (não é tab standalone).
 Registry de CNPJs com nomes e e-mails.
 
 - `upsertClient(cnpj, name, emails)` → cria ou atualiza cliente
-- `syncBLEmails(cnpjNorm, emails)` → propaga e-mails para BLs com aquele CNPJ
+- `syncBLEmails(cnpjNorm, emails)` → propaga e-mails para BLs com aquele CNPJ → `save(bls)` (bulk)
 - `autoRegisterClient(cnpj, name, email)` → registro automático ao salvar BL
 - Importação por CSV com template disponível
 - `cliSave(d)` → `window._dmFireSave('clients', d)`
@@ -315,10 +330,10 @@ Cards KPI: Total BLs | A Faturar | Pagos | Receita | Vencidos | Faturados s/ Pag
 
 ```html
 <!-- Em app.html: -->
-<meta name="deploy-date" content="2026-03-28T15:30">
+<meta name="deploy-date" content="2026-03-30T18:00">
 <div class="version-badge" id="version-badge-el">v...</div>
 <script>
-  // Script inline lê a meta e gera: v2026.03.28-15h30
+  // Script inline lê a meta e gera: v2026.03.30-18h00
   var meta = document.querySelector('meta[name="deploy-date"]');
   if (meta) {
     var d = new Date(meta.getAttribute('content'));
@@ -329,25 +344,35 @@ Cards KPI: Total BLs | A Faturar | Pagos | Receita | Vencidos | Faturados s/ Pag
   }
 </script>
 ```
-**Para atualizar versão:** mudar `content` da meta tag + incrementar `?v=NNN` nos scripts.
+**Para atualizar versão:** mudar `content` da meta tag + incrementar `?v=NNN` nos 9 scripts.
 
 ---
 
-## 12. Sistema de Escrita Firestore (FIX-QUOTA)
+## 12. Sistema de Escrita Firestore (FIX-QUOTA) — Estado Atual
 
-Correções aplicadas para eliminar writes desnecessários:
+Todas as correções aplicadas para eliminar writes desnecessários:
 
 | Fix | Arquivo | Problema | Solução |
 |-----|---------|----------|---------|
-| FIX-QUOTA #1 | `billing.js` | `applyPTAXGlobal()` salvava todos BLs mesmo sem mudança de ROE | Condição `b.roe !== ptaxState.roe` antes de `changed++` |
-| FIX-QUOTA #2 | `billing.js` | `renderDoc()` chamava `save(bls)` dentro de loop de print | Removido `save()` de `renderDoc()` — só atualiza memória |
-| FIX-QUOTA #4 | `init.js` | 3 migrações de startup = até 3 saves independentes | `runStartupMigrations()` — 1 passagem, 1 save |
 | FIX-QUOTA #A | `db.js` | Reescrevia todos docs mesmo sem mudança | Diff JSON por documento no batch |
 | FIX-QUOTA #B | `db.js` | Enviava batch vazio | Bail-out se `setCount === 0 && deleteCount === 0` |
+| FIX-QUOTA #C | `db.js` | Sessão criava 1 write no login | Session tracking via localStorage |
+| FIX-QUOTA #D | `db.js` | getDocs(logs, limit 1000) | Limite reduzido para 200 |
+| FIX-QUOTA #E | `init.js` | Log de auditoria em toda ação | Apenas ações críticas vão ao Firestore |
 | FIX-QUOTA #F | `tracking.js` | 2 saves separados no import | Save unificado pós-migração |
+| FIX-QUOTA #G | `db.js`+`billing.js` | `save(bls)` para 1 BL = diff de toda a coleção | `_dmFireSaveOne` + `saveOne(bl)`: 1 `setDoc` direto |
+| FIX-QUOTA #H | `init.js` | `trkSave` dentro de `_dmOnTrkUpdate` causava cascata | Flag `_trkSaving` anti-loop |
+| FIX-QUOTA #I | `tracking.js` | `trkSave` na IIFE antes da autenticação | Removido; filtro real no `_dmOnReady` |
+| FIX-QUOTA #J | `users.js` | N `deleteDoc` sequenciais na limpeza de logs | `writeBatch` em chunks de 400 |
+| FIX-QUOTA #1 | `billing.js` | `applyPTAXGlobal()` salvava todos BLs mesmo sem mudança de ROE | Condição `b.roe !== ptaxState.roe` |
+| FIX-QUOTA #2 | `billing.js` | `renderDoc()` chamava `save(bls)` no loop de print | Removido; apenas memória |
+| FIX-QUOTA #4 | `init.js` | 3 migrações de startup = até 3 saves | `runStartupMigrations()`: 1 passagem, 1 save |
 
-**Fluxo correto de saves:**
-`save(bls)` → `_dmFireSave('bls', bls)` → diff → `batch.commit()` → `_dmStore.bls = newData` → onSnapshot dispara → `_dmOnBLsUpdate` → `bls = load()` (sem writes adicionais)
+**Fluxo correto para 1 BL:**
+`saveOne(bl)` → `_dmFireSaveOne('bls', bl.id, bl)` → `setDoc(merge:true)` → onSnapshot → `_dmOnBLsUpdate` → `bls = load()` (0 writes adicionais)
+
+**Fluxo correto para bulk:**
+`save(bls)` → `_dmFireSave('bls', bls)` → diff → `batch.commit()` com apenas docs alterados → onSnapshot
 
 ---
 
@@ -365,11 +390,20 @@ init.js: _dmOnReady()
   3. trkLoad + filter clean            # trkSave apenas se containers foram removidos
   4. clients = cliLoad()
   5. renderList() + renderTracking() + renderDashboard()
-  6. loadPTAX()                        # applyPTAXGlobal() → save só se roe mudou
+  6. loadPTAX()                        # applyPTAXGlobal() → save(bls) só se roe mudou
   7. loadCfgRatesFromFirestore()
   8. switchModule('dashboard')
-  9. Registra callbacks reativos: _dmOnBLsUpdate, _dmOnTrkUpdate, _dmOnClientsUpdate
+  9. Registra callbacks reativos:
+     ├── _dmOnBLsUpdate  → bls = load(); renderList(); renderDashboard()
+     ├── _dmOnTrkUpdate  → filtro clean com _trkSaving guard; renderTracking()
+     └── _dmOnClientsUpdate → clients = cliLoad(); renderClients()
 ```
+
+**Writes esperados por login (após todas as correções):**
+- Migrações já feitas → **0 writes**
+- PTAX sem mudança → **0 writes**
+- Filtro containers sem devolvidos no free time → **0 writes**
+- Caso pior (todas as migrações + PTAX mudou + filtro) → **2 batch commits** (1 bls + 1 trk)
 
 ---
 
@@ -432,50 +466,19 @@ init.js: _dmOnReady()
 
 ## 17. Workflow de Alterações (Como Fazer Mudanças)
 
-### 1. Baixar arquivo do GitHub
-```python
-import base64, json, urllib.request
-PAT = "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"
-
-def get_file(path):
-    req = urllib.request.Request(
-        f"https://api.github.com/repos/luccafwlog/demurrage-manager/contents/{path}",
-        headers={"Authorization": f"token {PAT}", "Accept": "application/vnd.github.v3+json"}
-    )
-    d = json.loads(urllib.request.urlopen(req).read())
-    return base64.b64decode(d['content']), d['sha']
-
-content, sha = get_file("js/billing.js")
-open('/tmp/billing.js', 'wb').write(content)
+### Usando git clone (recomendado no Cowork)
+```bash
+git clone https://{PAT}@github.com/luccafwlog/demurrage-manager.git repo
+# editar arquivos
+git add <arquivos>
+git commit -m "descrição"
+git push origin main
 ```
 
-### 2. Modificar e fazer push
-```python
-def push_file(path, local_path, sha, msg):
-    content_b64 = base64.b64encode(open(local_path,'rb').read()).decode()
-    payload = json.dumps({"message": msg, "content": content_b64, "sha": sha}).encode()
-    req = urllib.request.Request(
-        f"https://api.github.com/repos/luccafwlog/demurrage-manager/contents/{path}",
-        data=payload,
-        headers={"Authorization": f"token {PAT}", "Content-Type": "application/json"},
-        method="PUT"
-    )
-    urllib.request.urlopen(req)
-```
-
-### 3. Verificar deploy
-```python
-req = urllib.request.Request(
-    "https://api.github.com/repos/luccafwlog/demurrage-manager/actions/runs?per_page=3",
-    headers={"Authorization": f"token {PAT}"}
-)
-runs = json.loads(urllib.request.urlopen(req).read())['workflow_runs']
-# Aguardar: status="completed" + conclusion="success"
-```
-
-### 4. Regras de cache
-- Após qualquer alteração em JS ou CSS → incrementar `?v=NNN` nos 9 scripts de `app.html`
+### Regras de cache após deploy
+- Após qualquer alteração em JS ou CSS → incrementar `?v=NNN` em **todos os 9 scripts** de `app.html`
 - Após deploy significativo → atualizar `<meta name="deploy-date" content="YYYY-MM-DDTHH:MM">`
+- Versão atual: `?v=107` | Deploy-date: `2026-03-30T18:00`
 
 ---
 
@@ -483,28 +486,41 @@ runs = json.loads(urllib.request.urlopen(req).read())['workflow_runs']
 
 1. **NUNCA** chamar `save()` / `trkSave()` / `cliSave()` dentro de funções de renderização (`renderDoc`, `renderList`, `renderTracking`, etc.). Saves devem ocorrer apenas em resposta a ações diretas do usuário.
 
-2. **NUNCA** incrementar `changed++` sem verificar se o valor realmente mudou (padrão: `if (b.roe !== newValue) { b.roe = newValue; changed++; }`).
+2. **Para 1 entidade → `saveOne`**. Para múltiplas entidades → `save(array)`. Nunca usar `save(bls)` quando apenas 1 BL foi modificado.
 
-3. **Quota Firestore (plano gratuito):** 20K writes/dia. Com as correções FIX-QUOTA, o consumo em idle é ~0 writes.
+3. **NUNCA** fazer write dentro de callbacks `onSnapshot`. Se necessário, usar flag de guarda (ex: `_trkSaving`) para evitar cascata.
 
-4. **`tab-users`** existe no DOM mas está sempre `display:none`. `switchModule('users')` redireciona para settings. Não restaurar como tab standalone.
+4. **NUNCA** incrementar `changed++` sem verificar se o valor realmente mudou (padrão: `if (b.roe !== newValue) { b.roe = newValue; changed++; }`).
 
-5. **`db.js`** é o único script `type="module"`. Os demais são scripts regulares que dependem dos globals (`window._dmFireSave`, `window._dmStore`, etc.) expostos por `db.js`.
+5. **`tab-users`** existe no DOM mas está sempre `display:none`. `switchModule('users')` redireciona para settings. Não restaurar como tab standalone.
 
-6. **Modifications history** (`logModification` em `init.js`): usa `arrayUnion` → 1 write individual por ação do usuário, fora do sistema de diff. Usar com moderação.
+6. **`db.js`** é o único script `type="module"`. Os demais são scripts regulares que dependem dos globals (`window._dmFireSave`, `window._dmFireSaveOne`, `window._dmStore`, etc.) expostos por `db.js`.
+
+7. **Quota Firestore (plano gratuito):** 20K writes/dia. Com todas as correções FIX-QUOTA, consumo em uso normal ≈ **1 write por ação do usuário**.
 
 ---
 
-## 19. Histórico de Features (desta sessão — 2026-03-28)
+## 19. Histórico de Features e Deploys
 
+### 2026-03-30 — Auditoria Firestore (FIX-QUOTA #G a #J)
+| Fix | Descrição |
+|-----|-----------|
+| `_dmFireSaveOne` em `db.js` | Nova função para 1 write direto sem diff de coleção |
+| `saveOne(bl)` em `billing.js` | Wrapper para single-doc saves |
+| `togglePaid/toggleBilled/saveBL` | Convertidos de `save(bls)` para `saveOne(bl)` |
+| `deleteBL` | Convertido de `save(bls)` para `deleteBLById(id)` (1 delete) |
+| Flag `_trkSaving` em `init.js` | Anti-cascata no `_dmOnTrkUpdate` |
+| IIFE `trkSave` removido de `tracking.js` | Eliminado write perigoso no carregamento do módulo |
+| `manualMigrate` | Corrigido: `save(bls)` adicionado (estava faltando) |
+| `writeBatch` em `users.js` | Deleção de logs em batch (era N deletes sequenciais) |
+
+### 2026-03-28 — Features iniciais
 | Feature | Arquivos alterados |
 |---------|--------------------|
-| **FIX-QUOTA** — Correção de writes excessivos | `billing.js`, `init.js` |
+| **FIX-QUOTA** — Correção de writes excessivos (#1 a #F) | `billing.js`, `init.js`, `db.js` |
 | **Usuários → Configurações** — Tab integrada como sub-aba `cfg-users` | `app.html`, `init.js`, `db.js` |
-| **Badge de versão dinâmico** — `v2026.03.28-15h30` via meta tag | `app.html` |
-| **Redesign botões BL** — Agrupamento visual, gradientes, ícones edit/delete | `billing.js`, `base.css`, `components.css` |
-| **Controle de Containers BL view** — 8 colunas com cor por urgência | `init.js`, `tracking.js` |
-| **Cobrança Consolidada** — Botão 🧾 Imprimir Recibos consolidado | `app.html`, `consolidated.js` |
+| **Badge de versão dinâmico** | `app.html` |
+| **Redesign botões BL** — Agrupamento visual, gradientes | `billing.js`, `base.css`, `components.css` |
+| **Controle de Containers BL view** | `init.js`, `tracking.js` |
+| **Cobrança Consolidada** — Botão 🧾 Imprimir Recibos | `app.html`, `consolidated.js` |
 | **Filtro "Todos"** — Reset automático de Com Desconto e Em Disputa | `billing.js` |
-| **Removido** botão Importar Planilha da toolbar de Faturamento | `app.html` |
-| **Removido** botões Backup/Restaurar do header | `app.html` |
