@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot Completo do Projeto
 
-> **Última atualização:** 2026-03-30 | **Cache version:** `?v=110` | **Deploy-date meta:** `2026-03-30`
+> **Última atualização:** 2026-03-30 (v2.2) | **Cache version:** `?v=110` | **Deploy-date meta:** `2026-03-30`
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (branch: `main`)
 > **App em produção:** https://demurragemanager.web.app
 
@@ -82,14 +82,14 @@
 
 ### Tabelas
 
-| Tabela       | PK              | RLS | Rows    | Descrição                              |
-|--------------|-----------------|-----|---------|----------------------------------------|
-| `bls`        | `id` (text)     | ✅  | ~254    | BLs de faturamento D&D                 |
-| `containers` | `container` (text) | ✅ | variável | Containers em rastreamento           |
-| `clients`    | `id` (text)     | ✅  | ~78     | Cadastro de clientes (CNPJ + emails)   |
-| `settings`   | `user_id` (uuid)| ✅  | por user| Configurações (alert_days)             |
-| `usuarios`   | `id` (uuid)     | ✅  | 1+      | Perfis (nome, cargo, admin, ativo)     |
-| `logs`       | `id` (uuid)     | ✅  | variável| Log de auditoria de ações              |
+| Tabela       | PK                              | RLS | Rows    | Descrição                              |
+|--------------|---------------------------------|-----|---------|----------------------------------------|
+| `bls`        | `(user_id, id)`                 | ✅  | ~254    | BLs de faturamento D&D                 |
+| `containers` | `(user_id, container, bl)` ⚠️NEW| ✅  | variável | Containers em rastreamento (um container pode existir em múltiplos BLs) |
+| `clients`    | `(user_id, id)`                 | ✅  | ~78     | Cadastro de clientes (CNPJ + emails)   |
+| `settings`   | `user_id` (uuid)                | ✅  | por user| Configurações (alert_days)             |
+| `usuarios`   | `id` (uuid)                     | ✅  | 1+      | Perfis (nome, cargo, admin, ativo)     |
+| `logs`       | `id` (uuid)                     | ✅  | variável| Log de auditoria de ações              |
 
 ### Schemas detalhados
 
@@ -102,11 +102,14 @@ CREATE TABLE bls (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- ⚠️ ATENÇÃO: PK composta — container pode existir em múltiplos BLs
 CREATE TABLE containers (
-  container  TEXT PRIMARY KEY,
+  container  TEXT NOT NULL,
+  bl         TEXT NOT NULL DEFAULT '',  -- BL associado ao container
   user_id    UUID REFERENCES auth.users,
   data       JSONB DEFAULT '{}',
-  updated_at TIMESTAMPTZ DEFAULT now()
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (user_id, container, bl)  -- migrado de (user_id, container) em 2026-03-30
 );
 
 -- Settings por usuário
@@ -208,13 +211,35 @@ Automático pelo Supabase client JS (nenhum código adicional necessário).
 | `window._dmLogout()`         | `sb.auth.signOut()`                                         |
 | `window._dmOnReady()`        | Definido por `init.js`, chamado por `db.js` após carga      |
 
-### Mapeamento de tipos
+### Mapeamento de tipos e chaves compostas
 
 ```javascript
 // Tipos aceitos por _dmFireSave, _dmFireSaveOne, _dmFireDelete
-{ bls: 'bls', trk: 'containers', clients: 'clients' }
-// PK por tipo
-{ bls: 'id', trk: 'container', clients: 'id' }
+// TABLE: { bls: 'bls', trk: 'containers', clients: 'clients' }
+
+// KEY_FN — chave composta usada internamente para deduplicação
+_KEY_FN = {
+  bls:     r => String(r.id || ''),
+  trk:     r => String(r.container || '') + '\x00' + String(r.bl || ''),  // ⚠️ composta!
+  clients: r => String(r.id || r.cnpj || '')
+}
+
+// COLS_FN — colunas de primeira classe que vão para o banco
+_COLS_FN = {
+  bls:     r => ({ id: r.id }),
+  trk:     r => ({ container: r.container, bl: r.bl || '' }),             // ⚠️ bl obrigatório
+  clients: r => ({ id: r.id || r.cnpj })
+}
+
+// CONFLICT — onConflict do upsert Supabase
+_CONFLICT = {
+  bls:     'user_id,id',
+  trk:     'user_id,container,bl',   // ⚠️ migrado — era 'user_id,container'
+  clients: 'user_id,id'
+}
+
+// Para _dmFireDelete de containers: id deve ser 'container\x00bl'
+// Ex: _dmFireDelete('trk', 'ABCU1234567\x00HLCUSSA3260012345')
 ```
 
 ---
@@ -270,6 +295,16 @@ Automático pelo Supabase client JS (nenhum código adicional necessário).
 ---
 
 ## 🐛 Histórico de Correções
+
+### 2026-03-30 — Fix crítico de persistência (v2.2)
+
+| # | Bug | Causa Raiz | Fix |
+|---|-----|------------|-----|
+| A | Containers com múltiplos BLs sobrescritos | PK `(user_id, container)` impedia mesmo número de container em BLs distintos | Migração DDL: nova coluna `bl`, nova PK `(user_id, container, bl)` |
+| B | Deduplicação errada no frontend | `_dmFireSave` usava `Map` com chave apenas em `container`, colapsando registros antes do upsert | `_KEY_FN.trk` usa chave composta `container + '\x00' + bl` |
+| C | `onConflict` errado | `onConflict: 'user_id,container'` fazia upsert sobrescrever o registro | Corrigido para `'user_id,container,bl'` alinhado à nova PK |
+| D | Clients sumiam após refresh | Clientes antigos sem campo `id` → `_dmFireSave` mandava `id: 'undefined'` → erro silencioso | Load do banco agora garante `id` válido com fallback para CNPJ |
+| E | Delete sem `user_id` no filtro | `_dmFireDelete` e batch delete não incluíam `.eq('user_id', uid)` | Todos os deletes agora incluem filtro explícito de `user_id` |
 
 ### 2026-03-30 — Auditoria pós-migração (v2.1)
 
