@@ -12,8 +12,8 @@
 // CONFIGURAÇÃO — preencha com seus valores do Supabase Dashboard
 // Settings → API → "Project URL"  e  "anon public" key
 // ──────────────────────────────────────────────────────────────
-const SUPABASE_URL  = 'COLE_AQUI_A_PROJECT_URL';
-const SUPABASE_ANON = 'COLE_AQUI_A_ANON_KEY';
+const SUPABASE_URL  = 'https://vcdivphwlspsymgibfri.supabase.co';
+const SUPABASE_ANON = 'sb_publishable_lD1L_z0ZrAW48vrcktvnsg_6t9KaUjI';
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
   realtime: { params: { eventsPerSecond: 10 } }
