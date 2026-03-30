@@ -108,12 +108,16 @@ function sanitize(obj) {
         }
 
         if (toUpsert.length > 0) {
-          const rows = toUpsert.map(r => ({
-            [idKey]: String(r[idKey]),
-            user_id: uid,
-            data: sanitize(r),
-            updated_at: new Date().toISOString()
-          }));
+          const rowMap = new Map();
+          for (const r of toUpsert) {
+            rowMap.set(String(r[idKey]), {
+              [idKey]: String(r[idKey]),
+              user_id: uid,
+              data: sanitize(r),
+              updated_at: new Date().toISOString()
+            });
+          }
+          const rows = Array.from(rowMap.values());
           const { error: upsErr } = await sb.from(table).upsert(rows, { onConflict: conflict });
           if (upsErr) console.error('[DB-SAVE] upsert error:', upsErr);
         }
