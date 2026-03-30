@@ -120,7 +120,11 @@ function processClientRows(rows) {
 
     if (existing) {
       if (nameRaw)           existing.name   = nameRaw;
-      if (emails.length > 0) existing.emails = emails;
+      if (emails.length > 0) {
+        const existingSet = new Set(existing.emails || []);
+        emails.forEach(e => existingSet.add(e));
+        existing.emails = Array.from(existingSet);
+      }
       syncBLEmails(cnpjStr, existing.emails);
       updated++;
     } else {
