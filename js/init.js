@@ -1564,12 +1564,23 @@ window._dmOnReady = function() {
   if (overlay) overlay.style.display = 'none';
 
   // ── Callbacks reativos: onSnapshot atualiza vars locais após carga inicial ──
-  window._dmOnBLsUpdate = function() {
-    bls = load();
-    renderList();
-    renderDashboard();
-    updateAlertBadge();
-  };
+ window._dmOnReady = function() {
+
+  console.log('[APP] Inicializando com Supabase');
+
+  // 🔥 usar dados já carregados do db.js
+  const store = window._dmStore;
+
+  window.bls     = store.bls || [];
+  window.trk     = store.trk || [];
+  window.clients = store.clients || [];
+
+  // 👉 aqui você chama o render do app
+  if (window.renderAll) {
+    window.renderAll();
+  }
+
+};
   // FIX-QUOTA #H: flag anti-cascata para evitar loop onSnapshot → trkSave → onSnapshot
   var _trkSaving = false;
   window._dmOnTrkUpdate = function() {
