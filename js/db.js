@@ -179,7 +179,7 @@ const _CONFLICT = {
             });
           }
           const rows = Array.from(rowMap.values());
-          const CHUNK = 500;
+          const CHUNK = 50;
           for (let i = 0; i < rows.length; i += CHUNK) {
             const chunk = rows.slice(i, i + CHUNK);
             const { error: upsErr } = await sb.from(table).upsert(chunk, { onConflict: conflict });

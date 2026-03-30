@@ -99,6 +99,9 @@ function processClientRows(rows) {
   }
 
   let added = 0, updated = 0, skipped = 0, skipReasons = [];
+  // FIX: acumula alterações de email por CNPJ — aplica syncBLEmails UMA VEZ
+  // depois do loop, evitando N saves concorrentes que causam ERR_INSUFFICIENT_RESOURCES
+  const emailChanges = new Map(); // cnpj → emails[]
 
   rows.slice(dataStart).forEach((row, idx) => {
     if (!row || row.every(c => c === null || c === undefined || c === '')) return;
@@ -125,16 +128,32 @@ function processClientRows(rows) {
         emails.forEach(e => existingSet.add(e));
         existing.emails = Array.from(existingSet);
       }
-      syncBLEmails(cnpjStr, existing.emails);
+      emailChanges.set(cnpjStr, existing.emails);
       updated++;
     } else {
       clients.unshift({ id: uid(), cnpj: cnpjStr, name: nameRaw, emails, createdAt: Date.now() });
-      syncBLEmails(cnpjStr, emails);
+      emailChanges.set(cnpjStr, emails);
       added++;
     }
   });
 
+  // FIX: salva clientes UMA VEZ (com todos os emails já preenchidos no array)
   cliSave(clients);
+
+  // FIX: aplica sync de emails nos BLs em batch — um único save(bls) no final
+  if (emailChanges.size > 0) {
+    let blsChanged = false;
+    emailChanges.forEach((emails, cnpjStr) => {
+      bls.forEach(b => {
+        if (normalizeCnpj(b.cnpj) === cnpjStr) {
+          b.email = emails.join(', ');
+          blsChanged = true;
+        }
+      });
+    });
+    if (blsChanged) save(bls);
+  }
+
   renderClients();
 
   let msg = `Importação: ${added} criado(s), ${updated} atualizado(s)`;
