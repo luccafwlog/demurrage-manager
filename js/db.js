@@ -13,7 +13,7 @@
 // Settings → API → "Project URL"  e  "anon public" key
 // ──────────────────────────────────────────────────────────────
 const SUPABASE_URL  = 'https://vcdivphwlspsymgibfri.supabase.co';
-const SUPABASE_ANON = 'sb_publishable_lD1L_z0ZrAW48vrcktvnsg_6t9KaUjI';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZjZGl2cGh3bHNwc3ltZ2liZnJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4Njg5MzEsImV4cCI6MjA5MDQ0NDkzMX0.0N-l_n323GievbiG5Nh2C6Wd3npTe4fbpxnzTYex0Jo';
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
   realtime: { params: { eventsPerSecond: 10 } }
