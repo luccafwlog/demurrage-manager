@@ -1,61 +1,61 @@
-# Demurrage Manager — Snapshot Completo do Projeto
+# Demurrage Manager — Snapshot de Engenharia
 
-> **Última atualização:** 2026-03-31 (v2.7) | **Cache version:** `?v=113` | **Deploy-date meta:** `2026-03-31`
-> **Repositório:** https://github.com/luccafwlog/demurrage-manager (branch: `main`)
-> **App em produção:** https://demurragemanager.web.app
+> **Versão:** v2.7 | **Cache:** `?v=113` | **Atualizado:** 2026-03-31
+> **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
+> **Produção:** https://demurragemanager.web.app
+> **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
 
 ---
 
-## 🏗️ Arquitetura Atual
+## 1. Arquitetura
 
 | Camada        | Tecnologia                                                        |
 |---------------|-------------------------------------------------------------------|
-| Hosting       | Firebase Hosting (`demurragemanager.web.app`)                     |
-| Banco de Dados| **Supabase** (PostgreSQL) · projeto `vcdivphwlspsymgibfri`        |
-| Autenticação  | **Supabase Auth** (email/senha · sessão persistente via localStorage) |
-| Frontend      | HTML5 + CSS3 + JavaScript Vanilla (sem framework)                 |
-| Deploy        | GitHub Actions → Firebase Hosting (push para `main`)             |
+| Hosting       | Firebase Hosting (CI/CD via GitHub Actions → push `main`)        |
+| Banco de Dados| Supabase (PostgreSQL + PostgREST)                                 |
+| Autenticação  | Supabase Auth — email/senha, sessão persistida no `localStorage`  |
+| Frontend      | HTML5 + CSS3 + JavaScript Vanilla (sem framework, sem build step) |
 
-> ⚠️ **Migração concluída em 2026-03-30**: Todo o código Firebase (Auth + Firestore) foi removido/substituído por Supabase. Apenas o Firebase Hosting foi mantido.
+**Decisão arquitetural**: O app é uma SPA em dois arquivos HTML (`index.html` + `app.html`). Toda a lógica está em módulos JS externos carregados via `<script src>` com cache busting por query string (`?v=NNN`). Não há transpilação nem bundler.
 
 ---
 
-## 📁 Estrutura de Arquivos
+## 2. Estrutura de Arquivos
 
 ```
 /
-├── index.html                    ← Página de login (Supabase Auth)
-├── app.html                      ← Aplicação principal (SPA)
-├── firebase.json                 ← Configuração do Firebase Hosting (mantido)
-├── firestore.rules               ← Arquivo legado (ignorado)
-├── supabase_schema.sql           ← Schema PostgreSQL do Supabase
+├── index.html                    ← Login (Supabase Auth)
+├── app.html                      ← SPA principal
+├── firebase.json                 ← Config Firebase Hosting (apenas hosting)
+├── firestore.rules               ← Legado, ignorado
+├── supabase_schema.sql           ← Schema PostgreSQL de referência
 ├── demurrage_manager_snapshot.md ← Este arquivo
 ├── DEPLOY.md                     ← Instruções de deploy
 ├── css/
-│   ├── base.css                  ← Variáveis CSS e estilos base
-│   └── components.css            ← Componentes UI (modais, tabelas, pills)
+│   ├── base.css                  ← Variáveis CSS e reset
+│   └── components.css            ← Modais, tabelas, pills, alertas
 └── js/
-    ├── db.js          ← Supabase init + auth + todas as funções de persistência
-    ├── utils.js       ← Funções utilitárias (uid, toast, modais, formatação)
-    ├── rates.js       ← Tabela de taxas D&D e cálculos USD
-    ├── billing.js     ← Módulo de Faturamento (BLs, PTAX, PDFs)
-    ├── tracking.js    ← Módulo de Rastreamento de Containers
-    ├── clients.js     ← Módulo de Clientes (CNPJ + emails)
-    ├── users.js       ← Módulo Admin: Usuários e Log de Auditoria
-    ├── consolidated.js← Módulo Consolidado (visão por cliente/CNPJ)
-    └── init.js        ← Inicialização da app, Dashboard, Configurações
+    ├── db.js          ← FONTE DE VERDADE: Supabase init + auth + toda persistência
+    ├── utils.js       ← Toast, modais, formatação de datas/valores, uid gerador
+    ├── rates.js       ← Tabela de taxas D&D, cálculos USD, PTAX
+    ├── billing.js     ← Módulo Faturamento: BLs, geração de faturas, PDF, PIX
+    ├── tracking.js    ← Módulo Rastreamento: importação XLSX, status, migração→billing
+    ├── clients.js     ← Módulo Clientes: CNPJ, emails, sync com BLs
+    ├── users.js       ← Admin: gestão de usuários, log de auditoria
+    ├── consolidated.js← Visão consolidada por CNPJ (múltiplos BLs)
+    └── init.js        ← Bootstrap UI, Dashboard, Configurações
 ```
 
-### Ordem de carregamento dos scripts (app.html)
+### Ordem de carregamento e fluxo de boot
 
 ```html
-<!-- 1. Biblioteca Supabase JS v2 (UMD) -->
+<!-- CDN Supabase JS v2 (UMD — disponível como window.supabase) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
-<!-- 2. db.js (module — deferred, executa após DOM pronto) -->
+<!-- db.js como ES module — defer automático, executa APÓS DOM e scripts regulares -->
 <script type="module" src="js/db.js?v=113"></script>
 
-<!-- 3. Scripts do app (regulares — executam na ordem, antes do db.js module) -->
+<!-- Módulos regulares — executam em ordem, antes do db.js -->
 <script src="js/utils.js?v=113"></script>
 <script src="js/rates.js?v=113"></script>
 <script src="js/billing.js?v=113"></script>
@@ -64,70 +64,76 @@
 <script src="js/users.js?v=113"></script>
 <script src="js/consolidated.js?v=113"></script>
 <script src="js/init.js?v=113"></script>
-<!-- init.js define window._dmOnReady() → db.js o chama após carga -->
 ```
 
-**Fluxo de execução:**
-1. Scripts regulares executam → `window._dmOnReady` é definido em `init.js`
-2. `db.js` (module/deferred) executa → autentica, carrega dados do Supabase
-3. `db.js` chama `window._dmOnReady()` → UI é inicializada com os dados
+**Sequência de boot:**
+1. Scripts regulares executam → cada módulo registra funções no `window`, `init.js` define `window._dmOnReady()`
+2. `db.js` (module/deferred) executa → cria cliente Supabase → verifica sessão
+3. `db.js` carrega dados (`bls`, `clients`, `settings`, `usuarios`, `containers` paginado) → popula `window._dmStore`
+4. `db.js` chama `window._dmOnReady()` → UI renderiza com os dados em memória
+
+> **Crítico**: se `_dmOnReady` não estiver definido quando `db.js` terminar (erro em algum script regular), o app fica em tela em branco sem erro visível.
 
 ---
 
-## 🗄️ Banco de Dados Supabase
+## 3. Banco de Dados
 
-**Projeto ID:** `vcdivphwlspsymgibfri`
-**Região:** `us-east-1`
-**PostgreSQL:** 17.6
+### Tabelas e PKs
 
-### Tabelas
+| Tabela       | PK                                  | RLS | Rows (atual) | Notas |
+|--------------|-------------------------------------|-----|--------------|-------|
+| `bls`        | `(user_id, id)`                     | ✅  | ~254         | BLs de faturamento D&D |
+| `containers` | `(user_id, container, bl)`          | ✅  | 1625         | PK tripla: mesmo container pode existir em BLs distintos (transshipment) |
+| `clients`    | `(user_id, id)`                     | ✅  | ~78          | `id` = CNPJ normalizado (14 dígitos, com leading zero) |
+| `settings`   | `user_id`                           | ✅  | 1+           | Apenas `alert_days` por ora |
+| `usuarios`   | `id` (UUID = auth.users.id)         | ✅  | 1+           | Perfis: nome, cargo, admin, ativo |
+| `logs`       | `id` (UUID gerado)                  | ✅  | variável     | Auditoria de ações |
 
-| Tabela       | PK                              | RLS | Rows    | Descrição                              |
-|--------------|---------------------------------|-----|---------|----------------------------------------|
-| `bls`        | `(user_id, id)`                 | ✅  | ~254    | BLs de faturamento D&D                 |
-| `containers` | `(user_id, container, bl)` ⚠️NEW| ✅  | variável | Containers em rastreamento (um container pode existir em múltiplos BLs) |
-| `clients`    | `(user_id, id)`                 | ✅  | ~78     | Cadastro de clientes (CNPJ + emails)   |
-| `settings`   | `user_id` (uuid)                | ✅  | por user| Configurações (alert_days)             |
-| `usuarios`   | `id` (uuid)                     | ✅  | 1+      | Perfis (nome, cargo, admin, ativo)     |
-| `logs`       | `id` (uuid)                     | ✅  | variável| Log de auditoria de ações              |
-
-### Schemas detalhados
+### Schema
 
 ```sql
--- BLs / Containers / Clients (estrutura idêntica, PK diferente)
 CREATE TABLE bls (
-  id         TEXT PRIMARY KEY,
-  user_id    UUID REFERENCES auth.users,
-  data       JSONB DEFAULT '{}',
-  updated_at TIMESTAMPTZ DEFAULT now()
-);
-
--- ⚠️ ATENÇÃO: PK composta — container pode existir em múltiplos BLs
-CREATE TABLE containers (
-  container  TEXT NOT NULL,
-  bl         TEXT NOT NULL DEFAULT '',  -- BL associado ao container
+  id         TEXT NOT NULL,
   user_id    UUID REFERENCES auth.users,
   data       JSONB DEFAULT '{}',
   updated_at TIMESTAMPTZ DEFAULT now(),
-  PRIMARY KEY (user_id, container, bl)  -- migrado de (user_id, container) em 2026-03-30
+  PRIMARY KEY (user_id, id)
 );
 
--- Settings por usuário
+-- PK tripla — container pode aparecer em múltiplos BLs (cenário de transshipment)
+-- bl TEXT NOT NULL DEFAULT '' garante que rows antigas sem bl não quebrem o upsert
+CREATE TABLE containers (
+  container  TEXT NOT NULL,
+  bl         TEXT NOT NULL DEFAULT '',
+  user_id    UUID REFERENCES auth.users,
+  data       JSONB DEFAULT '{}',
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (user_id, container, bl)
+);
+
+CREATE TABLE clients (
+  id         TEXT NOT NULL,
+  user_id    UUID REFERENCES auth.users,
+  data       JSONB DEFAULT '{}',
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (user_id, id)
+  -- ⚠️ constraint clients_unique (UNIQUE id isolado) foi REMOVIDA em 2026-03-31
+  -- pois causava HTTP 409 quando usuários distintos tinham o mesmo CNPJ
+);
+
 CREATE TABLE settings (
   user_id    UUID PRIMARY KEY REFERENCES auth.users,
   alert_days INTEGER DEFAULT 5
 );
 
--- Perfis de usuário
 CREATE TABLE usuarios (
-  id         UUID PRIMARY KEY REFERENCES auth.users,
-  nome       TEXT, email TEXT, cargo TEXT,
-  admin      BOOLEAN DEFAULT false,
-  ativo      BOOLEAN DEFAULT true,
-  criado_em  TIMESTAMPTZ DEFAULT now()
+  id        UUID PRIMARY KEY REFERENCES auth.users,
+  nome      TEXT, email TEXT, cargo TEXT,
+  admin     BOOLEAN DEFAULT false,
+  ativo     BOOLEAN DEFAULT true,
+  criado_em TIMESTAMPTZ DEFAULT now()
 );
 
--- Auditoria
 CREATE TABLE logs (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id      UUID REFERENCES auth.users,
@@ -139,232 +145,258 @@ CREATE TABLE logs (
 );
 ```
 
-### RLS Policies
-
-Todas as tabelas usam política de acesso para usuários autenticados:
+### RLS — Modelo Colaborativo
 
 ```sql
--- Modelo colaborativo: todos os usuários autenticados compartilham os dados
-CREATE POLICY "table_authenticated" ON public.<tabela>
+-- Política aplicada em TODAS as tabelas:
+CREATE POLICY "authenticated_rw" ON public.<tabela>
   FOR ALL TO public
   USING (auth.role() = 'authenticated')
   WITH CHECK (auth.role() = 'authenticated');
 ```
 
-> **Nota de arquitetura**: O design atual é colaborativo — todos os usuários autenticados veem e editam os mesmos dados. Não há isolamento por `user_id` nas leituras. O `user_id` é gravado nos registros para rastreabilidade, mas não filtra o acesso.
+> ⚠️ **RISCO ARQUITETURAL**: RLS não filtra por `user_id` — qualquer usuário autenticado lê e escreve todos os dados. O `user_id` nos registros serve apenas para rastreabilidade (logs). Se multitenancy real for necessário, exige migração das políticas RLS para `auth.uid() = user_id`.
 
 ---
 
-## 🔐 Fluxo de Autenticação
+## 4. Camada de Dados — db.js (fonte de verdade)
 
-### Login (`index.html`)
-```javascript
-const { error } = await sb.auth.signInWithPassword({ email, password });
-if (!error) window.location.href = 'app.html';
-```
-- Sessão persiste automaticamente no `localStorage` pelo cliente Supabase
-- Se já autenticado ao abrir `index.html` → redireciona para `app.html`
+### Store em memória
 
-### Verificação de sessão (`db.js`)
 ```javascript
-const { data: { session } } = await sb.auth.getSession();
-if (!session) window.location.href = 'index.html';
+window._dmStore = {
+  bls:       [],   // array de objetos BL (billing)
+  trk:       [],   // array de objetos container (tracking)
+  clients:   [],   // array de objetos cliente
+  alertDays: 5     // limiar de alerta de free time
+}
 ```
 
-### Logout
-```javascript
-// Botão "Sair" em app.html → onclick="window._dmLogout()"
-window._dmLogout = async () => {
-  await sb.auth.signOut();
-  // onAuthStateChange(SIGNED_OUT) → redireciona para index.html
-};
+Todo módulo lê de `_dmStore` e escreve via funções de persistência de `db.js`. **Nunca mutatar `_dmStore` diretamente** — o mecanismo de diff do `_dmFireSave` depende de comparação entre a versão em memória e a versão anterior.
+
+### API pública de db.js
+
+| Função | Descrição |
+|--------|-----------|
+| `_dmStore` | Store em memória — leitura direta pelos módulos |
+| `_dmUser` / `_dmUid` | Usuário autenticado e seu UUID |
+| `_dmIsAdmin` / `_dmUserData` | Flag admin e perfil completo |
+| `_dmSession` | ID de sessão (string UUID local, para logs) |
+| `_dmFireSave(type, newData[])` | **Upsert em lote com diff** — ver abaixo |
+| `_dmFireSaveOne(type, id, data)` | Upsert de registro único |
+| `_dmFireDelete(type, id)` | Delete por ID (com filtro `user_id`) |
+| `_dmFireRestore(bkp)` | Limpa e restaura tabelas (usado em backup) |
+| `_dmFireLog(action, details)` | INSERT em `logs` |
+| `_dmSaveAlertDays(n)` | Upsert em `settings.alert_days` |
+| `_dmFireLoadUsuarios()` | SELECT usuarios |
+| `_dmFireSaveUsuario(data)` | Upsert em usuarios |
+| `_dmFireLoadLogs()` | SELECT logs (últimos 500) |
+| `_dmFireDeleteLogs(ids[])` | DELETE logs WHERE id IN (...) |
+| `_dmLogout()` | `sb.auth.signOut()` |
+
+### _dmFireSave — mecanismo de diff inteligente
+
+Este é o coração do sistema de persistência. Comportamento:
+
+```
+1. Captura oldStore = JSON.parse(JSON.stringify(_dmStore[type]))  ← snapshot imutável
+2. Atualiza _dmStore[type] = JSON.parse(JSON.stringify(newData))  ← deep copy (evita aliasing)
+3. Constrói rowMap da newData usando _KEY_FN[type]
+4. Diff: para cada row em newData, compara JSON.stringify com oldStore
+5. Apenas rows modificadas ou novas vão para o upsert
+6. Envia em chunks de 50 rows → sb.from(table).upsert(chunk, { onConflict })
+7. Em caso de erro: rollback _dmStore[type] = oldStore
 ```
 
-### Refresh de token
-Automático pelo Supabase client JS (nenhum código adicional necessário).
-
----
-
-## ⚙️ Camada de Dados (db.js)
-
-### Funções globais expostas por db.js
-
-| Função                        | Descrição                                                   |
-|-------------------------------|-------------------------------------------------------------|
-| `window._dmDb`                | Cliente Supabase (para uso avançado)                        |
-| `window._dmUser`              | Objeto do usuário autenticado                               |
-| `window._dmUid`               | UUID do usuário                                             |
-| `window._dmStore`             | Store em memória `{ bls, trk, clients, alertDays }`         |
-| `window._dmIsAdmin`           | Boolean: usuário é admin?                                   |
-| `window._dmUserData`          | Perfil completo do usuário (tabela `usuarios`)              |
-| `window._dmSession`           | ID de sessão local (para logs)                              |
-| `window._dmFireSave(type, data)` | Upsert em lote com diff inteligente (evita writes desnecessários) |
-| `window._dmFireSaveOne(type, id, data)` | Upsert de um único registro                    |
-| `window._dmFireDelete(type, id)` | Delete de um registro pelo ID                          |
-| `window._dmFireRestore(bkp)` | Limpa todas as tabelas (usado em restore de backup)         |
-| `window._dmFireLog(action, details)` | Insere log de auditoria na tabela `logs`           |
-| `window._dmSaveAlertDays(n)` | Upsert em `settings` (campo `alert_days`)                   |
-| `window._dmFireLoadUsuarios()` | SELECT * FROM usuarios ORDER BY nome                      |
-| `window._dmFireSaveUsuario(data)` | Upsert em `usuarios`                                  |
-| `window._dmFireLoadLogs()` | SELECT logs (últimos 500, mais recentes primeiro)           |
-| `window._dmFireDeleteLogs(ids)` | DELETE logs IN (ids)                                   |
-| `window._dmLogout()`         | `sb.auth.signOut()`                                         |
-| `window._dmOnReady()`        | Definido por `init.js`, chamado por `db.js` após carga      |
-
-### Mapeamento de tipos e chaves compostas
+**Mapeamento interno de tipos:**
 
 ```javascript
-// Tipos aceitos por _dmFireSave, _dmFireSaveOne, _dmFireDelete
-// TABLE: { bls: 'bls', trk: 'containers', clients: 'clients' }
+_TABLE    = { bls: 'bls',           trk: 'containers',        clients: 'clients'      }
 
-// KEY_FN — chave composta usada internamente para deduplicação
-_KEY_FN = {
+_KEY_FN   = {
   bls:     r => String(r.id || ''),
-  trk:     r => String(r.container || '') + '\x00' + String(r.bl || ''),  // ⚠️ composta!
+  trk:     r => `${r.container || ''}\x00${r.bl || ''}`,  // ← chave composta obrigatória
   clients: r => String(r.id || r.cnpj || '')
 }
 
-// COLS_FN — colunas de primeira classe que vão para o banco
-_COLS_FN = {
+_COLS_FN  = {
   bls:     r => ({ id: r.id }),
-  trk:     r => ({ container: r.container, bl: r.bl || '' }),             // ⚠️ bl obrigatório
-  clients: r => ({ id: r.id || r.cnpj })
+  trk:     r => ({ container: r.container, bl: r.bl || '' }),  // bl vazio string, nunca null
+  clients: r => ({ id: String(r.id || r.cnpj || '') })
 }
 
-// CONFLICT — onConflict do upsert Supabase
 _CONFLICT = {
   bls:     'user_id,id',
-  trk:     'user_id,container,bl',   // ⚠️ migrado — era 'user_id,container'
+  trk:     'user_id,container,bl',   // alinhado à PK tripla da tabela
   clients: 'user_id,id'
 }
-
-// Para _dmFireDelete de containers: id deve ser 'container\x00bl'
-// Ex: _dmFireDelete('trk', 'ABCU1234567\x00HLCUSSA3260012345')
 ```
 
----
+> **Delete de container**: `_dmFireDelete('trk', 'ABCU1234567\x00HLCSSA3260012345')` — o ID deve ser a chave composta com `\x00` como separador.
 
-## 🧩 Módulos da Aplicação
+### Carregamento de containers — paginação obrigatória
 
-### billing.js — Faturamento
-- **Store**: `bls[]` ← `window._dmStore.bls`
-- **Save**: `save(bls)` → `_dmFireSave('bls', bls)` (diff de toda a coleção)
-- **Save One**: `saveOne(bl)` → `_dmFireSaveOne('bls', bl.id, bl)`
-- **Delete**: `deleteBLById(id)` → `_dmFireDelete('bls', id)`
-- **Audit**: `logAuditAction(action, details)` → `_dmFireLog`
-- **PTAX**: Carregado da API Banco Central (olinda.bcb.gov.br), ROE = PTAX × 1.065
-- **Ações auditadas**: criação, edição, exclusão, pagamento, faturamento, envio de email
+PostgREST tem um `max_rows` server-side que trunca respostas. A query de containers usa loop paginado:
 
-### tracking.js — Rastreamento de Containers
-- **Store**: `trkData[]` ← `window._dmStore.trk`
-- **Save**: `trkSave(data)` → `_dmFireSave('trk', data)`
-- **Import**: via XLSX drag-and-drop (SheetJS)
-- **Auto-migração**: quando todos os containers de um BL são devolvidos com D&D, o BL é criado automaticamente no módulo de Faturamento
-- **Status possíveis**: `free`, `grace`, `dd_open`, `dd_returned`, `returned`
+```javascript
+// db.js — boot
+const TRK_PAGE = 1000;
+let pageFrom = 0;
+while (true) {
+  const { data: page } = await sb.from('containers')
+    .select('container, bl, data')
+    .range(pageFrom, pageFrom + TRK_PAGE - 1);
+  trkAllRows.push(...(page || []));
+  if ((page || []).length < TRK_PAGE) break;
+  pageFrom += TRK_PAGE;
+}
+```
 
-### clients.js — Clientes
-- **Store**: `clients[]` ← `window._dmStore.clients`
-- **Save**: `cliSave(clients)` → `_dmFireSave('clients', clients)`
-- Sincroniza emails automaticamente com BLs ao cadastrar/editar cliente
-
-### users.js — Admin
-- Usa `_dmFireLoadUsuarios` / `_dmFireSaveUsuario` / `_dmFireLoadLogs` / `_dmFireDeleteLogs`
-- Restrito a `window._dmIsAdmin === true`
-
-### init.js — Dashboard e Configurações
-- Define `window._dmOnReady()` — ponto de entrada da UI
-- **Taxas D&D**: Customização salva em `localStorage` (`dm_rates_v2`)
-- **Alert days**: Salvo no Supabase via `_dmSaveAlertDays`
-- **Backup**: Exporta/importa JSON com dados em memória
+> ⚠️ `bls` e `clients` não têm paginação. Se crescerem além de `max_rows`, serão truncados silenciosamente.
 
 ---
 
-## 📊 Estado dos Dados (2026-03-30)
+## 5. Módulos — Comportamento e Fluxos
 
-| Tabela       | Registros | Observação                          |
-|--------------|-----------|-------------------------------------|
-| `bls`        | 254       | Dados migrados do Firebase          |
-| `containers` | 1625      | Importados via planilha (1629 linhas − 4 devolvidos no free time) |
-| `clients`    | 78        | Dados migrados do Firebase          |
-| `settings`   | 0         | Será criado ao salvar alertDays     |
-| `usuarios`   | 1         | Conta do administrador              |
-| `logs`       | 0         | Zerado na migração                  |
+### billing.js
 
-> Containers com `emptyReturn` e `discharge` onde `used_days <= freeTime` são **intencionalmente ignorados** na importação (devolvidos no free time = sem demurrage). Comportamento correto e esperado.
+- Lê: `window._dmStore.bls`
+- Escreve via: `save(bls)` → `_dmFireSave('bls', bls)` | `saveOne(bl)` → `_dmFireSaveOne` | `deleteBLById(id)` → `_dmFireDelete`
+- **PTAX**: busca na API Banco Central (`olinda.bcb.gov.br`). ROE = PTAX × 1.065. Fallback para entrada manual.
+- **Numeração de faturas** (`genDocnum`): `DEM-{ano}-{ts4}{suffix3}` onde `ts4 = Date.now().toString(36).slice(-4).toUpperCase()` e `suffix3 = (|hash(bl)| % 1000).padStart(3, '0')`. Praticamente sem risco de colisão (substituiu hash mod 9000 que colisionou).
+- Ações auditadas via `logAuditAction()` → `_dmFireLog`: criar, editar, excluir, pagar, faturar, enviar email.
+
+### tracking.js
+
+- Lê: `window._dmStore.trk`
+- Escreve via: `trkSave(data)` → `_dmFireSave('trk', data)`
+- **Importação**: drag-and-drop de XLSX (SheetJS). Colunas esperadas: `CONTAINER, BL, CNEE, TYPE, POL, POD, VESSEL, DISCHARGE, EMPTY RETURN, ROE, FREE TIME, CNPJ`.
+
+**Filtro de importação (comportamento intencional):**
+```
+Container ignorado SE: emptyReturn preenchido AND discharge preenchido AND (emptyReturn - discharge) <= freeTime
+→ Devolvido dentro do free time = sem demurrage = não entra no sistema
+→ freeTime default = 21 dias se ausente na planilha
+```
+
+**Status de container:**
+
+| Status | Condição |
+|--------|----------|
+| `returned` | `emptyReturn` preenchido, `used_days <= freeTime` (não importado) |
+| `free` | Sem `discharge` |
+| `grace` | `discharge` preenchido, dentro do free time |
+| `dd_open` | Free time vencido, sem `emptyReturn` |
+| `dd_returned` | Free time vencido, com `emptyReturn` |
+
+**Auto-migração para faturamento** (`checkAndMigrateBLs`):
+```
+Para cada grupo de containers agrupados por BL:
+  1. Todos os containers do BL têm emptyReturn? (allReturned)
+  2. Pelo menos um tem status dd_returned? (hasDemurrage)
+  Se (1) E (2):
+    - BL não existe em billing → cria BL novo automaticamente
+    - BL existe e não está pago/faturado → atualiza lista de containers se mudou
+Retorna { newBLs: N, updatedContainers: M }
+```
+
+**Sync de emails (padrão batch — crítico):**
+
+Após importação, para cada BL com CNPJ identificado, o sistema sincroniza emails do cliente com o BL correspondente em billing. O padrão **obrigatório** é acumular todas as mudanças em `Map` e executar um único `save(bls)` ao final. Chamadas individuais dentro de loops causam N requests HTTP concorrentes → `ERR_INSUFFICIENT_RESOURCES` (bug K/L, corrigido).
+
+```javascript
+// CORRETO — padrão atual em clients.js e tracking.js
+const emailChanges = new Map(); // cnpj → emails[]
+items.forEach(item => {
+  // acumula no Map, não salva aqui
+  emailChanges.set(item.cnpj, mergedEmails);
+});
+await cliSave(clients);          // 1 request
+emailChanges.forEach((emails, cnpj) => syncBLEmails(cnpj, emails));
+await save(bls);                  // 1 request
+
+// ERRADO — nunca fazer isso:
+items.forEach(item => {
+  syncBLEmails(item.cnpj, emails); // salva bls N vezes → crash
+});
+```
+
+### clients.js
+
+- Lê: `window._dmStore.clients`
+- Escreve via: `cliSave(clients)` → `_dmFireSave('clients', clients)`
+- CNPJ normalizado: sempre 14 dígitos com leading zero (ex: `'04123456000100'`)
+- `id` do cliente = CNPJ normalizado. Fallback no load: `r.id || r.cnpj || ''`
+- Email merge usa Set (nunca sobrescreve): `new Set([...existing.emails, ...newEmails])`
+
+### users.js
+
+- Restrito a `_dmIsAdmin === true`
+- Opera diretamente via `_dmFireLoadUsuarios` / `_dmFireSaveUsuario` / `_dmFireLoadLogs` / `_dmFireDeleteLogs`
+- Log de auditoria: últimos 500 registros, filtros por ação/usuário/data, exportação CSV
+
+### init.js
+
+- Define `window._dmOnReady()` — ponto de entrada da UI após db.js carregar dados
+- Dashboard: KPIs, alertas de free time (`alertDays`), top clientes, containers em D&D
+- Taxas D&D: customizáveis pela interface, persistidas em `localStorage` (`dm_rates_v2`)
+- `alertDays`: persistido no Supabase via `_dmSaveAlertDays(n)`
+- Backup: exporta/importa JSON com snapshot de `_dmStore`
 
 ---
 
-## 🐛 Histórico de Correções
+## 6. Estado Atual dos Dados (2026-03-31)
 
-### 2026-03-31 — Fix paginação de containers + 409 em clientes (v2.7)
-
-**Cache version:** `?v=113` | **Commit:** `0b13ffd`
-
-| # | Bug | Causa Raiz | Fix |
-|---|-----|------------|-----|
-| N | Após reload, apenas 100 containers eram exibidos (de 1625 no banco) | `db.js` fazia uma única query sem paginação; PostgREST tem `max_rows` configurado que truncava o resultado em ~100 linhas | Substituído por loop paginado com `.range(from, from+999)` em `db.js` até carregar todos os registros. Log `[DB] containers carregados: N` adicionado |
-| O | Exclusão de e-mail de cliente não persistia após refresh (HTTP 409) | Tabela `clients` tinha `UNIQUE(id)` isolado (`clients_unique`) além da PK `(user_id, id)`. Quando dois usuários tinham cliente com mesmo CNPJ, o upsert violava a constraint secundária → PostgREST 409 → save silenciosamente ignorado | Migration DDL: `ALTER TABLE clients DROP CONSTRAINT clients_unique`. A PK composta `(user_id, id)` já garante unicidade por usuário |
-
-### 2026-03-31 — Auditoria pipeline containers→faturamento (v2.5 / v2.6)
-
-**Cache versions:** `?v=111` → `?v=112` | **Commits:** série de 3
-
-| # | Bug | Causa Raiz | Fix |
-|---|-----|------------|-----|
-| K | `ERR_INSUFFICIENT_RESOURCES` ao importar planilha com CNPJs — emails não salvavam | `processClientRows` em `clients.js` chamava `syncBLEmails()` dentro de `forEach` loop → N requests HTTP concorrentes para `save(bls)` → browser esgotava recursos → `cliSave(clients)` nunca chegava ao servidor | Batch accumulation: `const emailChanges = new Map()` acumula mudanças no loop; único `save(bls)` após `cliSave(clients)` |
-| L | Mesmo bug N-saves em `doTrkImport` em `tracking.js` | `syncBLEmails()` e `upsertClient()` chamados por BL dentro de loop `Object.entries(cnpjByBL).forEach` | Mesmo padrão: `emailSyncs: Map` + `newClientsToAdd[]` acumulados; saves em lote após o loop |
-| M | `genDocnum` gerava colisões de número de fatura | Hash mod 9000 → colisão confirmada: dois BLs distintos geraram `DEM-2026-1454` | Reescrito com timestamp `Date.now().toString(36).slice(-4)` + hash suffix; colisão na prática impossível |
-
-### 2026-03-30 — Fix merge de emails na importação (v2.4)
-
-| # | Bug | Causa Raiz | Fix |
-|---|-----|------------|-----|
-| I | Importar planilha com CNPJ existente sobrescrevia emails anteriores | `processClientRows` usava `existing.emails = emails` — atribuição direta apagava os e-mails já cadastrados | Substituído por Set-based merge: emails existentes + novos sem duplicatas |
-| J | `db.js` com composite-key fix não chegava ao browser | `app.html` mantinha `?v=109` em todos os `<script src>` — browser servia versão em cache | Bump para `?v=110` em todos os 9 scripts |
-
-### 2026-03-30 — Fix referência compartilhada no store (v2.3)
-
-| # | Bug | Causa Raiz | Fix |
-|---|-----|------------|-----|
-| F | Clientes: name/emails somem após refresh mesmo sendo exibidos na tela | `_dmFireSave` atribuía `_dmStore[sKey] = newData` (mesma referência). Mutações posteriores ao array do módulo (`existing.name = 'X'`) já refletiam em `oldStore`, tornando o diff vazio → nenhum upsert executado | `_dmStore[sKey] = JSON.parse(JSON.stringify(newData))` — deep copy garante independência; `oldStore` também capturado como snapshot imutável |
-| G | Mesmo bug latente em bls e trk | Mesmo mecanismo — saves subsequentes na mesma sessão poderiam ignorar mudanças | Corrigido de forma abrangente nos três tipos |
-| H | `_dmFireSaveOne` mutava `_dmStore` diretamente | `store[idx] = data` mutava o array sem deep copy | Deep copy em `_dmFireSaveOne` ao atualizar o store |
-
-### 2026-03-30 — Fix crítico de persistência (v2.2)
-
-| # | Bug | Causa Raiz | Fix |
-|---|-----|------------|-----|
-| A | Containers com múltiplos BLs sobrescritos | PK `(user_id, container)` impedia mesmo número de container em BLs distintos | Migração DDL: nova coluna `bl`, nova PK `(user_id, container, bl)` |
-| B | Deduplicação errada no frontend | `_dmFireSave` usava `Map` com chave apenas em `container`, colapsando registros antes do upsert | `_KEY_FN.trk` usa chave composta `container + '\x00' + bl` |
-| C | `onConflict` errado | `onConflict: 'user_id,container'` fazia upsert sobrescrever o registro | Corrigido para `'user_id,container,bl'` alinhado à nova PK |
-| D | Clients sumiam após refresh | Clientes antigos sem campo `id` → `_dmFireSave` mandava `id: 'undefined'` → erro silencioso | Load do banco agora garante `id` válido com fallback para CNPJ |
-| E | Delete sem `user_id` no filtro | `_dmFireDelete` e batch delete não incluíam `.eq('user_id', uid)` | Todos os deletes agora incluem filtro explícito de `user_id` |
-
-### 2026-03-30 — Auditoria pós-migração (v2.1)
-
-| # | Bug | Causa | Fix |
-|---|-----|-------|-----|
-| 1 | Logout não funcionava | Botão sem handler de click | `onclick="window._dmLogout()"` + `_dmLogout()` em db.js |
-| 2 | Scripts duplicados em app.html | Bloco legado de migração no final do HTML | Bloco removido |
-| 3 | `firebase.firestore()` em init.js | Migração parcial de backup, taxas, usuários | Substituído por Supabase/localStorage |
-| 4 | Funções ausentes em db.js | db.js não implementou todas as funções esperadas | Adicionadas: `_dmFireLog`, `_dmFireSaveOne`, `_dmFireSaveUsuario`, `_dmFireLoadUsuarios`, `_dmFireLoadLogs`, `_dmFireDeleteLogs`, `_dmSaveAlertDays`, `_dmLogout` |
-| 5 | alertDays não persistia | `_dmFireSave('alertDays', v)` sem tratamento do tipo | `_dmSaveAlertDays(v)` → upsert em `settings` |
-| 6 | Delete fire-and-forget | `sb.from().delete()` sem await | Async IIFE com await + error handling |
-| 7 | Código morto em _dmOnReady | Redefinição interna de `_dmOnReady` (fragmento de migração) | Removido |
-| 8 | Info de sistema desatualizada | app.html ainda exibia Firebase | Atualizado para Supabase |
+| Tabela       | Registros | Status |
+|--------------|-----------|--------|
+| `bls`        | ~254      | Migrados do Firebase |
+| `containers` | 1625      | Importados via planilha (1629 − 4 devolvidos no free time) |
+| `clients`    | ~78       | Migrados do Firebase |
+| `settings`   | 1+        | Criado ao salvar alertDays |
+| `usuarios`   | 1+        | Admin configurado |
+| `logs`       | variável  | Crescimento em produção |
 
 ---
 
-## 🔧 Manutenção e Configuração
+## 7. ⚠️ Riscos Técnicos e Pontos de Atenção
 
-### Atualizar versão de cache
-Em `app.html`, alterar `?v=113` para o próximo número em todos os `<script src>` (atualmente 9 tags).
+### [ALTO] RLS não isola dados por usuário
+Todos os autenticados leem/escrevem todos os dados. Intencionalmente colaborativo hoje, mas impede multitenancy futuro sem migração de RLS.
 
-### Adicionar novo usuário
-1. Criar conta no Supabase Auth (Dashboard → Authentication → Users)
-2. Inserir registro na tabela `usuarios` com mesmo UUID
+### [ALTO] bls e clients sem paginação
+`db.js` carrega `bls` e `clients` em query única sem `.range()`. Se ultrapassarem `max_rows` do PostgREST, serão truncados silenciosamente. Monitorar crescimento; adicionar paginação quando necessário.
 
-### Configurar admin
+### [MÉDIO] Concorrência em _dmFireSave
+Se dois `_dmFireSave` do mesmo tipo forem disparados quase simultaneamente (ex: `save(bls)` chamado duas vezes em sequência rápida), o segundo captura `oldStore` antes que o primeiro termine o upsert. O diff do segundo pode gerar writes redundantes ou sobrescrever. Não há lock/mutex. Evitar múltiplos saves concorrentes do mesmo tipo.
+
+### [MÉDIO] checkAndMigrateBLs não reverte
+A migração automática de containers para billing é irreversível via código — uma vez criado o BL em billing, ele não é removido se containers forem deletados do tracking.
+
+### [MÉDIO] genDocnum não é sequencial
+O número de fatura `DEM-{ano}-{ts}{hash}` não é sequencial. Para fins fiscais/contábeis, se houver exigência de numeração sequencial, o mecanismo atual não atende.
+
+### [BAIXO] _dmOnReady sem timeout de segurança
+Se qualquer script regular falhar ao carregar (erro de sintaxe, 404), `_dmOnReady` não é definido e o app trava silenciosamente após o login.
+
+### [BAIXO] Taxas D&D em localStorage
+As taxas D&D customizadas ficam em `localStorage` — não são compartilhadas entre usuários nem dispositivos. Cada sessão/browser pode ter taxas diferentes.
+
+---
+
+## 8. Operações de Manutenção
+
+### Bump de cache
+Alterar `?v=113` para o próximo inteiro em todos os 9 `<script src>` de `app.html`. Usar `sed -i 's/v=113/v=114/g' app.html`.
+
+### Adicionar usuário
+1. Criar conta em Supabase Auth Dashboard → Authentication → Users
+2. Inserir na tabela `usuarios`:
+```sql
+INSERT INTO usuarios (id, nome, email, cargo, admin, ativo)
+VALUES ('<uuid-do-auth>', 'Nome', 'email@empresa.com', 'Cargo', false, true);
+```
+
+### Promover admin
 ```sql
 UPDATE usuarios SET admin = true WHERE email = 'usuario@empresa.com';
 ```
@@ -373,15 +405,30 @@ UPDATE usuarios SET admin = true WHERE email = 'usuario@empresa.com';
 ```bash
 git add -A && git commit -m "descrição"
 git push origin main
-# GitHub Actions faz o deploy automaticamente
+# GitHub Actions executa o deploy automaticamente para Firebase Hosting
 ```
 
 ---
 
-## 🔗 Links
+## 9. Links
 
 | Recurso | URL |
 |---------|-----|
-| App (produção) | https://demurragemanager.web.app/ |
+| App produção | https://demurragemanager.web.app |
 | Supabase Dashboard | https://supabase.com/dashboard/project/vcdivphwlspsymgibfri |
 | Repositório GitHub | https://github.com/luccafwlog/demurrage-manager |
+
+---
+
+## 10. Decisões Arquiteturais Relevantes (ADRs Compactos)
+
+| Decisão | Motivo | Trade-off |
+|---------|--------|-----------|
+| SPA em HTML puro sem framework | Zero dependência de build, deploy simples | Sem hot reload, sem tipagem, sem tree shaking |
+| db.js como ES module, demais como scripts regulares | db.js precisa de `import` (Supabase SDK). Módulos têm defer implícito, garantindo que `_dmOnReady` exista quando db.js termina | Risco de race condition se scripts regulares falharem |
+| Diff inteligente no _dmFireSave | Evita writes desnecessários no Supabase (custo + rate limit) | Deep copy em JSON a cada save — overhead em listas grandes |
+| Deep copy obrigatória em _dmStore | Evita aliasing entre módulo e store (causou bugs de diff fantasma) | Memória duplicada em sessões com muitos dados |
+| PK tripla (user_id, container, bl) | Suporta transshipment: mesmo container em BLs diferentes | Delete de container exige chave composta com `\x00` |
+| RLS colaborativa (sem filtro por user_id) | Simplicidade operacional para equipe pequena | Impede isolamento de dados por usuário sem refactor |
+| Paginação de containers (1000/página) | PostgREST max_rows truncava silenciosamente | bls/clients ainda sem paginação |
+| UNIQUE(id) removida de clients | Causava HTTP 409 quando usuários distintos tinham mesmo CNPJ | PK (user_id, id) garante unicidade com semântica correta |
