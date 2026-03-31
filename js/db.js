@@ -71,23 +71,41 @@ const _CONFLICT = {
   window._dmSession = 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 
   // FIX: containers agora seleciona a coluna `bl` separada (nova PK composta)
-  const [blsRes, trkRes, cliRes, settRes, profRes] = await Promise.all([
+  const [blsRes, cliRes, settRes, profRes] = await Promise.all([
     sb.from('bls').select('id, data'),
-    sb.from('containers').select('container, bl, data'),
     sb.from('clients').select('id, data'),
     sb.from('settings').select('alert_days').eq('user_id', uid).maybeSingle(),
     sb.from('usuarios').select('*').eq('id', uid).maybeSingle()
   ]);
 
+  // FIX: paginação para containers — PostgREST tem max_rows que trunca resultados.
+  // Busca em páginas de 1000 até obter todos os registros.
+  const trkAllRows = [];
+  const TRK_PAGE  = 1000;
+  let   trkFrom   = 0;
+  let   trkError  = null;
+  while (true) {
+    const { data: page, error: pageErr } = await sb
+      .from('containers')
+      .select('container, bl, data')
+      .range(trkFrom, trkFrom + TRK_PAGE - 1);
+    if (pageErr) { trkError = pageErr; break; }
+    trkAllRows.push(...(page || []));
+    if ((page || []).length < TRK_PAGE) break;
+    trkFrom += TRK_PAGE;
+  }
+
   if (blsRes.error) console.error('[DB] bls:', blsRes.error);
-  if (trkRes.error) console.error('[DB] containers:', trkRes.error);
+  if (trkError)     console.error('[DB] containers:', trkError);
   if (cliRes.error) console.error('[DB] clients:', cliRes.error);
+
+  console.log('[DB] containers carregados:', trkAllRows.length);
 
   window._dmStore.bls     = (blsRes.data  || []).map(r => r.data);
 
   // FIX: mescla as colunas de primeira classe (container, bl) com o jsonb data,
   // garantindo que container e bl SEMPRE existem no objeto local.
-  window._dmStore.trk = (trkRes.data || []).map(r => ({
+  window._dmStore.trk = trkAllRows.map(r => ({
     ...r.data,
     container: r.container,
     bl: r.bl !== undefined ? r.bl : (r.data && r.data.bl) || ''
