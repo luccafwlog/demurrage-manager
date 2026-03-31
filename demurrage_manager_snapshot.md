@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot Completo do Projeto
 
-> **Última atualização:** 2026-03-30 (v2.4) | **Cache version:** `?v=110` | **Deploy-date meta:** `2026-03-30`
+> **Última atualização:** 2026-03-31 (v2.7) | **Cache version:** `?v=113` | **Deploy-date meta:** `2026-03-31`
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (branch: `main`)
 > **App em produção:** https://demurragemanager.web.app
 
@@ -53,17 +53,17 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
 <!-- 2. db.js (module — deferred, executa após DOM pronto) -->
-<script type="module" src="js/db.js?v=110"></script>
+<script type="module" src="js/db.js?v=113"></script>
 
 <!-- 3. Scripts do app (regulares — executam na ordem, antes do db.js module) -->
-<script src="js/utils.js?v=110"></script>
-<script src="js/rates.js?v=110"></script>
-<script src="js/billing.js?v=110"></script>
-<script src="js/tracking.js?v=110"></script>
-<script src="js/clients.js?v=110"></script>
-<script src="js/users.js?v=110"></script>
-<script src="js/consolidated.js?v=110"></script>
-<script src="js/init.js?v=110"></script>
+<script src="js/utils.js?v=113"></script>
+<script src="js/rates.js?v=113"></script>
+<script src="js/billing.js?v=113"></script>
+<script src="js/tracking.js?v=113"></script>
+<script src="js/clients.js?v=113"></script>
+<script src="js/users.js?v=113"></script>
+<script src="js/consolidated.js?v=113"></script>
+<script src="js/init.js?v=113"></script>
 <!-- init.js define window._dmOnReady() → db.js o chama após carga -->
 ```
 
@@ -284,17 +284,36 @@ _CONFLICT = {
 | Tabela       | Registros | Observação                          |
 |--------------|-----------|-------------------------------------|
 | `bls`        | 254       | Dados migrados do Firebase          |
-| `containers` | 0         | ⚠️ Precisa reimportar planilhas     |
+| `containers` | 1625      | Importados via planilha (1629 linhas − 4 devolvidos no free time) |
 | `clients`    | 78        | Dados migrados do Firebase          |
 | `settings`   | 0         | Será criado ao salvar alertDays     |
 | `usuarios`   | 1         | Conta do administrador              |
 | `logs`       | 0         | Zerado na migração                  |
 
-> **⚠️ Containers zerado**: Os dados do rastreamento não foram migrados do Firebase. Os usuários precisam reimportar as planilhas de containers via Rastreamento → Importar Planilha.
+> Containers com `emptyReturn` e `discharge` onde `used_days <= freeTime` são **intencionalmente ignorados** na importação (devolvidos no free time = sem demurrage). Comportamento correto e esperado.
 
 ---
 
 ## 🐛 Histórico de Correções
+
+### 2026-03-31 — Fix paginação de containers + 409 em clientes (v2.7)
+
+**Cache version:** `?v=113` | **Commit:** `0b13ffd`
+
+| # | Bug | Causa Raiz | Fix |
+|---|-----|------------|-----|
+| N | Após reload, apenas 100 containers eram exibidos (de 1625 no banco) | `db.js` fazia uma única query sem paginação; PostgREST tem `max_rows` configurado que truncava o resultado em ~100 linhas | Substituído por loop paginado com `.range(from, from+999)` em `db.js` até carregar todos os registros. Log `[DB] containers carregados: N` adicionado |
+| O | Exclusão de e-mail de cliente não persistia após refresh (HTTP 409) | Tabela `clients` tinha `UNIQUE(id)` isolado (`clients_unique`) além da PK `(user_id, id)`. Quando dois usuários tinham cliente com mesmo CNPJ, o upsert violava a constraint secundária → PostgREST 409 → save silenciosamente ignorado | Migration DDL: `ALTER TABLE clients DROP CONSTRAINT clients_unique`. A PK composta `(user_id, id)` já garante unicidade por usuário |
+
+### 2026-03-31 — Auditoria pipeline containers→faturamento (v2.5 / v2.6)
+
+**Cache versions:** `?v=111` → `?v=112` | **Commits:** série de 3
+
+| # | Bug | Causa Raiz | Fix |
+|---|-----|------------|-----|
+| K | `ERR_INSUFFICIENT_RESOURCES` ao importar planilha com CNPJs — emails não salvavam | `processClientRows` em `clients.js` chamava `syncBLEmails()` dentro de `forEach` loop → N requests HTTP concorrentes para `save(bls)` → browser esgotava recursos → `cliSave(clients)` nunca chegava ao servidor | Batch accumulation: `const emailChanges = new Map()` acumula mudanças no loop; único `save(bls)` após `cliSave(clients)` |
+| L | Mesmo bug N-saves em `doTrkImport` em `tracking.js` | `syncBLEmails()` e `upsertClient()` chamados por BL dentro de loop `Object.entries(cnpjByBL).forEach` | Mesmo padrão: `emailSyncs: Map` + `newClientsToAdd[]` acumulados; saves em lote após o loop |
+| M | `genDocnum` gerava colisões de número de fatura | Hash mod 9000 → colisão confirmada: dois BLs distintos geraram `DEM-2026-1454` | Reescrito com timestamp `Date.now().toString(36).slice(-4)` + hash suffix; colisão na prática impossível |
 
 ### 2026-03-30 — Fix merge de emails na importação (v2.4)
 
@@ -339,7 +358,7 @@ _CONFLICT = {
 ## 🔧 Manutenção e Configuração
 
 ### Atualizar versão de cache
-Em `app.html`, alterar `?v=110` para o próximo número em todos os `<script src>` (atualmente 9 tags).
+Em `app.html`, alterar `?v=113` para o próximo número em todos os `<script src>` (atualmente 9 tags).
 
 ### Adicionar novo usuário
 1. Criar conta no Supabase Auth (Dashboard → Authentication → Users)
