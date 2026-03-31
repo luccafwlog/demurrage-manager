@@ -144,7 +144,7 @@ function doTrkImport() {
     const useDays = useDaysRaw !== '' ? parseInt(useDaysRaw) : (emptyReturnRaw ? trkDaysBetween(discharge, emptyReturnRaw) : null);
     return {
       container:   String(n['CONTAINER'] || n['CTR'] || '').trim().toUpperCase(),
-      bl:          String(n['BL'] || n['B/L'] || n['B_L'] || '').trim(),
+      bl:          String(n['BL'] || n['B/L'] || n['B_L'] || '').trim().toUpperCase(),
       cnee:        String(n['CNEE'] || n['CLIENTE'] || '').trim(),
       type:        String(n['TYPE'] || n['TIPO'] || '').trim(),
       pol:         String(n['POL'] || '').trim(),
@@ -188,15 +188,19 @@ function doTrkImport() {
     }
   });
 
+  // FIX: acumula novos clientes e syncs de email — aplica em batch para evitar
+  // N saves concorrentes (mesmo padrão que causou ERR_INSUFFICIENT_RESOURCES nos clientes)
+  const newClientsToAdd = []; // { cnpj, cnee } — clientes que precisam ser criados
+  const emailSyncs = new Map(); // cnpj → emails[] — syncs a aplicar nos BLs
+
   Object.entries(cnpjByBL).forEach(([blNum, cnpj]) => {
-    // Update client registry
     const cnee = (imported.find(i => i.bl === blNum) || {}).cnee || '';
     const client = getClientByCnpj(cnpj);
     if (client) {
-      syncBLEmails(cnpj, client.emails);
+      if (client.emails && client.emails.length > 0) emailSyncs.set(cnpj, client.emails);
       clientsLinked++;
     } else if (cnee) {
-      upsertClient(cnpj, cnee, []);
+      newClientsToAdd.push({ cnpj, cnee });
     }
 
     // Update CNPJ + email on any existing billing BL with same BL number
@@ -212,18 +216,41 @@ function doTrkImport() {
       }
     });
   });
+
+  // Batch: aplica syncs de email nos BLs (sem save individual por CNPJ)
+  if (emailSyncs.size > 0) {
+    emailSyncs.forEach((emails, cnpj) => {
+      bls.forEach(b => {
+        if (normalizeCnpj(b.cnpj) === cnpj && !b.email) {
+          b.email = emails.join(', ');
+          blsModified = true;
+        }
+      });
+    });
+  }
+
+  // Batch: cria clientes novos e salva UMA vez
+  if (newClientsToAdd.length > 0) {
+    newClientsToAdd.forEach(({ cnpj, cnee }) => {
+      const norm = normalizeCnpj(cnpj);
+      if (!clients.find(c => normalizeCnpj(c.cnpj) === norm)) {
+        clients.unshift({ id: uid(), cnpj: norm, name: cnee, emails: [], createdAt: Date.now() });
+      }
+    });
+    cliSave(clients);
+  }
   // FIX-QUOTA #F: não chama save(bls) aqui — checkAndMigrateBLs pode modificar bls
   // também; fazemos UMA save unificada depois (conteúdo diff vai ignorar se nada mudou)
 
   closeModal('modal-trk-import');
-  const migrated = checkAndMigrateBLs(); // pode adicionar BLs ao array `bls`
+  const { newBLs, updatedContainers } = checkAndMigrateBLs();
   renderTracking();
-  // FIX-QUOTA #F: save unificado — 1 write batch para bls (em vez de 2 separados)
-  // O diff de conteúdo em _dmFireSave vai ignorar BLs que não mudaram
-  if (blsModified || migrated > 0) save(bls);
+  // Save unificado: 1 write batch para bls (diff ignora BLs inalterados)
+  if (blsModified || newBLs > 0 || updatedContainers > 0) save(bls);
 
   let msg = `Importado: ${added} novo(s), ${updated} atualizado(s)${skippedFt > 0 ? `, ${skippedFt} ignorado(s) (devolvidos no free time)` : ''}.`;
-  if (migrated > 0) msg += ` ${migrated} BL(s) migrado(s) para Faturamento!`;
+  if (newBLs > 0) msg += ` ${newBLs} BL(s) migrado(s) para Faturamento!`;
+  if (updatedContainers > 0) msg += ` ${updatedContainers} BL(s) com containers atualizados.`;
   if (clientsLinked > 0) msg += ` ${clientsLinked} CNPJ(s) vinculado(s) a clientes.`;
   toast(msg, 'success');
 }
@@ -238,6 +265,7 @@ function checkAndMigrateBLs() {
   });
 
   let migrated = 0;
+  let updatedContainers = 0; // BLs já existentes cujos containers foram atualizados
 
   Object.entries(byBL).forEach(([blNum, containers]) => {
     // Condition 1: ALL containers must be returned
@@ -249,8 +277,24 @@ function checkAndMigrateBLs() {
     if (!hasDemurrage) return;
 
     // Check if already migrated (BL already exists in billing module)
-    const alreadyExists = bls.some(b => b.bl === blNum);
-    if (alreadyExists) return;
+    const existingBL = bls.find(b => b.bl === blNum);
+    if (existingBL) {
+      // FIX: atualiza lista de containers do BL já migrado se novos foram adicionados
+      // (reimportação com containers adicionais deve refletir no faturamento)
+      if (!existingBL.paid && !existingBL.billed) {
+        const freshContainers = containers.map(c => ({
+          container:   c.container,
+          type:        c.type || '40G1',
+          discharge:   c.discharge || '',
+          emptyReturn: c.emptyReturn || '',
+        }));
+        if (JSON.stringify(existingBL.containers) !== JSON.stringify(freshContainers)) {
+          existingBL.containers = freshContainers;
+          updatedContainers++;
+        }
+      }
+      return;
+    }
 
     // Build the BL object for billing module
     const first = containers[0];
@@ -303,7 +347,7 @@ function checkAndMigrateBLs() {
   });
 
   // FIX-QUOTA #F: save removido daqui — chamador (doTrkImport) faz save unificado
-  return migrated;
+  return { newBLs: migrated, updatedContainers };
 }
 
 function renderTracking() {

@@ -232,15 +232,19 @@ let editingId = null, currentBL = null, currentType = null, ovTotal = null, ovRo
 function uid() { return Date.now().toString(36)+Math.random().toString(36).slice(2); }
 
 function genDocnum(blStr) {
-  // Hash determinístico baseado no número do BL
-  let hash = 0;
-  const s = String(blStr || '').toUpperCase();
+  // FIX: hash com 9000 slots causava colisões (confirmado no DB: DEM-2026-1454 duplicado).
+  // Novo formato: DEM-YYYY-<4 chars base36 do timestamp><3 chars do hash do BL>
+  // O componente de timestamp garante unicidade mesmo com hash colidente.
+  const year = new Date().getFullYear();
+  const ts   = Date.now().toString(36).slice(-4).toUpperCase();
+  let hash   = 0;
+  const s    = String(blStr || '').toUpperCase();
   for (let i = 0; i < s.length; i++) {
     hash = ((hash << 5) - hash) + s.charCodeAt(i);
     hash |= 0;
   }
-  const num = (Math.abs(hash) % 9000) + 1000; // 1000–9999
-  return 'DEM-' + new Date().getFullYear() + '-' + num;
+  const suffix = (Math.abs(hash) % 1000).toString().padStart(3, '0');
+  return `DEM-${year}-${ts}${suffix}`;
 }
 function toast(msg, t='') {
   const el = document.getElementById('toast');
