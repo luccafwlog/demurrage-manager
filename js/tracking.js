@@ -623,16 +623,16 @@ function _execClearAll() {
 function downloadBulkDeleteTemplate() {
   const wb = XLSX.utils.book_new();
   const data = [
-    ['CONTAINER'],
-    ['ABCU1234567'],
-    ['MSCU9876543'],
-    ['TCKU0011223'],
+    ['CONTAINER',    'BL'],
+    ['ABCU1234567',  'HLCSSA3260012345'],
+    ['MSCU9876543',  'MEDUA1234567'],
+    ['TCKU0011223',  'EVERU9876543'],
   ];
   const ws = XLSX.utils.aoa_to_sheet(data);
-  ws['!cols'] = [{wch: 22}];
+  ws['!cols'] = [{wch: 22}, {wch: 22}];
   XLSX.utils.book_append_sheet(wb, ws, 'Exclusao');
   XLSX.writeFile(wb, 'modelo_exclusao_containers.xlsx');
-  toast('Modelo baixado! Preencha com os containers e faça o upload.', 'success');
+  toast('Modelo baixado! Preencha com os containers e BLs, depois faça o upload.', 'success');
 }
 
 // ── Processar planilha de exclusão ─────────────────────────
@@ -649,31 +649,42 @@ function handleBulkDeleteFile(event) {
       const ws   = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
 
-      // Localiza coluna CONTAINER (case-insensitive, aceita variações)
-      const header  = (rows[0] || []).map(h => String(h).trim().toUpperCase());
-      const colIdx  = header.findIndex(h =>
+      const header = (rows[0] || []).map(h => String(h).trim().toUpperCase());
+
+      // Localiza coluna CONTAINER
+      const contIdx = header.findIndex(h =>
         h === 'CONTAINER' || h === 'CONT' || h === 'CONTAINER NO' || h === 'CONTAINER NUMBER'
       );
-      if (colIdx === -1) {
+      if (contIdx === -1) {
         if (previewEl) previewEl.innerHTML = '<div style="padding:12px;background:#fee2e2;border-radius:8px;color:#b91c1c;font-size:13px;">❌ Coluna "CONTAINER" não encontrada. Baixe o modelo padrão.</div>';
         return;
       }
 
-      const seen = new Set();
-      const containers = [];
-      for (let i = 1; i < rows.length; i++) {
-        const val = String(rows[i][colIdx] || '').trim().toUpperCase();
-        if (!val || seen.has(val)) continue;
-        seen.add(val);
-        containers.push(val);
-      }
-
-      if (!containers.length) {
-        if (previewEl) previewEl.innerHTML = '<div style="padding:12px;background:#fee2e2;border-radius:8px;color:#b91c1c;font-size:13px;">❌ Nenhum container encontrado na planilha.</div>';
+      // Localiza coluna BL (obrigatória)
+      const blIdx = header.findIndex(h => h === 'BL' || h === 'B/L' || h === 'BILL OF LADING');
+      if (blIdx === -1) {
+        if (previewEl) previewEl.innerHTML = '<div style="padding:12px;background:#fee2e2;border-radius:8px;color:#b91c1c;font-size:13px;">❌ Coluna "BL" não encontrada. A planilha deve ter as colunas <strong>CONTAINER</strong> e <strong>BL</strong>. Baixe o modelo padrão.</div>';
         return;
       }
 
-      _validateBulkDelete(containers);
+      const seen  = new Set();
+      const pairs = [];
+      for (let i = 1; i < rows.length; i++) {
+        const cont = String(rows[i][contIdx] || '').trim().toUpperCase();
+        const bl   = String(rows[i][blIdx]   || '').trim();
+        if (!cont || !bl) continue;
+        const key = cont + '\x00' + bl;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        pairs.push({ container: cont, bl });
+      }
+
+      if (!pairs.length) {
+        if (previewEl) previewEl.innerHTML = '<div style="padding:12px;background:#fee2e2;border-radius:8px;color:#b91c1c;font-size:13px;">❌ Nenhum par CONTAINER + BL válido encontrado na planilha.</div>';
+        return;
+      }
+
+      _validateBulkDelete(pairs);
     } catch(err) {
       toast('Erro ao ler planilha: ' + err.message, 'error');
       if (previewEl) previewEl.innerHTML = '<div style="padding:12px;background:#fee2e2;border-radius:8px;color:#b91c1c;font-size:13px;">❌ Erro ao ler arquivo: ' + err.message + '</div>';
@@ -682,15 +693,19 @@ function handleBulkDeleteFile(event) {
   reader.readAsBinaryString(file);
 }
 
-function _validateBulkDelete(containerNums) {
+function _validateBulkDelete(pairs) {
+  // pairs = [{container: 'ABCU1234567', bl: 'HLCSSA326...'}, ...]
   const found    = [];
   const notFound = [];
 
-  containerNums.forEach(num => {
-    // Suporte a transshipment: mesmo container em múltiplos BLs
-    const matches = trkData.filter(r => String(r.container||'').toUpperCase() === num);
-    if (matches.length) matches.forEach(m => found.push(m));
-    else notFound.push(num);
+  pairs.forEach(({ container, bl }) => {
+    // Match exato por (container, bl) — evita excluir o mesmo container de BL errado
+    const match = trkData.find(r =>
+      String(r.container || '').toUpperCase() === container &&
+      String(r.bl || '').trim() === bl.trim()
+    );
+    if (match) found.push(match);
+    else notFound.push(`${container} / ${bl}`);
   });
 
   _bulkDeletePreview = found;
@@ -728,7 +743,7 @@ function _validateBulkDelete(containerNums) {
 
   if (notFound.length) {
     html += `<div style="padding:12px 14px;background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;margin-bottom:10px;">
-      <div style="font-size:13px;font-weight:700;color:#b91c1c;margin-bottom:4px;">❌ ${notFound.length} container(s) não encontrado(s) — serão ignorados:</div>
+      <div style="font-size:13px;font-weight:700;color:#b91c1c;margin-bottom:4px;">❌ ${notFound.length} par(es) não encontrado(s) — serão ignorados:</div>
       <div style="font-size:12px;color:#7f1d1d;word-break:break-all;line-height:1.8;">${notFound.join(' · ')}</div>
     </div>`;
   }
