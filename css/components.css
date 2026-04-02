@@ -96,6 +96,8 @@ div.invoice { border: 1px solid #ccc; padding: 36px 40px; font-size: 13px; color
 .ptax-manual-btn:hover { background: rgba(245,158,11,0.32); color: #fff; }
 
 
+@page { margin: 0; }
+
 @media print {
   * {
     -webkit-print-color-adjust: exact !important;
