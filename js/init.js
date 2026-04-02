@@ -18,7 +18,7 @@ document.addEventListener('click', e => {
   if (dd && inp && !dd.contains(e.target) && e.target !== inp) dd.style.display = 'none';
 });
 document.addEventListener('keydown', e => {
-  if (e.key==='Escape') ['modal-bl','modal-import','modal-editval','modal-rates','modal-trk-import','modal-consolidated','modal-client','modal-alert-email','modal-alert-panel','modal-trk-clear'].forEach(id=>closeModal(id));
+  if (e.key==='Escape') ['modal-bl','modal-import','modal-editval','modal-rates','modal-trk-import','modal-consolidated','modal-client','modal-alert-email','modal-alert-panel','modal-trk-clear','modal-bil-clear'].forEach(id=>closeModal(id));
 });
 document.querySelectorAll('.overlay').forEach(ov => {
   ov.addEventListener('click', e => { if(e.target===ov) ov.classList.remove('open'); });

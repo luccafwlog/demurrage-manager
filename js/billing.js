@@ -372,7 +372,7 @@ function attachDiscountListeners() {
 // Ações de alta frequência (edicao_bl, criacao_bl, exportacao_relatorio) vão apenas ao console.
 const _AUDIT_FIRESTORE_ACTIONS = new Set([
   // BLs
-  'exclusao_bl', 'exclusao_todos_bls',
+  'exclusao_bl', 'exclusao_todos_bls', 'exclusao_em_massa_bls',
   'marcacao_pagamento', 'marcacao_fatura',
   'envio_email', 'importacao_planilha',
   // Containers
@@ -1145,17 +1145,180 @@ function showDoubleConfirmation(title, message, itemCount, onConfirm) {
   input.focus();
 }
 
+// ── MODAL LIMPAR BLs (Limpar Tudo + Exclusão em Massa) ─────────────────────
+let _bilBulkPreview = [];
+
 function clearAllBLs() {
+  _openBilClearModal();
+}
+
+function _openBilClearModal() {
+  _bilBulkPreview = [];
+  const countEl = document.getElementById('bil-clear-all-count');
+  if (countEl) countEl.textContent = bls.length;
+  const confirmBtn = document.getElementById('bil-bulk-confirm-btn');
+  if (confirmBtn) confirmBtn.disabled = true;
+  const preview = document.getElementById('bil-bulk-preview');
+  if (preview) preview.innerHTML = '';
+  const fileInput = document.getElementById('bil-bulk-file-input');
+  if (fileInput) fileInput.value = '';
+  _switchBilClearTab('bil-tab-clear-all');
+  openModal('modal-bil-clear');
+}
+
+function _switchBilClearTab(tabId) {
+  ['bil-tab-clear-all', 'bil-tab-clear-bulk'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('active');
+  });
+  ['bil-pane-clear-all', 'bil-pane-clear-bulk'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  const activeTab = document.getElementById(tabId);
+  if (activeTab) activeTab.classList.add('active');
+  const paneId = tabId === 'bil-tab-clear-all' ? 'bil-pane-clear-all' : 'bil-pane-clear-bulk';
+  const pane = document.getElementById(paneId);
+  if (pane) pane.style.display = '';
+}
+
+function _execBilClearAll() {
+  closeModal('modal-bil-clear');
   showDoubleConfirmation(
     'Excluir todos os BLs?',
-    'Você está prestes a excluir permanentemente TODOS os BLs armazenados no sistema. Esta ação não pode ser desfeita e não há backup automático.',
+    'Você está prestes a excluir permanentemente TODOS os BLs armazenados no sistema. Esta ação não pode ser desfeita.',
     bls.length,
     () => {
+      const qty = bls.length;
       bls = [];
       save(bls);
       renderList();
       toast('✓ Todos os BLs foram excluídos permanentemente.', '');
-      logAuditAction('exclusao_todos_bls', {quantidade: bls.length});
+      logAuditAction('exclusao_todos_bls', { quantidade: qty });
+    }
+  );
+}
+
+function downloadBilBulkDeleteTemplate() {
+  if (typeof XLSX === 'undefined') { toast('Biblioteca XLSX não carregada.', 'error'); return; }
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['BL'],
+    ['HLCSSA3260012345'],
+    ['MEDUA1234567'],
+    ['EVERU9876543']
+  ]);
+  ws['!cols'] = [{ wch: 22 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'BLs para Excluir');
+  XLSX.writeFile(wb, 'modelo_exclusao_bls.xlsx');
+}
+
+function handleBilBulkDeleteFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'binary' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      if (!rows.length) { toast('Planilha vazia.', 'error'); return; }
+
+      // Encontra coluna BL (case-insensitive)
+      const header = (rows[0] || []).map(c => String(c || '').trim().toUpperCase());
+      const blColIdx = header.indexOf('BL');
+      if (blColIdx === -1) { toast('Coluna "BL" não encontrada na planilha.', 'error'); return; }
+
+      const blNums = rows.slice(1)
+        .map(r => String(r[blColIdx] || '').trim())
+        .filter(v => v.length > 0);
+
+      if (!blNums.length) { toast('Nenhum BL encontrado na planilha.', 'error'); return; }
+      _validateBilBulkDelete(blNums);
+    } catch(err) {
+      toast('Erro ao ler planilha: ' + err.message, 'error');
+    }
+  };
+  reader.readAsBinaryString(file);
+}
+
+function _validateBilBulkDelete(blNums) {
+  const preview = document.getElementById('bil-bulk-preview');
+  const confirmBtn = document.getElementById('bil-bulk-confirm-btn');
+
+  // Normaliza para uppercase para comparação
+  const blNumsNorm = blNums.map(n => n.toUpperCase());
+
+  // Encontra BLs correspondentes (pelo campo bl, case-insensitive)
+  const found = [];
+  const notFound = [];
+  blNumsNorm.forEach(num => {
+    const match = bls.find(b => b.bl && b.bl.toUpperCase() === num);
+    if (match) found.push(match);
+    else notFound.push(num);
+  });
+
+  _bilBulkPreview = found;
+
+  let html = '';
+  if (found.length) {
+    html += `<div style="margin-bottom:12px;padding:12px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;">
+      <div style="font-size:12px;font-weight:700;color:#dc2626;margin-bottom:8px;">✓ ${found.length} BL(s) encontrado(s) — serão excluídos</div>
+      <div style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;">
+        ${found.map(b => {
+          const statusBadge = b.paid
+            ? '<span style="background:#dcfce7;color:#166534;font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;">PAGO</span>'
+            : b.billed
+            ? '<span style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;">FATURADO</span>'
+            : '<span style="background:#dbeafe;color:#1e40af;font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;">PENDENTE</span>';
+          return `<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px solid #fee2e2;">
+            <span style="font-weight:600;font-family:monospace;">${b.bl || '—'}</span>
+            ${statusBadge}
+            <span style="color:#6b7280;font-size:11px;">${b.client || ''}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }
+  if (notFound.length) {
+    html += `<div style="margin-bottom:12px;padding:12px 14px;background:#f9fafb;border:1px solid #d1d5db;border-radius:8px;">
+      <div style="font-size:12px;font-weight:700;color:#6b7280;margin-bottom:8px;">✗ ${notFound.length} BL(s) não encontrado(s) na planilha</div>
+      <div style="font-size:11px;color:#9ca3af;font-family:monospace;">${notFound.join(', ')}</div>
+    </div>`;
+  }
+
+  if (preview) preview.innerHTML = html || '<div style="font-size:13px;color:#6b7280;text-align:center;padding:16px;">Nenhum resultado.</div>';
+  if (confirmBtn) confirmBtn.disabled = found.length === 0;
+}
+
+function executeBilBulkDelete() {
+  if (!_bilBulkPreview.length) return;
+  const ids = new Set(_bilBulkPreview.map(b => b.id));
+  const blNums = _bilBulkPreview.map(b => b.bl);
+  const snapshot = JSON.parse(JSON.stringify(bls));
+
+  closeModal('modal-bil-clear');
+  showDoubleConfirmation(
+    `Excluir ${ids.size} BL(s)?`,
+    `Confirme para excluir permanentemente os BLs selecionados. Esta ação não pode ser desfeita.`,
+    ids.size,
+    async () => {
+      try {
+        bls = bls.filter(b => !ids.has(b.id));
+        save(bls);
+        renderList();
+        toast(`✓ ${ids.size} BL(s) excluído(s) com sucesso.`, 'success');
+        logAuditAction('exclusao_em_massa_bls', {
+          quantidade: ids.size,
+          bls: blNums
+        });
+      } catch(err) {
+        console.error('[BIL-BULK-DELETE]', err);
+        bls = snapshot;
+        save(bls);
+        renderList();
+        toast('Erro ao excluir BLs. Dados restaurados.', 'error');
+      }
     }
   );
 }
