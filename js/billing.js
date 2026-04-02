@@ -371,9 +371,18 @@ function attachDiscountListeners() {
 // FIX-QUOTA #E: só loga ações críticas no Firestore (evita writes por edições rotineiras)
 // Ações de alta frequência (edicao_bl, criacao_bl, exportacao_relatorio) vão apenas ao console.
 const _AUDIT_FIRESTORE_ACTIONS = new Set([
+  // BLs
   'exclusao_bl', 'exclusao_todos_bls',
   'marcacao_pagamento', 'marcacao_fatura',
-  'envio_email', 'importacao_planilha'
+  'envio_email', 'importacao_planilha',
+  // Containers
+  'exclusao_todos_containers', 'exclusao_em_massa_containers',
+  // Usuários e sistema
+  'edicao_usuario', 'limpeza_logs',
+  // Backup / checkpoints
+  'criacao_checkpoint', 'restauracao_checkpoint',
+  // Sessão
+  'login', 'logout'
 ]);
 function logAuditAction(action, details = {}) {
   console.log('[AUDIT]', action, details);

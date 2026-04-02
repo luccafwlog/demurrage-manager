@@ -392,6 +392,112 @@ const _CONFLICT = {
     }
   };
 
+  // ================= CHECKPOINTS =================
+  window._dmFireSaveCheckpoint = async function(label, tipo) {
+    try {
+      const payload = {
+        bls:     JSON.parse(JSON.stringify(window._dmStore.bls     || [])),
+        trk:     JSON.parse(JSON.stringify(window._dmStore.trk     || [])),
+        clients: JSON.parse(JSON.stringify(window._dmStore.clients || []))
+      };
+      const nome = window._dmUserData?.nome || window._dmUser?.email || uid;
+      const { data, error } = await sb.from('checkpoints').insert({
+        user_id:     uid,
+        label:       label || '',
+        tipo:        tipo  || 'manual',
+        criado_por:  nome,
+        payload:     payload
+      }).select('id, label, tipo, criado_por, criado_em').single();
+      if (error) { console.error('[DB] saveCheckpoint:', error); return null; }
+      return data;
+    } catch(e) {
+      console.error('[DB] saveCheckpoint:', e);
+      return null;
+    }
+  };
+
+  window._dmFireLoadCheckpoints = async function() {
+    try {
+      const { data, error } = await sb
+        .from('checkpoints')
+        .select('id, label, tipo, criado_por, criado_em')
+        .order('criado_em', { ascending: false })
+        .limit(50);
+      if (error) { console.error('[DB] loadCheckpoints:', error); return []; }
+      return data || [];
+    } catch(e) {
+      console.error('[DB] loadCheckpoints:', e);
+      return [];
+    }
+  };
+
+  window._dmFireRestoreCheckpoint = async function(id) {
+    try {
+      const { data, error } = await sb
+        .from('checkpoints')
+        .select('payload, label')
+        .eq('id', id)
+        .single();
+      if (error || !data) { console.error('[DB] restoreCheckpoint fetch:', error); return false; }
+
+      const payload = data.payload || {};
+      // Limpa tabelas existentes
+      await Promise.all([
+        sb.from('bls').delete().eq('user_id', uid),
+        sb.from('containers').delete().eq('user_id', uid),
+        sb.from('clients').delete().eq('user_id', uid)
+      ]);
+
+      // Restaura BLs
+      if (payload.bls?.length) {
+        const rows = payload.bls.map(r => ({ id: String(r.id||''), user_id: uid, data: sanitize(r), updated_at: new Date().toISOString() }));
+        for (let i = 0; i < rows.length; i += 50) {
+          const { error: e } = await sb.from('bls').upsert(rows.slice(i, i+50), { onConflict: 'user_id,id' });
+          if (e) { console.error('[DB] restore bls chunk:', e); return false; }
+        }
+      }
+
+      // Restaura containers
+      if (payload.trk?.length) {
+        const rows = payload.trk.map(r => ({ container: String(r.container||''), bl: String(r.bl||''), user_id: uid, data: sanitize(r), updated_at: new Date().toISOString() }));
+        for (let i = 0; i < rows.length; i += 50) {
+          const { error: e } = await sb.from('containers').upsert(rows.slice(i, i+50), { onConflict: 'user_id,container,bl' });
+          if (e) { console.error('[DB] restore containers chunk:', e); return false; }
+        }
+      }
+
+      // Restaura clientes
+      if (payload.clients?.length) {
+        const rows = payload.clients.map(r => ({ id: String(r.id||r.cnpj||''), user_id: uid, data: sanitize(r), updated_at: new Date().toISOString() }));
+        for (let i = 0; i < rows.length; i += 50) {
+          const { error: e } = await sb.from('clients').upsert(rows.slice(i, i+50), { onConflict: 'user_id,id' });
+          if (e) { console.error('[DB] restore clients chunk:', e); return false; }
+        }
+      }
+
+      // Atualiza store em memória
+      window._dmStore.bls     = JSON.parse(JSON.stringify(payload.bls     || []));
+      window._dmStore.trk     = JSON.parse(JSON.stringify(payload.trk     || []));
+      window._dmStore.clients = JSON.parse(JSON.stringify(payload.clients || []));
+
+      return data.label || true;
+    } catch(e) {
+      console.error('[DB] restoreCheckpoint:', e);
+      return false;
+    }
+  };
+
+  window._dmFireDeleteCheckpoint = async function(id) {
+    try {
+      const { error } = await sb.from('checkpoints').delete().eq('id', id);
+      if (error) { console.error('[DB] deleteCheckpoint:', error); return false; }
+      return true;
+    } catch(e) {
+      console.error('[DB] deleteCheckpoint:', e);
+      return false;
+    }
+  };
+
   // ================= LOGOUT =================
   window._dmLogout = async function() {
     try {

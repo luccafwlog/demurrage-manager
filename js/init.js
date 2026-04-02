@@ -18,7 +18,7 @@ document.addEventListener('click', e => {
   if (dd && inp && !dd.contains(e.target) && e.target !== inp) dd.style.display = 'none';
 });
 document.addEventListener('keydown', e => {
-  if (e.key==='Escape') ['modal-bl','modal-import','modal-editval','modal-rates','modal-trk-import','modal-consolidated','modal-client','modal-alert-email','modal-alert-panel'].forEach(id=>closeModal(id));
+  if (e.key==='Escape') ['modal-bl','modal-import','modal-editval','modal-rates','modal-trk-import','modal-consolidated','modal-client','modal-alert-email','modal-alert-panel','modal-trk-clear'].forEach(id=>closeModal(id));
 });
 document.querySelectorAll('.overlay').forEach(ov => {
   ov.addEventListener('click', e => { if(e.target===ov) ov.classList.remove('open'); });
@@ -157,6 +157,7 @@ function switchCfgPane(btn, paneId) {
   if (paneId === 'cfg-taxas')  renderCfgRates();
   if (paneId === 'cfg-users')  { if (typeof renderUsers === 'function') renderUsers(); }
   if (paneId === 'cfg-sistema') renderCfgSistema();
+  if (paneId === 'cfg-backup') renderCheckpointList();
 }
 
 function initCfgModule() {
@@ -407,6 +408,124 @@ function cfgClearCache() {
 }
 function cfgReloadRates() { loadCfgRatesFromFirestore(); renderCfgRates(); toast('Taxas recarregadas!', 'success'); }
 function cfgShowAuditLog() { switchModule('settings'); setTimeout(function(){ var btn=document.querySelector('.cfg-subtab[onclick*="cfg-users"]'); if(btn) switchCfgPane(btn,'cfg-users'); },50); }
+
+// ── CHECKPOINTS ───────────────────────────────────────────────────────────
+
+async function renderCheckpointList() {
+  const container = document.getElementById('checkpoint-list');
+  if (!container) return;
+  container.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;">⏳ Carregando checkpoints...</div>';
+  if (!window._dmFireLoadCheckpoints) {
+    container.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;">Função não disponível.</div>';
+    return;
+  }
+  const list = await window._dmFireLoadCheckpoints();
+  if (!list.length) {
+    container.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;font-size:13px;">Nenhum checkpoint encontrado.<br>Crie um abaixo para salvar o estado atual dos dados.</div>';
+    return;
+  }
+  container.innerHTML = list.map(cp => {
+    const d = cp.criado_em ? new Date(cp.criado_em) : new Date(0);
+    const dateStr = d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+    const tipoBadge = cp.tipo === 'auto'
+      ? '<span style="background:#f3f4f6;color:#6b7280;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:600;">AUTO</span>'
+      : '<span style="background:#ede9fe;color:#7c3aed;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:600;">MANUAL</span>';
+    return `<div class="checkpoint-item" data-id="${cp.id}">
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:600;font-size:13px;margin-bottom:2px;">${cp.label || '(sem rótulo)'} ${tipoBadge}</div>
+        <div style="font-size:11px;color:var(--muted);">${dateStr} · por ${cp.criado_por || '—'}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;">
+        <button onclick="restoreCheckpoint('${cp.id}','${(cp.label||'').replace(/'/g,'\\\'')}')" class="act-btn edit" style="font-size:11px;padding:4px 10px;">↩ Restaurar</button>
+        <button onclick="deleteCheckpoint('${cp.id}')" class="act-btn" style="font-size:11px;padding:4px 8px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function createCheckpoint(tipo) {
+  const label = tipo === 'manual'
+    ? prompt('Rótulo para este checkpoint (ex: "Antes de importação de março"):')
+    : ('Auto – ' + new Date().toLocaleString('pt-BR'));
+  if (tipo === 'manual' && label === null) return; // cancelled
+  const btn = document.getElementById('btn-create-checkpoint');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Salvando...'; }
+  try {
+    const result = await window._dmFireSaveCheckpoint(label || '', tipo || 'manual');
+    if (result) {
+      toast('✓ Checkpoint "' + (label || result.id.slice(0,8)) + '" criado!', 'success');
+      logAuditAction('criacao_checkpoint', { label: label || '', tipo: tipo || 'manual', checkpoint_id: result.id });
+      await renderCheckpointList();
+    } else {
+      toast('Erro ao criar checkpoint.', 'error');
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '+ Criar Checkpoint'; }
+  }
+}
+
+async function restoreCheckpoint(id, label) {
+  showDoubleConfirmation(
+    'Restaurar Checkpoint?',
+    `Todos os dados atuais (BLs, containers, clientes) serão substituídos pelo estado salvo em "${label || id.slice(0,8)}". Esta ação não pode ser desfeita.`,
+    null,
+    async () => {
+      const el = document.getElementById('checkpoint-list');
+      if (el) el.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;">⏳ Restaurando dados...</div>';
+      try {
+        const result = await window._dmFireRestoreCheckpoint(id);
+        if (result) {
+          toast('✓ Dados restaurados do checkpoint "' + (label || id.slice(0,8)) + '"!', 'success');
+          logAuditAction('restauracao_checkpoint', { checkpoint_id: id, label: label || '' });
+          // Recarrega a UI completa
+          if (typeof renderTracking === 'function') renderTracking();
+          if (typeof renderBilling === 'function') renderBilling();
+          if (typeof renderClients === 'function') renderClients();
+          await renderCheckpointList();
+        } else {
+          toast('Erro ao restaurar checkpoint.', 'error');
+          await renderCheckpointList();
+        }
+      } catch(e) {
+        console.error('[CHECKPOINT] restore error:', e);
+        toast('Erro ao restaurar: ' + (e.message || e), 'error');
+        await renderCheckpointList();
+      }
+    }
+  );
+}
+
+async function deleteCheckpoint(id) {
+  if (!confirm('Excluir este checkpoint permanentemente?')) return;
+  if (window._dmFireDeleteCheckpoint) {
+    const ok = await window._dmFireDeleteCheckpoint(id);
+    if (ok) { toast('Checkpoint excluído.', 'success'); await renderCheckpointList(); }
+    else toast('Erro ao excluir checkpoint.', 'error');
+  }
+}
+
+// Auto-checkpoint diário ao iniciar sessão
+async function _tryAutoCheckpoint() {
+  if (!window._dmFireSaveCheckpoint) return;
+  const KEY = 'dm_last_auto_checkpoint';
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    const last = localStorage.getItem(KEY);
+    if (last === today) return; // já fez hoje
+    const bls = window._dmStore?.bls || [];
+    const trk = window._dmStore?.trk || [];
+    if (!bls.length && !trk.length) return; // nada para salvar
+    const label = 'Auto – ' + new Date().toLocaleString('pt-BR');
+    const result = await window._dmFireSaveCheckpoint(label, 'auto');
+    if (result) {
+      localStorage.setItem(KEY, today);
+      logAuditAction('criacao_checkpoint', { label, tipo: 'auto', checkpoint_id: result.id });
+      console.log('[CHECKPOINT] Auto-checkpoint criado:', result.id);
+    }
+  } catch(e) {
+    console.warn('[CHECKPOINT] auto-checkpoint error:', e);
+  }
+}
 
 // ── ALERT SYSTEM ──────────────────────────────────────────────────────────
 // ── STORAGE: Alert days (Firestore via window._dmStore) ───────────────────
@@ -1581,6 +1700,9 @@ window._dmOnReady = function() {
   // Hide loading overlay
   const overlay = document.getElementById('dm-loading-overlay');
   if (overlay) overlay.style.display = 'none';
+
+  // Auto-checkpoint diário (após 2s para não bloquear o render inicial)
+  setTimeout(_tryAutoCheckpoint, 2000);
 
   // FIX-QUOTA #H: flag anti-cascata para evitar loop onSnapshot → trkSave → onSnapshot
   var _trkSaving = false;

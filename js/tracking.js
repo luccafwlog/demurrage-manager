@@ -567,19 +567,223 @@ function manualMigrate() {
 }
 
 function clearTracking() {
+  // Abre o modal unificado de limpeza / exclusão em massa
+  _openClearModal();
+}
+
+// ============================================================
+// MODAL DE LIMPEZA / EXCLUSÃO EM MASSA
+// ============================================================
+let _bulkDeletePreview = []; // containers validados prontos para excluir
+
+function _openClearModal() {
+  _bulkDeletePreview = [];
+  const fileInput = document.getElementById('trk-bulk-file-input');
+  if (fileInput) fileInput.value = '';
+  const previewEl = document.getElementById('trk-bulk-preview');
+  if (previewEl) previewEl.innerHTML = '';
+  const confirmBtn = document.getElementById('trk-bulk-confirm-btn');
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = '🗑️ Confirmar Exclusão'; }
+  const countEl = document.getElementById('clear-all-count');
+  if (countEl) countEl.textContent = trkData.length;
+  _switchClearTab('tab-clear-all');
+  openModal('modal-trk-clear');
+}
+
+function _switchClearTab(tabId) {
+  ['tab-clear-all','tab-clear-bulk'].forEach(t => {
+    const el = document.getElementById(t);
+    if (el) el.classList.toggle('active', t === tabId);
+  });
+  const paneMap = {'tab-clear-all':'pane-clear-all','tab-clear-bulk':'pane-clear-bulk'};
+  Object.entries(paneMap).forEach(([tab, pane]) => {
+    const el = document.getElementById(pane);
+    if (el) el.style.display = tab === tabId ? '' : 'none';
+  });
+}
+
+function _execClearAll() {
+  closeModal('modal-trk-clear');
   showDoubleConfirmation(
-    'Excluir todos os Containers?',
-    'Você está prestes a excluir permanentemente TODOS os containers do controle de rastreamento. Todos os dados de tracking, histórico e informações associadas serão removidos.',
+    'Excluir TODOS os Containers?',
+    'Você está prestes a excluir permanentemente TODOS os containers do controle de rastreamento. Esta ação é irreversível.',
     trkData.length,
     () => {
-      var qtdExcluida = trkData.length; // FIX #8: captura ANTES de zerar o array
+      const qtd = trkData.length;
       trkData = [];
       trkSave(trkData);
       renderTracking();
-      toast('✓ Controle de containers excluído permanentemente.', '');
-      logAuditAction('exclusao_todos_containers', {quantidade: qtdExcluida});
+      toast(`✓ ${qtd} container(s) excluído(s) permanentemente.`, '');
+      logAuditAction('exclusao_todos_containers', {quantidade: qtd});
     }
   );
+}
+
+// ── Download do modelo de planilha ──────────────────────────
+function downloadBulkDeleteTemplate() {
+  const wb = XLSX.utils.book_new();
+  const data = [
+    ['CONTAINER'],
+    ['ABCU1234567'],
+    ['MSCU9876543'],
+    ['TCKU0011223'],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [{wch: 22}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Exclusao');
+  XLSX.writeFile(wb, 'modelo_exclusao_containers.xlsx');
+  toast('Modelo baixado! Preencha com os containers e faça o upload.', 'success');
+}
+
+// ── Processar planilha de exclusão ─────────────────────────
+function handleBulkDeleteFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const previewEl = document.getElementById('trk-bulk-preview');
+  if (previewEl) previewEl.innerHTML = '<div style="padding:20px;text-align:center;color:#6b7280;">⏳ Processando planilha...</div>';
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb   = XLSX.read(e.target.result, {type:'binary'});
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+
+      // Localiza coluna CONTAINER (case-insensitive, aceita variações)
+      const header  = (rows[0] || []).map(h => String(h).trim().toUpperCase());
+      const colIdx  = header.findIndex(h =>
+        h === 'CONTAINER' || h === 'CONT' || h === 'CONTAINER NO' || h === 'CONTAINER NUMBER'
+      );
+      if (colIdx === -1) {
+        if (previewEl) previewEl.innerHTML = '<div style="padding:12px;background:#fee2e2;border-radius:8px;color:#b91c1c;font-size:13px;">❌ Coluna "CONTAINER" não encontrada. Baixe o modelo padrão.</div>';
+        return;
+      }
+
+      const seen = new Set();
+      const containers = [];
+      for (let i = 1; i < rows.length; i++) {
+        const val = String(rows[i][colIdx] || '').trim().toUpperCase();
+        if (!val || seen.has(val)) continue;
+        seen.add(val);
+        containers.push(val);
+      }
+
+      if (!containers.length) {
+        if (previewEl) previewEl.innerHTML = '<div style="padding:12px;background:#fee2e2;border-radius:8px;color:#b91c1c;font-size:13px;">❌ Nenhum container encontrado na planilha.</div>';
+        return;
+      }
+
+      _validateBulkDelete(containers);
+    } catch(err) {
+      toast('Erro ao ler planilha: ' + err.message, 'error');
+      if (previewEl) previewEl.innerHTML = '<div style="padding:12px;background:#fee2e2;border-radius:8px;color:#b91c1c;font-size:13px;">❌ Erro ao ler arquivo: ' + err.message + '</div>';
+    }
+  };
+  reader.readAsBinaryString(file);
+}
+
+function _validateBulkDelete(containerNums) {
+  const found    = [];
+  const notFound = [];
+
+  containerNums.forEach(num => {
+    // Suporte a transshipment: mesmo container em múltiplos BLs
+    const matches = trkData.filter(r => String(r.container||'').toUpperCase() === num);
+    if (matches.length) matches.forEach(m => found.push(m));
+    else notFound.push(num);
+  });
+
+  _bulkDeletePreview = found;
+
+  const previewEl  = document.getElementById('trk-bulk-preview');
+  const confirmBtn = document.getElementById('trk-bulk-confirm-btn');
+  if (!previewEl) return;
+
+  let html = '';
+
+  if (found.length) {
+    const stLabel = {dd_open:'⛔ D&D Ativo',dd_returned:'📦 D&D Dev.',returned:'✅ Dev.',grace:'⚠️ Atenção',free:'🟢 Free Time',none:'—'};
+    html += `<div style="margin-bottom:10px;padding:12px 14px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;">
+      <div style="font-size:13px;font-weight:700;color:#c2410c;margin-bottom:8px;">⚠️ ${found.length} container(s) encontrado(s) — serão excluídos:</div>
+      <div style="max-height:220px;overflow-y:auto;border-radius:6px;overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:480px;">
+          <thead><tr style="background:#fef3c7;text-align:left;">
+            <th style="padding:5px 8px;border-bottom:1px solid #fde68a;">Container</th>
+            <th style="padding:5px 8px;border-bottom:1px solid #fde68a;">BL</th>
+            <th style="padding:5px 8px;border-bottom:1px solid #fde68a;">CNEE</th>
+            <th style="padding:5px 8px;border-bottom:1px solid #fde68a;">Status</th>
+            <th style="padding:5px 8px;border-bottom:1px solid #fde68a;">Descarga</th>
+          </tr></thead>
+          <tbody>${found.map(r => `<tr style="border-bottom:1px solid #f3f4f6;">
+            <td style="padding:5px 8px;font-weight:700;">${r.container||'—'}</td>
+            <td style="padding:5px 8px;color:#6b7280;font-size:11px;">${r.bl||'—'}</td>
+            <td style="padding:5px 8px;color:#6b7280;font-size:11px;">${r.cnee||r.client||'—'}</td>
+            <td style="padding:5px 8px;">${stLabel[trkStatus(r)]||trkStatus(r)}</td>
+            <td style="padding:5px 8px;color:#6b7280;font-size:11px;">${r.discharge ? trkFmtDate(r.discharge) : '—'}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }
+
+  if (notFound.length) {
+    html += `<div style="padding:12px 14px;background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;margin-bottom:10px;">
+      <div style="font-size:13px;font-weight:700;color:#b91c1c;margin-bottom:4px;">❌ ${notFound.length} container(s) não encontrado(s) — serão ignorados:</div>
+      <div style="font-size:12px;color:#7f1d1d;word-break:break-all;line-height:1.8;">${notFound.join(' · ')}</div>
+    </div>`;
+  }
+
+  if (!found.length && !notFound.length) {
+    html = '<div style="padding:12px;color:#6b7280;font-size:13px;">Nenhum dado válido encontrado.</div>';
+  }
+
+  previewEl.innerHTML = html;
+
+  if (confirmBtn) {
+    confirmBtn.disabled = found.length === 0;
+    confirmBtn.textContent = found.length ? `🗑️ Excluir ${found.length} container(s)` : '🗑️ Confirmar Exclusão';
+  }
+}
+
+// ── Executar exclusão em massa com pseudo-rollback ──────────
+async function executeBulkDelete() {
+  if (!_bulkDeletePreview.length) return;
+
+  const confirmBtn = document.getElementById('trk-bulk-confirm-btn');
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = '⏳ Excluindo...'; }
+
+  const snapshot  = JSON.parse(JSON.stringify(trkData));
+  const toDelete  = [..._bulkDeletePreview];
+  const deleteSet = new Set(toDelete.map(r => `${String(r.container||'').toUpperCase()}\x00${r.bl||''}`));
+
+  try {
+    trkData = trkData.filter(r =>
+      !deleteSet.has(`${String(r.container||'').toUpperCase()}\x00${r.bl||''}`)
+    );
+    trkSave(trkData);
+
+    const containers = [...new Set(toDelete.map(r => r.container))];
+    logAuditAction('exclusao_em_massa_containers', {
+      quantidade:   toDelete.length,
+      containers:   containers.slice(0, 50),
+      bls_afetados: [...new Set(toDelete.map(r => r.bl).filter(Boolean))]
+    });
+
+    toast(`✓ ${toDelete.length} container(s) excluído(s) com sucesso!`, 'success');
+    closeModal('modal-trk-clear');
+    renderTracking();
+    _bulkDeletePreview = [];
+  } catch(err) {
+    // Rollback lógico
+    trkData = snapshot;
+    trkSave(trkData);
+    renderTracking();
+    toast('Erro durante exclusão: ' + err.message + '. Dados restaurados.', 'error');
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = `🗑️ Excluir ${toDelete.length} container(s)`;
+    }
+  }
 }
 
 function exportTrkReport() {

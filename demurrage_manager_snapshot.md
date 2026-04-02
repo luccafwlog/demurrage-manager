@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v2.8 | **Cache:** `?v=114` | **Atualizado:** 2026-04-02
+> **Versão:** v2.9 | **Cache:** `?v=115` | **Atualizado:** 2026-04-02
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -88,6 +88,7 @@
 | `settings`   | `user_id`                           | ✅  | 1+           | Apenas `alert_days` por ora |
 | `usuarios`   | `id` (UUID = auth.users.id)         | ✅  | 1+           | Perfis: nome, cargo, admin, ativo |
 | `logs`       | `id` (UUID gerado)                  | ✅  | variável     | Auditoria de ações |
+| `checkpoints`| `id` (UUID gerado)                  | ✅  | variável     | Snapshots de dados para backup/restore |
 
 ### Schema
 
@@ -143,6 +144,16 @@ CREATE TABLE logs (
   detalhe      JSONB,
   criado_em    TIMESTAMPTZ DEFAULT now()
 );
+
+CREATE TABLE checkpoints (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID REFERENCES auth.users,
+  label      TEXT NOT NULL DEFAULT '',
+  tipo       TEXT NOT NULL DEFAULT 'manual',  -- 'manual' | 'auto'
+  criado_por TEXT,
+  criado_em  TIMESTAMPTZ DEFAULT now(),
+  payload    JSONB NOT NULL DEFAULT '{}'      -- snapshot completo: {bls, trk, clients}
+);
 ```
 
 ### RLS — Modelo Colaborativo
@@ -192,6 +203,10 @@ Todo módulo lê de `_dmStore` e escreve via funções de persistência de `db.j
 | `_dmFireSaveUsuario(data)` | Upsert em usuarios |
 | `_dmFireLoadLogs()` | SELECT logs (últimos 500) |
 | `_dmFireDeleteLogs(ids[])` | DELETE logs WHERE id IN (...) |
+| `_dmFireSaveCheckpoint(label, tipo)` | Salva snapshot completo em `checkpoints` |
+| `_dmFireLoadCheckpoints()` | SELECT checkpoints (últimos 50, sem payload) |
+| `_dmFireRestoreCheckpoint(id)` | Restaura dados do snapshot (limpa tabelas + reinserção) |
+| `_dmFireDeleteCheckpoint(id)` | DELETE checkpoint por ID |
 | `_dmLogout()` | `sb.auth.signOut()` |
 
 ### _dmFireSave — mecanismo de diff inteligente
@@ -342,6 +357,7 @@ items.forEach(item => {
 - Taxas D&D: customizáveis pela interface, persistidas em `localStorage` (`dm_rates_v2`)
 - `alertDays`: persistido no Supabase via `_dmSaveAlertDays(n)`
 - Backup: exporta/importa JSON com snapshot de `_dmStore`
+- Checkpoints: `createCheckpoint(tipo)`, `renderCheckpointList()`, `restoreCheckpoint(id,label)`, `deleteCheckpoint(id)`, `_tryAutoCheckpoint()` (auto-checkpoint diário via `localStorage` key `dm_last_auto_checkpoint`)
 
 ---
 
@@ -386,7 +402,7 @@ As taxas D&D customizadas ficam em `localStorage` — não são compartilhadas e
 ## 8. Operações de Manutenção
 
 ### Bump de cache
-Alterar `?v=113` para o próximo inteiro em todos os 9 `<script src>` de `app.html`. Usar `sed -i 's/v=113/v=114/g' app.html`.
+Alterar `?v=NNN` para o próximo inteiro em todos os 9 `<script src>` de `app.html`. Usar `sed -i 's/v=115/v=116/g' app.html`. Versão atual: `?v=115`.
 
 ### Adicionar usuário
 1. Criar conta em Supabase Auth Dashboard → Authentication → Users

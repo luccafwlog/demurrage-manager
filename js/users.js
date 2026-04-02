@@ -20,15 +20,22 @@ let _editingUserId = null;
 
 async function renderUsers() {
   if (!window._dmIsAdmin) {
-    const usersEl = document.getElementById('mod-users');
-    if (usersEl) usersEl.innerHTML = '<div style="padding:60px;text-align:center;color:var(--muted);">⛔ Acesso restrito a administradores.</div>';
+    // Mostra aviso no pane correto (cfg-users), não no mod-users legado
+    const pane = document.getElementById('cfg-users');
+    if (pane) pane.innerHTML = '<div style="padding:60px;text-align:center;color:var(--muted);font-size:15px;">⛔ Acesso restrito a administradores.</div>';
     return;
   }
+  // Mostra indicador de carregamento nos tbodies
+  const usrBody = document.getElementById('usr-body');
+  const logBody = document.getElementById('log-body');
+  if (usrBody) usrBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px;">⏳ Carregando usuários...</td></tr>';
+  if (logBody) logBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px;">⏳ Carregando logs...</td></tr>';
+
   // Load users
   if (window._dmFireLoadUsuarios) {
     _usrList = await window._dmFireLoadUsuarios() || [];
   }
-  // Load logs
+  // Load logs (aumenta limite para 1000)
   if (window._dmFireLoadLogs) {
     _logList = await window._dmFireLoadLogs() || [];
   }
@@ -118,35 +125,82 @@ function _renderLogTable() {
   }
 
   const actionColors = {
-    login:              '#dcfce7;color:#15803d',
-    logout:             '#f3f4f6;color:#6b7280',
-    criacao_bl:         '#dbeafe;color:#1d4ed8',
-    edicao_bl:          '#e0e7ff;color:#4338ca',
-    exclusao_bl:        '#fee2e2;color:#dc2626',
-    marcacao_pagamento: '#d1fae5;color:#065f46',
-    marcacao_fatura:    '#fef3c7;color:#92400e',
-    abertura_disputa:   '#fed7aa;color:#c2410c',
-    resolucao_disputa:  '#dcfce7;color:#15803d',
-    edicao_cliente:     '#e0e7ff;color:#4338ca',
-    envio_email:        '#dbeafe;color:#1e40af',
-    importacao_planilha:'#f0fdf4;color:#166534',
-    exportacao_relatorio:'#f0fdf4;color:#166534',
+    login:                       '#dcfce7;color:#15803d',
+    logout:                      '#f3f4f6;color:#6b7280',
+    criacao_bl:                  '#dbeafe;color:#1d4ed8',
+    edicao_bl:                   '#e0e7ff;color:#4338ca',
+    exclusao_bl:                 '#fee2e2;color:#dc2626',
+    exclusao_todos_bls:          '#fee2e2;color:#991b1b',
+    exclusao_todos_containers:   '#fecaca;color:#dc2626',
+    exclusao_em_massa_containers:'#fee2e2;color:#b91c1c',
+    marcacao_pagamento:          '#d1fae5;color:#065f46',
+    marcacao_fatura:             '#fef3c7;color:#92400e',
+    abertura_disputa:            '#fed7aa;color:#c2410c',
+    resolucao_disputa:           '#dcfce7;color:#15803d',
+    edicao_cliente:              '#e0e7ff;color:#4338ca',
+    edicao_usuario:              '#e0e7ff;color:#6d28d9',
+    envio_email:                 '#dbeafe;color:#1e40af',
+    importacao_planilha:         '#f0fdf4;color:#166534',
+    exportacao_relatorio:        '#f0fdf4;color:#166534',
+    limpeza_logs:                '#fef9c3;color:#854d0e',
+    criacao_checkpoint:          '#f3e8ff;color:#7c3aed',
+    restauracao_checkpoint:      '#ede9fe;color:#5b21b6',
+  };
+
+  const actionLabels = {
+    login:                       'login',
+    logout:                      'logout',
+    criacao_bl:                  'criação BL',
+    edicao_bl:                   'edição BL',
+    exclusao_bl:                 'exclusão BL',
+    exclusao_todos_bls:          'excluiu todos BLs',
+    exclusao_todos_containers:   'excluiu containers',
+    exclusao_em_massa_containers:'exclusão em massa',
+    marcacao_pagamento:          'pagamento',
+    marcacao_fatura:             'faturado',
+    abertura_disputa:            'disputa aberta',
+    resolucao_disputa:           'disputa resolvida',
+    edicao_cliente:              'edição cliente',
+    edicao_usuario:              'edição usuário',
+    envio_email:                 'e-mail enviado',
+    importacao_planilha:         'importação',
+    exportacao_relatorio:        'exportação',
+    limpeza_logs:                'limpeza logs',
+    criacao_checkpoint:          'checkpoint criado',
+    restauracao_checkpoint:      'checkpoint restaurado',
   };
 
   tbody.innerHTML = page.map(l => {
     const d = l.criado_em?.toDate ? l.criado_em.toDate() : new Date(l.criado_em || 0);
     const dateStr = d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
     const style = actionColors[l.acao] || '#f9fafb;color:#374151';
-    const actionBadge = `<span style="background:${style};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;">${l.acao||'?'}</span>`;
+    const label = actionLabels[l.acao] || (l.acao || '?');
+    const actionBadge = `<span style="background:${style};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;">${label}</span>`;
     let detalhe = '';
     try {
       const d2 = l.detalhe || {};
       const parts = [];
-      if (d2.bl) parts.push(`BL: ${d2.bl}`);
-      if (d2.blId) parts.push(`ID: ${d2.blId}`);
-      if (d2.total != null) parts.push(`Total: R$ ${Number(d2.total).toLocaleString('pt-BR',{minimumFractionDigits:2})}`);
-      if (d2.hasDiscount) parts.push('com desconto');
-      if (d2.hasDispute) parts.push('em disputa');
+      // BL-related
+      if (d2.bl)              parts.push(`BL: ${d2.bl}`);
+      if (d2.blId)            parts.push(`ID: ${d2.blId}`);
+      if (d2.total != null)   parts.push(`Total: R$ ${Number(d2.total).toLocaleString('pt-BR',{minimumFractionDigits:2})}`);
+      if (d2.hasDiscount)     parts.push('com desconto');
+      if (d2.hasDispute)      parts.push('em disputa');
+      // Container-related
+      if (d2.quantidade != null) parts.push(`${d2.quantidade} container(s)`);
+      if (Array.isArray(d2.containers) && d2.containers.length)
+        parts.push(d2.containers.slice(0,5).join(', ') + (d2.containers.length > 5 ? ` +${d2.containers.length-5}` : ''));
+      if (d2.bls_afetados != null) parts.push(`${d2.bls_afetados} BL(s) afetado(s)`);
+      // Checkpoint-related
+      if (d2.label)           parts.push(`"${d2.label}"`);
+      if (d2.checkpoint_id)   parts.push(`ID: ${String(d2.checkpoint_id).slice(0,8)}…`);
+      // User-related
+      if (d2.nome)            parts.push(`Usuário: ${d2.nome}`);
+      if (d2.email && !d2.bl) parts.push(d2.email);
+      // Log cleanup
+      if (d2.diasCutoff)      parts.push(`>${d2.diasCutoff} dias`);
+      if (d2.deletados != null) parts.push(`${d2.deletados} excluído(s)`);
+      // Fallback
       detalhe = parts.join(' · ') || JSON.stringify(d2);
     } catch(e) { detalhe = '—'; }
     return `<tr>
