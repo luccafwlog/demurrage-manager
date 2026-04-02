@@ -1102,42 +1102,6 @@ function downloadTemplate() {
 <!-- Inicialização: Dashboard, Configurações, window._dmOnReady -->
 <script src="js/init.js?v=113"></script>
 
-<!-- ── Badge de versão dinâmico ──────────────────────────────────────────── -->
-<meta name="deploy-date" content="2026-03-30T23:00">
-<style>
-  .version-badge {
-    position: fixed;
-    bottom: 12px;
-    right: 16px;
-    z-index: 9999;
-    background: var(--navy);
-    color: rgba(255,255,255,0.6);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    padding: 4px 9px;
-    border-radius: 20px;
-    pointer-events: none;
-    user-select: none;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
-  }
-</style>
-<div class="version-badge" id="version-badge-el">v...</div>
-<script>
-(function() {
-  var meta = document.querySelector('meta[name="deploy-date"]');
-  if (!meta) return;
-  var d = new Date(meta.getAttribute('content'));
-  if (isNaN(d.getTime())) return;
-  var ver = 'v' + d.getFullYear() + '.' +
-    String(d.getMonth()+1).padStart(2,'0') + '.' +
-    String(d.getDate()).padStart(2,'0') + '-' +
-    String(d.getHours()).padStart(2,'0') + 'h' +
-    String(d.getMinutes()).padStart(2,'0');
-  var badge = document.getElementById('version-badge-el');
-  if (badge) badge.textContent = ver;
-})();
-</script>
 
 <!-- ══════════════════════════════════════════════════════════════
      MÓDULO: CONFIGURAÇÕES
