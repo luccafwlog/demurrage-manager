@@ -954,20 +954,106 @@ function togglePaid(id) {
     b.frozenRoe = null;
     b.frozenTotal = null;
     toast('Fatura desmarcada. Valores liberados para edição.', '');
+    saveOne(b);
+    renderList();
   } else {
-    // Snapshot ROE e total no momento do pagamento
-    const roe = effectiveROE(b);
-    const total = blTotal(b, null);
-    b.paid = true;
-    b.paidAt = new Date().toISOString().slice(0,10);
-    b.frozenRoe = roe;
-    b.frozenTotal = total;
-    logAuditAction('marcacao_pagamento', {blId: id, bl: b.bl, total: total});
-    toast('Fatura marcada como paga! Valores congelados. ✔', 'success');
+    // Abre popup solicitando a data de pagamento
+    showPaymentModal(b);
   }
-  // FIX-QUOTA #G: apenas 1 write (documento modificado) em vez de diff de toda a coleção
-  saveOne(b);
-  renderList();
+}
+
+// ── Modal de Registro de Pagamento ──────────────────────────────────────────
+function showPaymentModal(b) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Se já está Faturado, usa os valores congelados no momento do Faturado;
+  // caso contrário, calcula os valores correntes (congelamento acontece agora).
+  const isBilled  = !!b.billed;
+  const roe   = (isBilled && b.frozenRoe   != null) ? b.frozenRoe   : effectiveROE(b);
+  const total = (isBilled && b.frozenTotal != null) ? b.frozenTotal : blTotal(b, null);
+
+  const totalFmt = (total != null)
+    ? 'R$ ' + total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})
+    : '—';
+  const roeFmt = (roe != null)
+    ? 'R$ ' + roe.toLocaleString('pt-BR', {minimumFractionDigits: 4, maximumFractionDigits: 4})
+    : '—';
+
+  // Remove overlay anterior se existir
+  const existing = document.getElementById('payment-modal-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'payment-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9100;display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:16px;box-shadow:0 24px 64px rgba(0,0,0,0.28);width:420px;max-width:100%;animation:fadeIn .15s ease;">
+      <div style="padding:18px 22px;border-bottom:1px solid #e5e7eb;background:#f9fafb;border-radius:16px 16px 0 0;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:22px;">💳</span>
+        <h3 style="font-size:15px;font-weight:700;margin:0;color:#111827;">Registrar Pagamento</h3>
+      </div>
+      <div style="padding:22px 22px 18px;">
+        <div style="margin-bottom:14px;">
+          <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">BL / Referência</div>
+          <div style="font-size:17px;font-weight:700;color:#111827;">${b.bl || b.id}</div>
+          ${b.client ? `<div style="font-size:12px;color:#6b7280;margin-top:2px;">${b.client}</div>` : ''}
+        </div>
+
+        <div style="background:${isBilled ? '#f0fdf4' : '#fffbeb'};border:1px solid ${isBilled ? '#bbf7d0' : '#fde68a'};border-radius:10px;padding:14px 16px;margin-bottom:18px;">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${isBilled ? '#166534' : '#92400e'};margin-bottom:10px;">
+            ${isBilled ? '📄 Valores congelados na emissão da fatura' : '⚡ Valores calculados agora (BL ainda não faturado)'}
+          </div>
+          <div style="display:flex;gap:24px;">
+            <div>
+              <div style="font-size:11px;color:#6b7280;margin-bottom:2px;">ROE (USD/BRL)</div>
+              <div style="font-size:13px;font-weight:600;color:#374151;">${roeFmt}</div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:#6b7280;margin-bottom:2px;">Total a Pagar</div>
+              <div style="font-size:18px;font-weight:800;color:${isBilled ? '#166534' : '#92400e'};">${totalFmt}</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Data do Pagamento <span style="color:#ef4444;">*</span></label>
+          <input type="date" id="payment-date-input" value="${today}"
+            style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box;color:#111827;">
+        </div>
+
+        <div style="display:flex;gap:10px;">
+          <button id="payment-confirm-btn"
+            style="flex:1;padding:11px;background:#22c55e;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;transition:background .15s;"
+            onmouseover="this.style.background='#16a34a'" onmouseout="this.style.background='#22c55e'">
+            ✔ Confirmar Pagamento
+          </button>
+          <button onclick="document.getElementById('payment-modal-overlay').remove()"
+            style="padding:11px 18px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:14px;cursor:pointer;">
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>`;
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+
+  document.getElementById('payment-confirm-btn').addEventListener('click', () => {
+    const payDate = document.getElementById('payment-date-input').value;
+    if (!payDate) { toast('Selecione uma data de pagamento.', 'error'); return; }
+
+    b.paid       = true;
+    b.paidAt     = payDate;
+    b.frozenRoe   = roe;
+    b.frozenTotal = total;
+
+    logAuditAction('marcacao_pagamento', {blId: b.id, bl: b.bl, total: total, paidAt: payDate});
+    toast('Fatura marcada como paga! Valores congelados. ✔', 'success');
+    overlay.remove();
+    // FIX-QUOTA #G: apenas 1 write (documento modificado)
+    saveOne(b);
+    renderList();
+  });
 }
 
 // ── Confirmação Dupla Segura ──────────────────────────────────────────────

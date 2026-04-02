@@ -177,9 +177,12 @@ function initCfgModule() {
   } else {
     document.getElementById('cfg-deploy-date').textContent = new Date().toLocaleDateString('pt-BR');
   }
-  // Usuário atual
+  // Usuário atual — mostra nome completo (userData.nome) ou e-mail como fallback
   const u = window._dmUser;
-  document.getElementById('cfg-current-user').textContent = u ? (u.email || u.id) : '—';
+  const ud = window._dmUserData;
+  const displayName = (ud && ud.nome) ? ud.nome : (u ? (u.email || u.id) : '—');
+  document.getElementById('cfg-current-user').textContent = displayName
+    + ((ud && ud.cargo) ? ` · ${ud.cargo}` : '');
   // Exibir aba de usuários só para admin
   const isAdmin = window._dmIsAdmin || false;
   document.querySelector('[onclick*="cfg-users"]').style.display = isAdmin ? '' : 'none';
@@ -349,12 +352,50 @@ async function cfgImportBackup(event) {
 // ── SISTEMA ───────────────────────────────────────────────────────
 function renderCfgSistema() {
   try {
-    const nBls      = (window._dmStore?.bls     || bls      || []).length;
-    const nTrk      = (window._dmStore?.trk     || trkData  || []).length;
-    const nClients  = (window._dmStore?.clients || clients  || []).length;
-    const total     = nBls + nTrk + nClients;
+    const _bls     = window._dmStore?.bls     || bls      || [];
+    const _trk     = window._dmStore?.trk     || trkData  || [];
+    const _clients = window._dmStore?.clients || clients  || [];
+    const total    = _bls.length + _trk.length + _clients.length;
+
+    // Contagem básica
     const el = document.getElementById('cfg-db-count');
-    if (el) el.textContent = `${total} registros (${nBls} BLs · ${nTrk} containers · ${nClients} clientes)`;
+    if (el) el.textContent = `${total} registros (${_bls.length} BLs · ${_trk.length} containers · ${_clients.length} clientes)`;
+
+    // Estatísticas detalhadas de BLs
+    const nPagos    = _bls.filter(b => b.paid).length;
+    const nFaturados = _bls.filter(b => b.billed && !b.paid).length;
+    const nPendentes = _bls.filter(b => !b.billed && !b.paid).length;
+
+    // Containers ativos (sem emptyReturn = ainda em sobretaxa)
+    const nContAtivos = _trk.filter(r => !r.emptyReturn && r.discharge).length;
+
+    // Inject stats into pane
+    const statsEl = document.getElementById('cfg-db-stats');
+    if (statsEl) {
+      statsEl.innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:12px;">
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;">
+            <div style="font-size:20px;font-weight:800;color:#166534;">${nPagos}</div>
+            <div style="font-size:11px;color:#166534;margin-top:2px;">BLs Pagos</div>
+          </div>
+          <div style="background:#dbeafe;border:1px solid #93c5fd;border-radius:8px;padding:10px 14px;">
+            <div style="font-size:20px;font-weight:800;color:#1e40af;">${nFaturados}</div>
+            <div style="font-size:11px;color:#1e40af;margin-top:2px;">BLs Faturados</div>
+          </div>
+          <div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px 14px;">
+            <div style="font-size:20px;font-weight:800;color:#854d0e;">${nPendentes}</div>
+            <div style="font-size:11px;color:#854d0e;margin-top:2px;">BLs Pendentes</div>
+          </div>
+          <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px 14px;">
+            <div style="font-size:20px;font-weight:800;color:#9a3412;">${nContAtivos}</div>
+            <div style="font-size:11px;color:#9a3412;margin-top:2px;">Containers em D&D</div>
+          </div>
+          <div style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:10px 14px;">
+            <div style="font-size:20px;font-weight:800;color:#374151;">${_clients.length}</div>
+            <div style="font-size:11px;color:#374151;margin-top:2px;">Clientes</div>
+          </div>
+        </div>`;
+    }
   } catch(e) { /* ignore */ }
 }
 
@@ -1527,6 +1568,16 @@ window._dmOnReady = function() {
   // Carrega taxas customizadas do localStorage
   loadCfgRatesFromFirestore();
   switchModule('dashboard');
+  // Exibe nome do usuário no header (nome completo ou e-mail como fallback)
+  (function() {
+    const userData = window._dmUserData;
+    const authUser = window._dmUser;
+    const displayName = (userData && userData.nome) ? userData.nome
+      : (authUser && authUser.email) ? authUser.email
+      : '';
+    const el = document.getElementById('header-user-name');
+    if (el && displayName) el.textContent = displayName;
+  })();
   // Hide loading overlay
   const overlay = document.getElementById('dm-loading-overlay');
   if (overlay) overlay.style.display = 'none';
