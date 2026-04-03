@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v3.4 | **Cache:** `?v=121` | **Atualizado:** 2026-04-03
+> **Versão:** v3.5 | **Cache:** `?v=122` | **Atualizado:** 2026-04-03
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -438,6 +438,18 @@ git push origin main
 ---
 
 ## 10. Changelog Recente
+
+### v3.5 — 2026-04-03 — Controle de Containers: colunas ocultas, Sem CNPJ, Limpar Filtros
+
+**`js/tracking.js`**
+- Colunas TIPO, POL, POD, NAVIO, DESCARGA e DEADLINE agora recebem `class="trk-col-hidden"` nas `<td>` do template de linha → dados preservados, exibição ocultada via CSS.
+- `toggleTrkSemCnpj()`: ativa/desativa filtro toggle "Sem CNPJ" via `window._trkFilterSemCnpj`.
+- `renderTracking()`: aplica `matchSemCnpj` quando filtro ativo (exibe apenas containers sem CNPJ de 14 dígitos).
+- `clearTrkFilters()`: agora também reseta `trk-search`, `trk-filter-status` (volta a "all") e o toggle `_trkFilterSemCnpj`.
+
+**`app.html`**
+- Botão **⚠ Sem CNPJ** adicionado na toolbar de Controle de Containers (`id="trk-btn-sem-cnpj"`).
+- Cache bump: `?v=121` → `?v=122`.
 
 ### v3.4 — 2026-04-03 — Filtros Clientes, CNPJ em Containers, Edit/Delete
 

@@ -289,6 +289,9 @@ div.invoice { border: 1px solid #ccc; padding: 36px 40px; font-size: 13px; color
 .bl-group-child:last-of-type td { border-bottom:2px solid var(--border) !important; }
 .trk-view-btn-active { background:var(--navy) !important; color:white !important; border-color:var(--navy) !important; }
 
+/* Colunas ocultas na tabela de containers (dados mantidos, apenas exibição) */
+.trk-col-hidden { display: none !important; }
+
 /* ══ MELHORIA #1 — ALERTAS VISUAIS CONTAINERS CRÍTICOS ══ */
 .trk-table tbody tr.row-alert-medium td { background:#fffbeb !important; }
 .trk-table tbody tr.row-alert-medium td:first-child { border-left:3px solid #f59e0b; }

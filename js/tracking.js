@@ -453,7 +453,8 @@ function renderTracking() {
         const mbl = bls.find(x => x.bl === r.bl && x.migratedFromTracking);
         return mbl && mbl.migratedAt ? trkFmtDate(mbl.migratedAt).includes(tf.migratedat) : false;
       })());
-    return matchQ && matchS && matchCols;
+    const matchSemCnpj = !window._trkFilterSemCnpj || !r.cnpj || r.cnpj.length !== 14;
+    return matchQ && matchS && matchCols && matchSemCnpj;
   });
 
   // ── KPI Dashboard — stats derivados do dataset FILTRADO ──────────────────
@@ -563,12 +564,12 @@ function renderTracking() {
       <td style="text-align:left;white-space:normal;word-break:break-all;font-weight:600;">${r.bl||'—'}${blBadge}</td>
       <td style="text-align:left;overflow:hidden;text-overflow:ellipsis;" title="${r.cnee||''}">${r.cnee||'—'}</td>
       <td>${cnpjDisplay}</td>
-      <td>${r.type||'—'}</td>
-      <td>${r.pol||'—'}</td>
-      <td>${r.pod||'—'}</td>
-      <td style="text-align:left">${r.vessel||'—'}</td>
-      <td>${trkFmtDate(r.discharge)}</td>
-      <td>${trkFmtDate(r.deadline)}</td>
+      <td class="trk-col-hidden">${r.type||'—'}</td>
+      <td class="trk-col-hidden">${r.pol||'—'}</td>
+      <td class="trk-col-hidden">${r.pod||'—'}</td>
+      <td class="trk-col-hidden" style="text-align:left">${r.vessel||'—'}</td>
+      <td class="trk-col-hidden">${trkFmtDate(r.discharge)}</td>
+      <td class="trk-col-hidden">${trkFmtDate(r.deadline)}</td>
       <td>${trkFmtDate(r.emptyReturn)}</td>
       <td>${useDays !== null ? useDays : '—'}</td>
       <td>${ft}</td>
@@ -695,6 +696,13 @@ function confirmDeleteContainer(safeKey) {
   if (typeof logAuditAction==='function') logAuditAction('exclusao_container', { container, bl });
 }
 
+function toggleTrkSemCnpj() {
+  window._trkFilterSemCnpj = !window._trkFilterSemCnpj;
+  const btn = document.getElementById('trk-btn-sem-cnpj');
+  if (btn) btn.classList.toggle('active', window._trkFilterSemCnpj);
+  renderTracking();
+}
+
 function clearTrkFilters() {
   ['tf-container','tf-bl','tf-cnee','tf-cnpj','tf-type','tf-pol','tf-pod',
    'tf-vessel','tf-discharge','tf-deadline','tf-return',
@@ -704,6 +712,15 @@ function clearTrkFilters() {
   });
   const sel = document.getElementById('tf-status');
   if (sel) sel.value = '';
+  // Reset top-bar filters
+  const searchEl = document.getElementById('trk-search');
+  if (searchEl) searchEl.value = '';
+  const statusEl = document.getElementById('trk-filter-status');
+  if (statusEl) statusEl.value = 'all';
+  // Reset Sem CNPJ toggle
+  window._trkFilterSemCnpj = false;
+  const semCnpjBtn = document.getElementById('trk-btn-sem-cnpj');
+  if (semCnpjBtn) semCnpjBtn.classList.remove('active');
   renderTracking();
 }
 

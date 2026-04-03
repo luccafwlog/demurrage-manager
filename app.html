@@ -144,7 +144,7 @@ var MiniZip = (function() {
 
 <!-- ── SUPABASE SDK + DB MODULE ────────────────────────────────── -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script type="module" src="js/db.js?v=121"></script>
+<script type="module" src="js/db.js?v=122"></script>
 
 
 <div id="app">
@@ -530,6 +530,7 @@ var MiniZip = (function() {
       <option value="grace">⚠️ Atenção</option>
     </select>
     <button class="btn btn-primary" onclick="openTrkImport()">📄 Importar Planilha</button>
+    <button id="trk-btn-sem-cnpj" class="btn btn-outline" onclick="toggleTrkSemCnpj()" title="Mostrar apenas containers sem CNPJ vinculado">⚠ Sem CNPJ</button>
     <button class="btn btn-outline" onclick="clearTrkFilters()" title="Limpar todos os filtros de coluna">✕ Limpar Filtros</button>
     <button class="btn btn-outline" id="btn-trk-view-toggle" onclick="toggleTrkView()" title="Alternar entre visão por container e visão por BL">🗂 Visão por BL</button>
     <button class="btn btn-outline" onclick="manualMigrate()" id="btn-migrate" style="display:none;">⚡ Migrar para Faturamento</button>
@@ -568,9 +569,14 @@ var MiniZip = (function() {
       </colgroup>
       <thead id="trk-thead">
         <tr>
-          <th>CONTAINER</th><th>BL</th><th>CNEE</th><th>CNPJ</th><th>TIPO</th>
-          <th>POL</th><th>POD</th><th>NAVIO</th>
-          <th>DESCARGA</th><th>DEADLINE</th><th>DEVOLUÇÃO</th>
+          <th>CONTAINER</th><th>BL</th><th>CNEE</th><th>CNPJ</th>
+          <th class="trk-col-hidden">TIPO</th>
+          <th class="trk-col-hidden">POL</th>
+          <th class="trk-col-hidden">POD</th>
+          <th class="trk-col-hidden">NAVIO</th>
+          <th class="trk-col-hidden">DESCARGA</th>
+          <th class="trk-col-hidden">DEADLINE</th>
+          <th>DEVOLUÇÃO</th>
           <th>USE DAYS</th><th>FREE TIME</th><th>DIAS</th><th>STATUS</th>
           <th>ENVIADO EM</th><th>AÇÕES</th>
         </tr>
@@ -579,12 +585,12 @@ var MiniZip = (function() {
           <th><input type="text" id="tf-bl"        placeholder="filtrar..." oninput="renderTracking()"></th>
           <th><input type="text" id="tf-cnee"      placeholder="filtrar..." oninput="renderTracking()"></th>
           <th><input type="text" id="tf-cnpj"      placeholder="filtrar..." oninput="renderTracking()"></th>
-          <th><input type="text" id="tf-type"      placeholder="tipo..."    oninput="renderTracking()"></th>
-          <th><input type="text" id="tf-pol"       placeholder="..."        oninput="renderTracking()"></th>
-          <th><input type="text" id="tf-pod"       placeholder="..."        oninput="renderTracking()"></th>
-          <th><input type="text" id="tf-vessel"    placeholder="filtrar..." oninput="renderTracking()"></th>
-          <th><input type="text" id="tf-discharge" placeholder="DD/MM..."   oninput="renderTracking()"></th>
-          <th><input type="text" id="tf-deadline"  placeholder="DD/MM..."   oninput="renderTracking()"></th>
+          <th class="trk-col-hidden"><input type="text" id="tf-type"      placeholder="tipo..."    oninput="renderTracking()"></th>
+          <th class="trk-col-hidden"><input type="text" id="tf-pol"       placeholder="..."        oninput="renderTracking()"></th>
+          <th class="trk-col-hidden"><input type="text" id="tf-pod"       placeholder="..."        oninput="renderTracking()"></th>
+          <th class="trk-col-hidden"><input type="text" id="tf-vessel"    placeholder="filtrar..." oninput="renderTracking()"></th>
+          <th class="trk-col-hidden"><input type="text" id="tf-discharge" placeholder="DD/MM..."   oninput="renderTracking()"></th>
+          <th class="trk-col-hidden"><input type="text" id="tf-deadline"  placeholder="DD/MM..."   oninput="renderTracking()"></th>
           <th><input type="text" id="tf-return"    placeholder="DD/MM..."   oninput="renderTracking()"></th>
           <th><input type="text" id="tf-usedays"   placeholder="..."        oninput="renderTracking()"></th>
           <th><input type="text" id="tf-freetime"  placeholder="..."        oninput="renderTracking()"></th>
@@ -1116,26 +1122,26 @@ function downloadTemplate() {
      ════════════════════════════════════════════════════════════════ -->
 
 <!-- Utilitários puros — sem dependências externas -->
-<script src="js/utils.js?v=121"></script>
-<script src="js/rates.js?v=121"></script>
+<script src="js/utils.js?v=122"></script>
+<script src="js/rates.js?v=122"></script>
 
 <!-- Módulo de Faturamento (BLs, PTAX, Cálculo D&D) -->
-<script src="js/billing.js?v=121"></script>
+<script src="js/billing.js?v=122"></script>
 
 <!-- Módulo de Rastreamento de Containers -->
-<script src="js/tracking.js?v=121"></script>
+<script src="js/tracking.js?v=122"></script>
 
 <!-- Módulo de Clientes (CNPJ, e-mails) -->
-<script src="js/clients.js?v=121"></script>
+<script src="js/clients.js?v=122"></script>
 
 <!-- Módulo Admin: Usuários e Log de Auditoria -->
-<script src="js/users.js?v=121"></script>
+<script src="js/users.js?v=122"></script>
 
 <!-- Módulo de Cobrança Consolidada por CNPJ -->
-<script src="js/consolidated.js?v=121"></script>
+<script src="js/consolidated.js?v=122"></script>
 
 <!-- Inicialização: Dashboard, Configurações, window._dmOnReady -->
-<script src="js/init.js?v=121"></script>
+<script src="js/init.js?v=122"></script>
 
 
 <!-- ══════════════════════════════════════════════════════════════
