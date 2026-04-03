@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v3.6 | **Cache:** `?v=123` | **Atualizado:** 2026-04-03
+> **Versão:** v3.7 | **Cache:** `?v=124` | **Atualizado:** 2026-04-03
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6

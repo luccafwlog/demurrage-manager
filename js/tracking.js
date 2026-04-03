@@ -564,12 +564,6 @@ function renderTracking() {
       <td style="text-align:left;white-space:normal;word-break:break-all;font-weight:600;">${r.bl||'—'}${blBadge}</td>
       <td style="text-align:left;overflow:hidden;text-overflow:ellipsis;" title="${r.cnee||''}">${r.cnee||'—'}</td>
       <td>${cnpjDisplay}</td>
-      <td class="trk-col-hidden">${r.type||'—'}</td>
-      <td class="trk-col-hidden">${r.pol||'—'}</td>
-      <td class="trk-col-hidden">${r.pod||'—'}</td>
-      <td class="trk-col-hidden" style="text-align:left">${r.vessel||'—'}</td>
-      <td class="trk-col-hidden">${trkFmtDate(r.discharge)}</td>
-      <td class="trk-col-hidden">${trkFmtDate(r.deadline)}</td>
       <td>${trkFmtDate(r.emptyReturn)}</td>
       <td>${useDays !== null ? useDays : '—'}</td>
       <td>${ft}</td>
