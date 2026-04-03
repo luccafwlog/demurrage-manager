@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v3.2 | **Cache:** `?v=119` | **Atualizado:** 2026-04-03
+> **Versão:** v3.3 | **Cache:** `?v=120` | **Atualizado:** 2026-04-03
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -438,6 +438,27 @@ git push origin main
 ---
 
 ## 10. Changelog Recente
+
+### v3.3 — 2026-04-03 — Redesign Painel: cards, filtros e remoções
+
+**`app.html` + `css/components.css`**
+- Cards de Faturamento redesenhados: nova cor `.dk-slate` para "Total de BLs"; sem cor duplicada.
+- Seções "Faturamento" e "Faturamento & Cobranças" unidas em uma só com 2 linhas de cards.
+- Card "VENCIDO" (vermelho) removido — datas de vencimento são sempre próximo dia útil, nunca representam atraso real.
+- Valores monetários (`dk-money-val`) com `font-size:clamp(12px,1.3vw,17px)` e `white-space:nowrap` — nunca quebram linha.
+- Botão "Importar Planilha – Faturamento via Excel" removido das Ações Rápidas.
+- Aba Clientes: badge de filtro ativo "📭 Sem e-mail" com botão ✕ para limpar.
+
+**`js/init.js`**
+- `pendentes` corrigido: `bls.filter(b => b.billed && !b.paid)` — era incorretamente `!b.paid` (=total de BLs).
+- `renderTodoList`: removidos itens "faturas vencidas" e "faturas vencendo em 3 dias".
+- `filterClientsSemEmail()`: agora define `window._cliFilterSemEmail = true` antes de navegar.
+- `clearClientFilter()`: nova função, limpa flag e badge.
+- `switchModule()`: limpa filtro sem-email ao sair da aba Clientes.
+
+**`js/clients.js`**
+- `renderClients()`: aplica `window._cliFilterSemEmail` para exibir apenas clientes sem e-mail quando ativado pelo painel.
+- Busca manual limpa o filtro automaticamente ao digitar.
 
 ### v3.2 — 2026-04-03 — Auto-checkpoint server-side via pg_cron
 

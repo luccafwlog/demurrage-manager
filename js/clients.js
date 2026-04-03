@@ -345,8 +345,11 @@ function clearClients() {
 function renderClients() {
   const q = (document.getElementById('cli-search')?.value || '').toLowerCase();
   const qDigits = q.replace(/\D/g, ''); // query stripped to digits only
+  const filterSemEmail = !!window._cliFilterSemEmail;
   const sorted = [...clients].sort((a,b) => (a.name||a.cnpj||"").localeCompare(b.name||b.cnpj||"", "pt-BR"));
   const filtered = sorted.filter(c => {
+    // Filtro de sem e-mail (ativado via painel)
+    if (filterSemEmail && (c.emails||[]).length > 0) return false;
     if (!q) return true;
     const text = [formatCnpj(c.cnpj), c.name, (c.emails||[]).join(' ')].join(' ').toLowerCase();
     if (text.includes(q)) return true;

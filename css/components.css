@@ -162,6 +162,8 @@ div.invoice { border: 1px solid #ccc; padding: 36px 40px; font-size: 13px; color
 .dk-amber { background:#d97706;      color:white; }
 .dk-green { background:#16a34a;      color:white; }
 .dk-red   { background:#dc2626;      color:white; }
+.dk-slate { background:#475569;      color:white; }
+.dk-money-val { font-size:clamp(12px,1.3vw,17px); font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.15; }
 
 /* Panels row */
 .dash-panels-row { display:grid; grid-template-columns:1fr 1fr; gap:18px; }

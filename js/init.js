@@ -55,6 +55,12 @@ function switchModule(mod) {
   if (mod === 'clients')   renderClients();
   if (mod === 'dashboard') renderDashboard();
   if (mod === 'settings')  initCfgModule();
+  // Limpa filtro sem-email ao sair da aba de Clientes
+  if (mod !== 'clients' && window._cliFilterSemEmail) {
+    window._cliFilterSemEmail = false;
+    const badge = document.getElementById('cli-filter-badge');
+    if (badge) badge.style.display = 'none';
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -970,13 +976,11 @@ function renderDashboard() {
   if (dateEl)  dateEl.textContent  = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
 
   const totalBLs  = bls.length;
-  const pendentes = bls.filter(b => !b.paid).length;
+  const pendentes = bls.filter(b => b.billed && !b.paid).length;
   const pagos     = bls.filter(b => b.paid).length;
-  let totalAberto = 0;
-  let totalVencido = 0;
+  let totalAberto   = 0;
   let totalFaturado = 0;
-  let totalDisputa = 0;
-  const today = new Date().toISOString().slice(0,10);
+  let totalDisputa  = 0;
 
   bls.filter(b => !b.paid).forEach(b => {
     const roe = (b.billed && b.frozenRoe != null) ? b.frozenRoe : effectiveROE(b);
@@ -986,11 +990,6 @@ function renderDashboard() {
       if (dc !== null) tot += calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
     });
     totalAberto += tot;
-
-    // Count vencido (past due and not paid)
-    if (b.venc && b.venc < today) {
-      totalVencido += tot;
-    }
 
     // Count faturado and not paid
     if (b.billed && !b.paid) {
@@ -1015,16 +1014,13 @@ function renderDashboard() {
     totalEl.style.fontSize = len > 16 ? '15px' : len > 13 ? '17px' : '20px';
   }
 
-  // Update new KPI cards
-  const vencidoStr = 'R$ ' + totalVencido.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  // KPI cards — Faturado e Em Disputa
   const faturadoStr = 'R$ ' + totalFaturado.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const disputaStr = 'R$ ' + totalDisputa.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const vencidoEl = document.getElementById('dk-total-vencido');
-  const faturadoEl = document.getElementById('dk-total-faturado');
-  const disputaEl = document.getElementById('dk-total-disputa');
-  if (vencidoEl) vencidoEl.textContent = vencidoStr;
+  const disputaStr  = 'R$ ' + totalDisputa.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const faturadoEl  = document.getElementById('dk-total-faturado');
+  const disputaEl   = document.getElementById('dk-total-disputa');
   if (faturadoEl) faturadoEl.textContent = faturadoStr;
-  if (disputaEl) disputaEl.textContent = disputaStr;
+  if (disputaEl)  disputaEl.textContent  = disputaStr;
 
   const alertDays = getAlertDays();
   let nDD=0, nAlerta=0, nLivres=0, nDD30=0;
@@ -1115,9 +1111,19 @@ function renderDashboard() {
   renderTodoList();
 }
 function filterClientsSemEmail() {
+  window._cliFilterSemEmail = true;
   switchModule('clients');
-  setTimeout(() => renderClients(), 80);
-  setTimeout(() => toast('Verifique clientes sem e-mail cadastrado.', 'error'), 200);
+  setTimeout(() => {
+    const badge = document.getElementById('cli-filter-badge');
+    if (badge) badge.style.display = 'flex';
+    renderClients();
+  }, 80);
+}
+function clearClientFilter() {
+  window._cliFilterSemEmail = false;
+  const badge = document.getElementById('cli-filter-badge');
+  if (badge) badge.style.display = 'none';
+  renderClients();
 }
 
 
@@ -1163,33 +1169,6 @@ function renderTodoList() {
 
   const today = new Date(); today.setHours(0,0,0,0);
   const items = [];
-
-  // ── Faturas vencidas não pagas ─────────────────────────────────
-  const vencidas = bls.filter(b => !b.paid && b.venc && new Date(b.venc+'T00:00:00') < today);
-  if (vencidas.length) {
-    const total = vencidas.reduce((s,b) => s + blTotal(b,null), 0);
-    items.push({
-      level: 'urgent', icon: '🔴',
-      title: `${vencidas.length} fatura${vencidas.length>1?'s':''} vencida${vencidas.length>1?'s':''}`,
-      sub: `R$ ${total.toLocaleString('pt-BR',{minimumFractionDigits:2})} em atraso — cobrar agora`,
-      action: () => { switchModule('billing'); setFilter('unpaid'); setBillingSubTab('faturados'); }
-    });
-  }
-
-  // ── Faturas vencendo em até 3 dias ─────────────────────────────
-  const em3 = bls.filter(b => {
-    if (b.paid || !b.venc) return false;
-    const diff = (new Date(b.venc+'T00:00:00') - today) / 86400000;
-    return diff >= 0 && diff <= 3;
-  });
-  if (em3.length) {
-    items.push({
-      level: 'warn', icon: '⚠️',
-      title: `${em3.length} fatura${em3.length>1?'s':''} vencem em até 3 dias`,
-      sub: em3.map(b => b.bl).join(', ').substring(0,60) + (em3.length>3?'…':''),
-      action: () => { switchModule('billing'); setFilter('unpaid'); setBillingSubTab('faturados'); }
-    });
-  }
 
   // ── Containers em D&D há mais de 30 dias ──────────────────────
   const dd30 = trkData.filter(r => {
@@ -1253,7 +1232,7 @@ function renderTodoList() {
       level: 'info', icon: '📭',
       title: `${semEmail} cliente${semEmail>1?'s':''} com faturas em aberto sem e-mail`,
       sub: 'Cobranças automáticas não funcionam sem e-mail cadastrado',
-      action: () => { switchModule('clients'); }
+      action: () => { filterClientsSemEmail(); }
     });
   }
 
