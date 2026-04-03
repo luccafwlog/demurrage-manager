@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v3.3 | **Cache:** `?v=120` | **Atualizado:** 2026-04-03
+> **Versão:** v3.4 | **Cache:** `?v=121` | **Atualizado:** 2026-04-03
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -438,6 +438,30 @@ git push origin main
 ---
 
 ## 10. Changelog Recente
+
+### v3.4 — 2026-04-03 — Filtros Clientes, CNPJ em Containers, Edit/Delete
+
+**`js/clients.js` + `app.html`**
+- `window._cliActiveFilter`: estado único para filtros mutuamente exclusivos (`semEmail` | `comBLs` | `semBLs` | null).
+- 3 botões de filtro toggle na toolbar de Clientes: **📭 Sem e-mail**, **📋 Com BLs**, **Sem BLs**. Botão ativo fica com estilo `.btn-outline.active` (fundo azul).
+- `toggleCliFilter(type)`, `clearClientFilter()`, `_updateCliFilterButtons()` adicionados a `clients.js`.
+- Busca textual e filtros categóricos são cumulativos.
+
+**`js/init.js`**
+- `groupAlertsByCnee()`: quando `a.row.cnpj` está vazio, tenta encontrar o cliente pelo nome (`cnee`). Se encontrado, usa o e-mail do cadastro e exibe badge "⚠ CNPJ não vinculado" no painel de Alertas.
+- `filterClientsSemEmail()`: usa o novo `_cliActiveFilter`.
+
+**`app.html` + `js/tracking.js`**
+- Coluna **CNPJ** adicionada na tabela de containers (após CNEE): exibe formatado ou "—" em vermelho se ausente.
+- Filtro de coluna `tf-cnpj` com busca por dígitos.
+- Coluna **AÇÕES** adicionada no final da tabela com botões ✏️ e 🗑️ por linha.
+- Modal `modal-trk-edit` com todos os campos editáveis do container.
+- `openEditContainer(safeKey)`: abre modal com dados do container selecionado.
+- `saveEditContainer()`: salva trkData + atualiza container no BL de faturamento (se não congelado) + recalcula deadline.
+- `confirmDeleteContainer(safeKey)`: remove do trkData + remove do BL de faturamento (se não congelado) + aviso se BL já congelado.
+
+**`css/base.css`**
+- `.btn-outline.active` — estado ativo para botões de filtro toggle.
 
 ### v3.3 — 2026-04-03 — Redesign Painel: cards, filtros e remoções
 

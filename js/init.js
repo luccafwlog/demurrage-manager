@@ -55,11 +55,9 @@ function switchModule(mod) {
   if (mod === 'clients')   renderClients();
   if (mod === 'dashboard') renderDashboard();
   if (mod === 'settings')  initCfgModule();
-  // Limpa filtro sem-email ao sair da aba de Clientes
-  if (mod !== 'clients' && window._cliFilterSemEmail) {
-    window._cliFilterSemEmail = false;
-    const badge = document.getElementById('cli-filter-badge');
-    if (badge) badge.style.display = 'none';
+  // Limpa filtro ao sair da aba de Clientes
+  if (mod !== 'clients' && window._cliActiveFilter) {
+    window._cliActiveFilter = null;
   }
 }
 
@@ -546,12 +544,20 @@ function groupAlertsByCnee(alerts) {
   alerts.forEach(a => {
     const key = a.row.cnpj || a.row.cnee || '—';
     if (!groups[key]) {
-      const client = a.row.cnpj ? getClientByCnpj(a.row.cnpj) : null;
+      // Tenta encontrar cliente pelo CNPJ; se ausente, busca pelo nome (cnee)
+      let client = a.row.cnpj ? getClientByCnpj(a.row.cnpj) : null;
+      if (!client && a.row.cnee) {
+        const norm = a.row.cnee.trim().toUpperCase();
+        client = clients.find(c => (c.name||'').trim().toUpperCase() === norm) || null;
+      }
+      const resolvedCnpj = a.row.cnpj || (client ? client.cnpj : '');
+      const resolvedEmails = client ? (client.emails || []) : (a.row.cnpj ? getEmailsForBL(a.row) : []);
       groups[key] = {
-        cnpj:   a.row.cnpj || '',
-        name:   (client && client.name) || a.row.cnee || a.row.cnpj || '—',
-        emails: a.row.cnpj ? getEmailsForBL(a.row) : [],
-        items:  []
+        cnpj:        resolvedCnpj,
+        name:        (client && client.name) || a.row.cnee || a.row.cnpj || '—',
+        emails:      resolvedEmails,
+        cnpjMissing: !a.row.cnpj && !!client, // container sem CNPJ mas cliente encontrado pelo nome
+        items:       []
       };
     }
     groups[key].items.push(a);
@@ -610,6 +616,11 @@ function renderAlertPanel() {
       ? `<span style="color:#059669;font-size:11px;">✉️ ${g.emails.join(', ')}</span>`
       : `<span style="color:#dc2626;font-size:11px;">⚠ sem e-mail</span>`;
 
+    // Aviso de CNPJ ausente no container (cliente encontrado pelo nome, mas CNPJ não está na planilha)
+    const cnpjWarn = g.cnpjMissing
+      ? `<span style="font-size:10px;color:#b45309;background:#fef3c7;border:1px solid #fbbf24;border-radius:4px;padding:1px 6px;margin-left:6px;" title="O container não tem CNPJ na planilha. Vincule o CNPJ ao reimportar.">⚠ CNPJ não vinculado</span>`
+      : '';
+
     const ov = g.items.filter(a=>a.category==='over').length;
     const td = g.items.filter(a=>a.category==='today').length;
     const wn = g.items.filter(a=>a.category==='warn').length;
@@ -625,6 +636,7 @@ function renderAlertPanel() {
         <div>
           ${g.name}
           ${g.cnpj ? `<span style="color:var(--muted);font-size:11px;margin-left:6px;font-weight:400;">${formatCnpj(g.cnpj)}</span>` : ''}
+          ${cnpjWarn}
           <span style="margin-left:10px;font-weight:400;">${summary}</span>
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
@@ -1111,19 +1123,9 @@ function renderDashboard() {
   renderTodoList();
 }
 function filterClientsSemEmail() {
-  window._cliFilterSemEmail = true;
+  window._cliActiveFilter = 'semEmail';
   switchModule('clients');
-  setTimeout(() => {
-    const badge = document.getElementById('cli-filter-badge');
-    if (badge) badge.style.display = 'flex';
-    renderClients();
-  }, 80);
-}
-function clearClientFilter() {
-  window._cliFilterSemEmail = false;
-  const badge = document.getElementById('cli-filter-badge');
-  if (badge) badge.style.display = 'none';
-  renderClients();
+  setTimeout(() => renderClients(), 80);
 }
 
 

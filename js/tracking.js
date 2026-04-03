@@ -404,6 +404,7 @@ function renderTracking() {
     container: tfVal('tf-container'),
     bl:        tfVal('tf-bl'),
     cnee:      tfVal('tf-cnee'),
+    cnpj:      tfVal('tf-cnpj'),
     type:      tfVal('tf-type'),
     pol:       tfVal('tf-pol'),
     pod:       tfVal('tf-pod'),
@@ -430,12 +431,13 @@ function renderTracking() {
       : (r.emptyReturn ? trkDaysBetween(r.discharge, r.emptyReturn) : (elapsed !== null ? elapsed : null));
     const diasCorridos = r.emptyReturn ? trkDaysBetween(r.discharge, r.emptyReturn) : elapsed;
 
-    const matchQ = !q || [r.container,r.bl,r.cnee,r.vessel].join(' ').toLowerCase().includes(q);
+    const matchQ = !q || [r.container,r.bl,r.cnee,r.vessel,r.cnpj].join(' ').toLowerCase().includes(q);
     const matchS = sf === 'all' || status === sf;
     const matchCols =
       (!tf.container || (r.container||'').toLowerCase().includes(tf.container)) &&
       (!tf.bl        || (r.bl||'').toLowerCase().includes(tf.bl)) &&
       (!tf.cnee      || (r.cnee||'').toLowerCase().includes(tf.cnee)) &&
+      (!tf.cnpj      || (r.cnpj||'').replace(/\D/g,'').includes(tf.cnpj.replace(/\D/g,''))) &&
       (!tf.type      || (r.type||'').toLowerCase().includes(tf.type)) &&
       (!tf.pol       || (r.pol||'').toLowerCase().includes(tf.pol)) &&
       (!tf.pod       || (r.pod||'').toLowerCase().includes(tf.pod)) &&
@@ -552,10 +554,15 @@ function renderTracking() {
       ? `<span style="font-size:10px;">${trkFmtDate(billedBL.migratedAt)}</span>`
       : '—';
 
+    const safeKey = encodeURIComponent(r.container + '|' + (r.bl||''));
+    const cnpjDisplay = r.cnpj && r.cnpj.length === 14
+      ? `<span style="font-family:monospace;font-size:10px;color:var(--muted);">${formatCnpj(r.cnpj)}</span>`
+      : `<span style="color:#dc2626;font-size:10px;" title="CNPJ não vinculado">—</span>`;
     return `<tr class="${rowClass}">
       <td style="font-weight:600;white-space:normal;word-break:break-all;">${r.container}</td>
       <td style="text-align:left;white-space:normal;word-break:break-all;font-weight:600;">${r.bl||'—'}${blBadge}</td>
       <td style="text-align:left;overflow:hidden;text-overflow:ellipsis;" title="${r.cnee||''}">${r.cnee||'—'}</td>
+      <td>${cnpjDisplay}</td>
       <td>${r.type||'—'}</td>
       <td>${r.pol||'—'}</td>
       <td>${r.pod||'—'}</td>
@@ -568,13 +575,128 @@ function renderTracking() {
       <td>${daysHtml}</td>
       <td>${pillHtml}</td>
       <td>${migratedAtCell}</td>
+      <td style="white-space:nowrap;">
+        <button class="act-btn edit" onclick="openEditContainer('${safeKey}')" style="padding:3px 8px;font-size:11px;" title="Editar">✏️</button>
+        <button class="act-btn del"  onclick="confirmDeleteContainer('${safeKey}')" style="padding:3px 8px;font-size:11px;" title="Excluir">🗑️</button>
+      </td>
     </tr>`;
   }).join('');
   }
 }
 
+// ── EDITAR CONTAINER ──────────────────────────────────────────────────────
+function openEditContainer(safeKey) {
+  const key = decodeURIComponent(safeKey);
+  const [container, bl] = key.split('|');
+  const r = trkData.find(x => x.container === container && (x.bl||'') === (bl||''));
+  if (!r) { if(typeof toast==='function') toast('Container não encontrado.','error'); return; }
+  window._editingTrkKey = key;
+
+  document.getElementById('te-container').value   = r.container || '';
+  document.getElementById('te-bl').value          = r.bl || '';
+  document.getElementById('te-cnee').value        = r.cnee || '';
+  document.getElementById('te-cnpj').value        = r.cnpj ? formatCnpj(r.cnpj) : '';
+  document.getElementById('te-type').value        = r.type || '';
+  document.getElementById('te-freetime').value    = r.freeTime || 21;
+  document.getElementById('te-pol').value         = r.pol || '';
+  document.getElementById('te-pod').value         = r.pod || '';
+  document.getElementById('te-vessel').value      = r.vessel || '';
+  document.getElementById('te-discharge').value   = r.discharge || '';
+  document.getElementById('te-emptyreturn').value = r.emptyReturn || '';
+
+  // Verifica se existe fatura vinculada
+  const linkedBL = bls.find(b => b.bl === r.bl);
+  const warnEl = document.getElementById('te-billing-warn');
+  if (warnEl) warnEl.style.display = linkedBL ? '' : 'none';
+
+  openModal('modal-trk-edit');
+}
+
+function saveEditContainer() {
+  const key = window._editingTrkKey;
+  if (!key) return;
+  const [oldContainer, oldBL] = key.split('|');
+  const idx = trkData.findIndex(x => x.container === oldContainer && (x.bl||'') === (oldBL||''));
+  if (idx < 0) { if(typeof toast==='function') toast('Container não encontrado.','error'); return; }
+
+  const newContainer  = document.getElementById('te-container').value.trim().toUpperCase();
+  const newBL         = document.getElementById('te-bl').value.trim().toUpperCase();
+  const newCnee       = document.getElementById('te-cnee').value.trim();
+  const newCnpjRaw    = document.getElementById('te-cnpj').value.replace(/\D/g,'');
+  const newCnpj       = newCnpjRaw.length === 13 ? '0'+newCnpjRaw : newCnpjRaw;
+  const newType       = document.getElementById('te-type').value.trim();
+  const newFreeTime   = parseInt(document.getElementById('te-freetime').value) || 21;
+  const newPol        = document.getElementById('te-pol').value.trim();
+  const newPod        = document.getElementById('te-pod').value.trim();
+  const newVessel     = document.getElementById('te-vessel').value.trim();
+  const newDischarge  = document.getElementById('te-discharge').value;
+  const newEmptyRet   = document.getElementById('te-emptyreturn').value;
+
+  if (!newContainer || !newBL) { if(typeof toast==='function') toast('Container e BL são obrigatórios.','error'); return; }
+
+  // Recalcula deadline
+  const newDeadline = trkAddDays(newDischarge, newFreeTime);
+
+  // Atualiza trkData
+  trkData[idx] = { ...trkData[idx],
+    container: newContainer, bl: newBL, cnee: newCnee, cnpj: newCnpj,
+    type: newType, freeTime: newFreeTime, pol: newPol, pod: newPod,
+    vessel: newVessel, discharge: newDischarge, emptyReturn: newEmptyRet,
+    deadline: newDeadline,
+  };
+  trkSave(trkData);
+
+  // Atualiza o container correspondente no BL de faturamento (se existir e não estiver congelado)
+  const linkedBL = bls.find(b => b.bl === oldBL);
+  if (linkedBL && !linkedBL.billed) {
+    const cIdx = (linkedBL.containers||[]).findIndex(c => c.container === oldContainer);
+    if (cIdx >= 0) {
+      linkedBL.containers[cIdx] = {
+        container:   newContainer,
+        type:        newType,
+        discharge:   newDischarge,
+        emptyReturn: newEmptyRet,
+      };
+      // Se o BL mudou também, atualiza o bl referenciado
+      if (newBL !== oldBL) linkedBL.bl = newBL;
+      if (typeof save === 'function') save(bls);
+    }
+  }
+
+  closeModal('modal-trk-edit');
+  renderTracking();
+  if (typeof toast==='function') toast('✓ Container atualizado!', 'success');
+  if (typeof logAuditAction==='function') logAuditAction('edicao_container', { container: newContainer, bl: newBL });
+}
+
+function confirmDeleteContainer(safeKey) {
+  const key = decodeURIComponent(safeKey);
+  const [container, bl] = key.split('|');
+  const r = trkData.find(x => x.container === container && (x.bl||'') === (bl||''));
+  if (!r) return;
+
+  const linkedBL = bls.find(b => b.bl === r.bl);
+  const billedWarn = linkedBL && linkedBL.billed ? '\n\nAtenção: o BL vinculado já foi faturado (congelado). O container será removido do rastreamento mas NÃO da fatura.' : '';
+  const msg = `Excluir container "${container}" do BL "${bl||'—'}"?${billedWarn}\n\nEsta ação não pode ser desfeita.`;
+  if (!confirm(msg)) return;
+
+  // Remove do trkData
+  trkData = trkData.filter(x => !(x.container === container && (x.bl||'') === (bl||'')));
+  trkSave(trkData);
+
+  // Remove do BL de faturamento se existir e não estiver congelado
+  if (linkedBL && !linkedBL.billed) {
+    linkedBL.containers = (linkedBL.containers||[]).filter(c => c.container !== container);
+    if (typeof save === 'function') save(bls);
+  }
+
+  renderTracking();
+  if (typeof toast==='function') toast(`Container "${container}" excluído.`, 'success');
+  if (typeof logAuditAction==='function') logAuditAction('exclusao_container', { container, bl });
+}
+
 function clearTrkFilters() {
-  ['tf-container','tf-bl','tf-cnee','tf-type','tf-pol','tf-pod',
+  ['tf-container','tf-bl','tf-cnee','tf-cnpj','tf-type','tf-pol','tf-pod',
    'tf-vessel','tf-discharge','tf-deadline','tf-return',
    'tf-usedays','tf-freetime','tf-dias','tf-migratedat'].forEach(id => {
     const el = document.getElementById(id);

@@ -342,14 +342,43 @@ function clearClients() {
   );
 }
 
+// Filtro ativo na aba de Clientes: null | 'semEmail' | 'comBLs' | 'semBLs'
+window._cliActiveFilter = window._cliActiveFilter || null;
+
+function toggleCliFilter(type) {
+  window._cliActiveFilter = (window._cliActiveFilter === type) ? null : type;
+  _updateCliFilterButtons();
+  renderClients();
+}
+function clearClientFilter() {
+  window._cliActiveFilter = null;
+  _updateCliFilterButtons();
+  renderClients();
+}
+function _updateCliFilterButtons() {
+  ['semEmail','comBLs','semBLs'].forEach(t => {
+    const btn = document.getElementById('cli-btn-' + t.replace(/([A-Z])/g, s => '-' + s.toLowerCase()));
+    if (btn) btn.classList.toggle('active', window._cliActiveFilter === t);
+  });
+}
+
 function renderClients() {
+  _updateCliFilterButtons();
   const q = (document.getElementById('cli-search')?.value || '').toLowerCase();
   const qDigits = q.replace(/\D/g, ''); // query stripped to digits only
-  const filterSemEmail = !!window._cliFilterSemEmail;
+  const activeFilter = window._cliActiveFilter;
   const sorted = [...clients].sort((a,b) => (a.name||a.cnpj||"").localeCompare(b.name||b.cnpj||"", "pt-BR"));
   const filtered = sorted.filter(c => {
-    // Filtro de sem e-mail (ativado via painel)
-    if (filterSemEmail && (c.emails||[]).length > 0) return false;
+    // Filtros de categoria (mutuamente exclusivos)
+    if (activeFilter === 'semEmail' && (c.emails||[]).length > 0) return false;
+    if (activeFilter === 'comBLs') {
+      const hasBL = bls.some(b => normalizeCnpj(b.cnpj) === normalizeCnpj(c.cnpj));
+      if (!hasBL) return false;
+    }
+    if (activeFilter === 'semBLs') {
+      const hasBL = bls.some(b => normalizeCnpj(b.cnpj) === normalizeCnpj(c.cnpj));
+      if (hasBL) return false;
+    }
     if (!q) return true;
     const text = [formatCnpj(c.cnpj), c.name, (c.emails||[]).join(' ')].join(' ').toLowerCase();
     if (text.includes(q)) return true;

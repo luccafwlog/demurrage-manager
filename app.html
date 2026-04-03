@@ -144,7 +144,7 @@ var MiniZip = (function() {
 
 <!-- ── SUPABASE SDK + DB MODULE ────────────────────────────────── -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script type="module" src="js/db.js?v=120"></script>
+<script type="module" src="js/db.js?v=121"></script>
 
 
 <div id="app">
@@ -568,16 +568,17 @@ var MiniZip = (function() {
       </colgroup>
       <thead id="trk-thead">
         <tr>
-          <th>CONTAINER</th><th>BL</th><th>CNEE</th><th>TIPO</th>
+          <th>CONTAINER</th><th>BL</th><th>CNEE</th><th>CNPJ</th><th>TIPO</th>
           <th>POL</th><th>POD</th><th>NAVIO</th>
           <th>DESCARGA</th><th>DEADLINE</th><th>DEVOLUÇÃO</th>
           <th>USE DAYS</th><th>FREE TIME</th><th>DIAS</th><th>STATUS</th>
-          <th>ENVIADO EM</th>
+          <th>ENVIADO EM</th><th>AÇÕES</th>
         </tr>
         <tr class="trk-filter-row">
           <th><input type="text" id="tf-container" placeholder="filtrar..." oninput="renderTracking()"></th>
           <th><input type="text" id="tf-bl"        placeholder="filtrar..." oninput="renderTracking()"></th>
           <th><input type="text" id="tf-cnee"      placeholder="filtrar..." oninput="renderTracking()"></th>
+          <th><input type="text" id="tf-cnpj"      placeholder="filtrar..." oninput="renderTracking()"></th>
           <th><input type="text" id="tf-type"      placeholder="tipo..."    oninput="renderTracking()"></th>
           <th><input type="text" id="tf-pol"       placeholder="..."        oninput="renderTracking()"></th>
           <th><input type="text" id="tf-pod"       placeholder="..."        oninput="renderTracking()"></th>
@@ -598,6 +599,7 @@ var MiniZip = (function() {
             </select>
           </th>
           <th><input type="text" id="tf-migratedat" placeholder="DD/MM..." oninput="renderTracking()"></th>
+          <th></th>
         </tr>
       </thead>
       <tbody id="trk-body"></tbody>
@@ -614,12 +616,11 @@ var MiniZip = (function() {
   <div class="trk-toolbar">
     <div class="search-wrap" style="flex:1;max-width:400px;">
       <span class="search-icon">🔍</span>
-      <input type="text" id="cli-search" placeholder="Buscar por CNPJ, razão social ou e-mail..." oninput="if(window._cliFilterSemEmail&&this.value){clearClientFilter();}else{renderClients();}">
+      <input type="text" id="cli-search" placeholder="Buscar por CNPJ, razão social ou e-mail..." oninput="renderClients()">
     </div>
-    <div id="cli-filter-badge" style="display:none;align-items:center;gap:6px;background:#fef3c7;border:1px solid #fbbf24;border-radius:8px;padding:4px 10px;font-size:12px;font-weight:600;color:#92400e;">
-      📭 Sem e-mail
-      <button onclick="clearClientFilter()" style="background:none;border:none;cursor:pointer;font-size:14px;color:#92400e;padding:0;line-height:1;" title="Limpar filtro">✕</button>
-    </div>
+    <button id="cli-btn-sem-email" class="btn btn-outline" onclick="toggleCliFilter('semEmail')" title="Mostrar apenas clientes sem e-mail">📭 Sem e-mail</button>
+    <button id="cli-btn-com-bls"  class="btn btn-outline" onclick="toggleCliFilter('comBLs')"  title="Mostrar apenas clientes com faturas">📋 Com BLs</button>
+    <button id="cli-btn-sem-bls"  class="btn btn-outline" onclick="toggleCliFilter('semBLs')"  title="Mostrar apenas clientes sem nenhuma fatura">Sem BLs</button>
     <button class="btn btn-primary" onclick="openNewClient()">+ Novo Cliente</button>
     <button class="btn btn-outline" onclick="document.getElementById('cli-import-input').click()">⬆️ Importar Planilha</button>
     <button class="btn btn-outline" onclick="downloadCliTemplate()">⬇️ Baixar Modelo</button>
@@ -1115,26 +1116,26 @@ function downloadTemplate() {
      ════════════════════════════════════════════════════════════════ -->
 
 <!-- Utilitários puros — sem dependências externas -->
-<script src="js/utils.js?v=120"></script>
-<script src="js/rates.js?v=120"></script>
+<script src="js/utils.js?v=121"></script>
+<script src="js/rates.js?v=121"></script>
 
 <!-- Módulo de Faturamento (BLs, PTAX, Cálculo D&D) -->
-<script src="js/billing.js?v=120"></script>
+<script src="js/billing.js?v=121"></script>
 
 <!-- Módulo de Rastreamento de Containers -->
-<script src="js/tracking.js?v=120"></script>
+<script src="js/tracking.js?v=121"></script>
 
 <!-- Módulo de Clientes (CNPJ, e-mails) -->
-<script src="js/clients.js?v=120"></script>
+<script src="js/clients.js?v=121"></script>
 
 <!-- Módulo Admin: Usuários e Log de Auditoria -->
-<script src="js/users.js?v=120"></script>
+<script src="js/users.js?v=121"></script>
 
 <!-- Módulo de Cobrança Consolidada por CNPJ -->
-<script src="js/consolidated.js?v=120"></script>
+<script src="js/consolidated.js?v=121"></script>
 
 <!-- Inicialização: Dashboard, Configurações, window._dmOnReady -->
-<script src="js/init.js?v=120"></script>
+<script src="js/init.js?v=121"></script>
 
 
 <!-- ══════════════════════════════════════════════════════════════
@@ -1513,6 +1514,72 @@ function downloadTemplate() {
           <button id="bil-bulk-confirm-btn" class="btn btn-danger" onclick="executeBilBulkDelete()" disabled>🗑️ Confirmar Exclusão</button>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     MODAL: EDITAR CONTAINER
+     ══════════════════════════════════════════════════════════════ -->
+<div class="overlay" id="modal-trk-edit" role="dialog" aria-modal="true" aria-label="Editar Container">
+  <div class="modal" style="max-width:560px;width:95%;">
+    <div class="modal-header">
+      <div class="modal-title">✏️ Editar Container</div>
+      <button class="modal-close" onclick="closeModal('modal-trk-edit')">✕</button>
+    </div>
+    <div class="modal-body" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+      <div>
+        <label class="form-label">Container *</label>
+        <input class="form-input" id="te-container" placeholder="ex: MSCU1234567">
+      </div>
+      <div>
+        <label class="form-label">BL *</label>
+        <input class="form-input" id="te-bl" placeholder="ex: MSCUBR12345">
+      </div>
+      <div>
+        <label class="form-label">CNEE (Consignatário)</label>
+        <input class="form-input" id="te-cnee" placeholder="Nome do cliente">
+      </div>
+      <div>
+        <label class="form-label">CNPJ</label>
+        <input class="form-input" id="te-cnpj" placeholder="00.000.000/0000-00">
+      </div>
+      <div>
+        <label class="form-label">Tipo</label>
+        <input class="form-input" id="te-type" placeholder="ex: 40G1">
+      </div>
+      <div>
+        <label class="form-label">Free Time (dias)</label>
+        <input class="form-input" id="te-freetime" type="number" min="1" max="999">
+      </div>
+      <div>
+        <label class="form-label">POL</label>
+        <input class="form-input" id="te-pol" placeholder="ex: CNSHA">
+      </div>
+      <div>
+        <label class="form-label">POD</label>
+        <input class="form-input" id="te-pod" placeholder="ex: BRSSZ">
+      </div>
+      <div>
+        <label class="form-label">Navio</label>
+        <input class="form-input" id="te-vessel" placeholder="ex: MSC ANNA">
+      </div>
+      <div></div>
+      <div>
+        <label class="form-label">Descarga</label>
+        <input class="form-input" id="te-discharge" type="date">
+      </div>
+      <div>
+        <label class="form-label">Devolução (Empty Return)</label>
+        <input class="form-input" id="te-emptyreturn" type="date">
+      </div>
+    </div>
+    <div id="te-billing-warn" style="display:none;margin:12px 16px 0;padding:10px 14px;background:#fef3c7;border:1px solid #fbbf24;border-radius:8px;font-size:12px;color:#92400e;">
+      ⚠️ Este container tem uma fatura associada. As alterações serão refletidas apenas se a fatura <strong>não estiver congelada</strong> (não faturada).
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-trk-edit')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveEditContainer()">💾 Salvar</button>
     </div>
   </div>
 </div>
