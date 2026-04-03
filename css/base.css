@@ -24,14 +24,51 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 
 /* TRACKING MODULE */
 .trk-toolbar { display:flex; gap:10px; margin-bottom:16px; align-items:center; flex-wrap:wrap; }
-.trk-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
+.trk-stats { display:grid; grid-template-columns:repeat(6,1fr); gap:12px; margin-bottom:20px; }
 .trk-stat { background:white; border:1px solid var(--border); border-radius:10px; padding:14px 18px; }
 .trk-stat-label { font-size:11px; font-weight:600; letter-spacing:1px; text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
-.trk-stat-val { font-size:24px; font-weight:700; line-height:1; }
+.trk-stat-val { font-size:22px; font-weight:700; line-height:1; }
 .trk-stat-val.blue { color:var(--blue); }
 .trk-stat-val.red { color:var(--red); }
 .trk-stat-val.gold { color:var(--gold); }
 .trk-stat-val.green { color:var(--green); }
+.trk-stat-sub { font-size:10px; color:var(--muted); margin-top:5px; }
+
+/* ── BILLING KPI DASHBOARD ────────────────────────────────────── */
+.billing-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.kpi-card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 18px;
+  position: relative;
+  overflow: hidden;
+}
+/* Barra de cor no topo de cada card */
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  border-radius: 10px 10px 0 0;
+  background: var(--border);
+}
+.kpi-card--blue::before  { background: var(--blue); }
+.kpi-card--green::before { background: var(--green); }
+.kpi-card--navy::before  { background: var(--navy); }
+.kpi-card--gold::before  { background: var(--gold); }
+.kpi-icon  { font-size:18px; margin-bottom:6px; line-height:1; }
+.kpi-label { font-size:11px; font-weight:600; letter-spacing:1px; text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
+.kpi-val   { font-size:22px; font-weight:700; line-height:1.1; color:var(--text); }
+.kpi-card--blue  .kpi-val { color:var(--blue); }
+.kpi-card--green .kpi-val { color:var(--green); }
+.kpi-card--navy  .kpi-val { color:var(--navy); }
+.kpi-card--gold  .kpi-val { color:var(--gold); }
 
 .trk-table-wrap { background:white; border:1px solid var(--border); border-radius:10px; overflow:hidden; }
 .trk-table { width:100%; border-collapse:collapse; font-size:11px; table-layout:fixed; }

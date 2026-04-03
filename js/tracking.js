@@ -350,6 +350,47 @@ function checkAndMigrateBLs() {
   return { newBLs: migrated, updatedContainers };
 }
 
+// ============================================================
+// TRACKING KPI DASHBOARD
+// Calcula e exibe cards reativos ao conjunto filtrado atual
+// ============================================================
+
+// Calcula o valor USD estimado de D&D de uma linha de tracking
+function trkRowUSD(r) {
+  const elapsed = trkDaysElapsed(r.discharge);
+  const dc = r.emptyReturn
+    ? trkDaysBetween(r.discharge, r.emptyReturn)
+    : (elapsed !== null ? elapsed : null);
+  if (dc === null || dc <= 0) return 0;
+  // Reutiliza getRateForBL passando objeto com freeTime do container
+  const rate = (typeof getRateForBL === 'function')
+    ? getRateForBL({ freeTime: r.freeTime || null }, r.type)
+    : (typeof getRate === 'function' ? getRate(r.type) : null);
+  if (!rate) return 0;
+  return calcUSD(dc, rate, null, null).totalUSD;
+}
+
+// Atualiza todos os KPI cards da tela de Controle de Containers
+function updateTrkKPIs(filtered) {
+  let nOver = 0, nGrace = 0, totalUSD = 0;
+  const uniqueBLs = new Set();
+  filtered.forEach(r => {
+    const st = trkStatus(r);
+    if (st === 'dd_open')     nOver++;
+    else if (st === 'grace')  nGrace++;
+    // Acumula USD para containers com D&D (aberto ou devolvido)
+    if (st === 'dd_open' || st === 'dd_returned') totalUSD += trkRowUSD(r);
+    if (r.bl) uniqueBLs.add(r.bl);
+  });
+  const fmtUSD = v => '$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const set = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
+  set('ts-total', filtered.length);
+  set('ts-over',  nOver);
+  set('ts-grace', nGrace);
+  set('ts-bls',   uniqueBLs.size);
+  set('ts-usd',   fmtUSD(totalUSD));
+}
+
 function renderTracking() {
   // Ensure table header always matches current view (handles page-reload edge cases)
   if (typeof _updateTrkTableHeader === 'function') _updateTrkTableHeader();
@@ -413,9 +454,10 @@ function renderTracking() {
     return matchQ && matchS && matchCols;
   });
 
-  // Stats (always over full dataset)
-  let nOver=0, nGrace=0, nFree=0;
-  // Pre-compute per-BL migration eligibility and status
+  // ── KPI Dashboard — stats derivados do dataset FILTRADO ──────────────────
+  updateTrkKPIs(filtered);
+
+  // ── nReady — indicador de migração (sempre sobre dataset global) ──────────
   const blGroups = {};
   trkData.forEach(r => {
     if (!r.bl) return;
@@ -433,16 +475,6 @@ function renderTracking() {
     blMigrationStatus[blNum] = { allReturned, total, returned, hasDemurrage, inBilling };
     if (allReturned && hasDemurrage && !inBilling) nReady++;
   });
-
-  trkData.forEach(r => {
-    const s = trkStatus(r);
-    if (s==='dd_open') nOver++;
-    else if (s==='grace') nGrace++;
-    else if (s==='free') nFree++;
-  });
-  document.getElementById('ts-total').textContent = trkData.length;
-  document.getElementById('ts-over').textContent  = nOver;
-  document.getElementById('ts-grace').textContent = nGrace;
   document.getElementById('ts-ready').textContent = nReady;
   updateAlertBadge();
 

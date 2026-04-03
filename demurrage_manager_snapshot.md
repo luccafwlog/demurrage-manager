@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v2.9 | **Cache:** `?v=115` | **Atualizado:** 2026-04-02
+> **Versão:** v3.0 | **Cache:** `?v=118` | **Atualizado:** 2026-04-03
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -402,7 +402,7 @@ As taxas D&D customizadas ficam em `localStorage` — não são compartilhadas e
 ## 8. Operações de Manutenção
 
 ### Bump de cache
-Alterar `?v=NNN` para o próximo inteiro em todos os 9 `<script src>` de `app.html`. Usar `sed -i 's/v=115/v=116/g' app.html`. Versão atual: `?v=115`.
+Alterar `?v=NNN` para o próximo inteiro em todos os 9 `<script src>` de `app.html`. Usar `sed -i 's/v=118/v=119/g' app.html`. Versão atual: `?v=118`.
 
 ### Adicionar usuário
 1. Criar conta em Supabase Auth Dashboard → Authentication → Users
@@ -436,7 +436,30 @@ git push origin main
 
 ---
 
-## 10. Decisões Arquiteturais Relevantes (ADRs Compactos)
+## 10. Changelog Recente
+
+### v3.0 — 2026-04-03 — Dashboards KPI reativos (Faturamento + Containers)
+
+**Faturamento (`billing.js` + `app.html`)**
+- Nova função `blTotalUSD(b)`: calcula total em USD de um BL (desconto percentual aplicado; desconto fixo BRL ignorado para USD).
+- Nova função `updateBillingKPIs(filtered)`: agrega e renderiza 4 KPI cards com base no array `filtered` atual.
+- `renderList()`: chama `updateBillingKPIs(filtered)` imediatamente após `updateBillingBadges()` — antes do early-return de estado vazio, garantindo que cards reflitam mesmo quando nenhum resultado é encontrado.
+- HTML: `.billing-kpi-grid` com 4 cards (`kpi-usd`, `kpi-brl`, `kpi-bls`, `kpi-containers`) inserido acima do `#bl-list`.
+
+**Controle de Containers (`tracking.js` + `app.html`)**
+- Nova função `trkRowUSD(r)`: calcula USD estimado de D&D de uma linha (usa `getRateForBL` com `freeTime` por container).
+- Nova função `updateTrkKPIs(filtered)`: agrega Containers, BLs únicos, D&D aberto, Atenção e Valor USD — todos baseados no `filtered` atual.
+- `renderTracking()`: stats (`ts-total`, `ts-over`, `ts-grace`, `ts-bls`, `ts-usd`) agora derivados do `filtered` em vez de `trkData`. `ts-ready` mantido como indicador global.
+- HTML: `.trk-stats` expandido para 6 cards; adicionados `ts-bls` (BLs únicos) e `ts-usd` (Valor D&D USD); cada card exibe legenda de contexto (`.trk-stat-sub`).
+
+**CSS (`base.css` + `components.css`)**
+- `.trk-stats`: 4 → 6 colunas; breakpoints ajustados (768px→3col, 480px→2col).
+- `.billing-kpi-grid`: grid 4-col, barra de cor no topo (`::before`), responsivo (768px→2col, 480px→2col).
+- Novas classes: `.kpi-card`, `.kpi-card--{blue|green|navy|gold}`, `.kpi-icon`, `.kpi-label`, `.kpi-val`, `.trk-stat-sub`.
+
+---
+
+## 11. Decisões Arquiteturais Relevantes (ADRs Compactos)
 
 | Decisão | Motivo | Trade-off |
 |---------|--------|-----------|

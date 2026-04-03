@@ -306,8 +306,11 @@ div.invoice { border: 1px solid #ccc; padding: 36px 40px; font-size: 13px; color
   .mod-tabs { padding:0 8px;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch; }
   .mod-tab { padding:10px 14px;font-size:12px; }
   .page { padding:16px 12px; }
-  .trk-stats { grid-template-columns:repeat(2,1fr);gap:8px; }
+  /* trk-stats: 6 → 3 colunas em tablet */
+  .trk-stats { grid-template-columns:repeat(3,1fr);gap:8px; }
   .trk-stat-val { font-size:20px; }
+  /* billing-kpi: 4 → 2 colunas em tablet */
+  .billing-kpi-grid { grid-template-columns:repeat(2,1fr); }
   .trk-toolbar { flex-wrap:wrap;gap:6px; }
   .trk-table-wrap { overflow-x:auto;-webkit-overflow-scrolling:touch; }
   .trk-table { min-width:960px; }
@@ -325,7 +328,11 @@ div.invoice { border: 1px solid #ccc; padding: 36px 40px; font-size: 13px; color
 @media (max-width:480px) {
   .header-logo { display:none; }
   .mod-tab { padding:9px 10px;font-size:11px; }
+  /* trk-stats: 2 colunas em mobile */
   .trk-stats { grid-template-columns:1fr 1fr; }
+  /* billing-kpi: 2 colunas em mobile */
+  .billing-kpi-grid { grid-template-columns:1fr 1fr; }
+  .kpi-val { font-size:18px; }
 }
 
 /* ══ MELHORIA #4 — HISTÓRICO DE MODIFICAÇÕES ══ */

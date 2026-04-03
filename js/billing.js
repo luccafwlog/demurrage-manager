@@ -329,6 +329,40 @@ function blTotal(b, roeOv) {
   return t;
 }
 
+// Retorna o total em USD do BL (sem conversão ROE)
+// Desconto percentual aplicado; desconto fixo em BRL ignorado para USD
+function blTotalUSD(b) {
+  let t = 0;
+  (b.containers||[]).forEach(c => {
+    const dc = daysBetween(c.discharge, c.emptyReturn);
+    const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null);
+    t += calc.totalUSD;
+  });
+  if (b.discount && b.discount.value > 0 && b.discount.mode === 'percent') {
+    t = t * (1 - b.discount.value / 100);
+  }
+  return t;
+}
+
+// ============================================================
+// BILLING KPI DASHBOARD
+// Calcula e exibe cards reativos ao conjunto filtrado atual
+// ============================================================
+function updateBillingKPIs(filtered) {
+  let totalUSD = 0, totalBRL = 0, totalContainers = 0;
+  filtered.forEach(b => {
+    totalUSD       += blTotalUSD(b);
+    totalBRL       += blTotal(b, null);
+    totalContainers += (b.containers || []).length;
+  });
+  const fmtUSD = v => '$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const set = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
+  set('kpi-usd',        fmtUSD(totalUSD));
+  set('kpi-brl',        fmtBRL(totalBRL));
+  set('kpi-bls',        filtered.length);
+  set('kpi-containers', totalContainers);
+}
+
 // ============================================================
 // DISCOUNT PREVIEW & CALCULATION
 // ============================================================
@@ -462,6 +496,7 @@ function renderList() {
     return matchQ && matchF && matchDiscount && matchDispute;
   });
   updateBillingBadges();
+  updateBillingKPIs(filtered);
   document.getElementById('results-count').textContent = `${filtered.length} resultado(s) encontrado(s)`;
   const list = document.getElementById('bl-list');
   if (!filtered.length) {

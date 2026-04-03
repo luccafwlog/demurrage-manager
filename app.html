@@ -144,7 +144,7 @@ var MiniZip = (function() {
 
 <!-- ── SUPABASE SDK + DB MODULE ────────────────────────────────── -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script type="module" src="js/db.js?v=117"></script>
+<script type="module" src="js/db.js?v=118"></script>
 
 
 <div id="app">
@@ -399,6 +399,31 @@ var MiniZip = (function() {
       </div>
     </div>
 
+    <!-- BILLING KPI DASHBOARD ─────────────────────────────────── -->
+    <div class="billing-kpi-grid" id="billing-kpi">
+      <div class="kpi-card kpi-card--blue">
+        <div class="kpi-icon">💵</div>
+        <div class="kpi-label">Saldo em Aberto (USD)</div>
+        <div class="kpi-val" id="kpi-usd">$ 0,00</div>
+      </div>
+      <div class="kpi-card kpi-card--green">
+        <div class="kpi-icon">💰</div>
+        <div class="kpi-label">Saldo em Aberto (BRL)</div>
+        <div class="kpi-val" id="kpi-brl">R$ 0,00</div>
+      </div>
+      <div class="kpi-card kpi-card--navy">
+        <div class="kpi-icon">📋</div>
+        <div class="kpi-label">Quantidade de BLs</div>
+        <div class="kpi-val" id="kpi-bls">0</div>
+      </div>
+      <div class="kpi-card kpi-card--gold">
+        <div class="kpi-icon">📦</div>
+        <div class="kpi-label">Quantidade de Containers</div>
+        <div class="kpi-val" id="kpi-containers">0</div>
+      </div>
+    </div>
+    <!-- ─────────────────────────────────────────────────────── -->
+
     <div class="bl-list" id="bl-list"></div>
 
   </div>
@@ -529,10 +554,12 @@ var MiniZip = (function() {
     <button class="btn btn-danger" onclick="clearTracking()">🗑️ Limpar</button>
   </div>
   <div class="trk-stats">
-    <div class="trk-stat"><div class="trk-stat-label">Total Containers</div><div class="trk-stat-val blue" id="ts-total">0</div></div>
-    <div class="trk-stat"><div class="trk-stat-label">D&amp;D Não Devolvido</div><div class="trk-stat-val red" id="ts-over">0</div></div>
-    <div class="trk-stat"><div class="trk-stat-label">Atenção</div><div class="trk-stat-val gold" id="ts-grace">0</div></div>
-    <div class="trk-stat"><div class="trk-stat-label">Prontos para Faturar</div><div class="trk-stat-val green" id="ts-ready">0</div></div>
+    <div class="trk-stat"><div class="trk-stat-label">Total Containers</div><div class="trk-stat-val blue" id="ts-total">0</div><div class="trk-stat-sub">no filtro atual</div></div>
+    <div class="trk-stat"><div class="trk-stat-label">BLs Únicos</div><div class="trk-stat-val blue" id="ts-bls">0</div><div class="trk-stat-sub">no filtro atual</div></div>
+    <div class="trk-stat"><div class="trk-stat-label">D&amp;D Não Devolvido</div><div class="trk-stat-val red" id="ts-over">0</div><div class="trk-stat-sub">containers em atraso</div></div>
+    <div class="trk-stat"><div class="trk-stat-label">Atenção</div><div class="trk-stat-val gold" id="ts-grace">0</div><div class="trk-stat-sub">vence em breve</div></div>
+    <div class="trk-stat"><div class="trk-stat-label">Valor D&amp;D (USD)</div><div class="trk-stat-val green" id="ts-usd">$ 0,00</div><div class="trk-stat-sub">containers com D&amp;D</div></div>
+    <div class="trk-stat"><div class="trk-stat-label">Prontos para Faturar</div><div class="trk-stat-val green" id="ts-ready">0</div><div class="trk-stat-sub">visão global</div></div>
   </div>
   <div class="trk-table-wrap">
     <table class="trk-table" id="trk-table-el" style="display:none;">
@@ -1098,26 +1125,26 @@ function downloadTemplate() {
      ════════════════════════════════════════════════════════════════ -->
 
 <!-- Utilitários puros — sem dependências externas -->
-<script src="js/utils.js?v=117"></script>
-<script src="js/rates.js?v=117"></script>
+<script src="js/utils.js?v=118"></script>
+<script src="js/rates.js?v=118"></script>
 
 <!-- Módulo de Faturamento (BLs, PTAX, Cálculo D&D) -->
-<script src="js/billing.js?v=117"></script>
+<script src="js/billing.js?v=118"></script>
 
 <!-- Módulo de Rastreamento de Containers -->
-<script src="js/tracking.js?v=117"></script>
+<script src="js/tracking.js?v=118"></script>
 
 <!-- Módulo de Clientes (CNPJ, e-mails) -->
-<script src="js/clients.js?v=117"></script>
+<script src="js/clients.js?v=118"></script>
 
 <!-- Módulo Admin: Usuários e Log de Auditoria -->
-<script src="js/users.js?v=117"></script>
+<script src="js/users.js?v=118"></script>
 
 <!-- Módulo de Cobrança Consolidada por CNPJ -->
-<script src="js/consolidated.js?v=117"></script>
+<script src="js/consolidated.js?v=118"></script>
 
 <!-- Inicialização: Dashboard, Configurações, window._dmOnReady -->
-<script src="js/init.js?v=117"></script>
+<script src="js/init.js?v=118"></script>
 
 
 <!-- ══════════════════════════════════════════════════════════════
