@@ -1421,42 +1421,50 @@ function _updateTrkTableHeader() {
       </tr>
     `;
   } else {
-    // Container view: restore original 15-column header
+    // Container view: CONTAINER, BL, CNEE, CNPJ + colunas ocultas + demais + AÇÕES
     colgroup.innerHTML = `
-      <col style="width:8%">
-      <col style="width:10%">
-      <col style="width:11%">
-      <col style="width:4%">
-      <col style="width:3%">
-      <col style="width:3%">
-      <col style="width:8%">
-      <col style="width:6%">
-      <col style="width:6%">
-      <col style="width:6%">
-      <col style="width:4%">
-      <col style="width:4%">
-      <col style="width:4%">
-      <col style="width:11%">
-      <col style="width:7%">
+      <col style="width:8%">   <!-- CONTAINER -->
+      <col style="width:10%">  <!-- BL -->
+      <col style="width:11%">  <!-- CNEE -->
+      <col style="width:8%">   <!-- CNPJ -->
+      <col style="width:0">    <!-- TIPO (oculto) -->
+      <col style="width:0">    <!-- POL (oculto) -->
+      <col style="width:0">    <!-- POD (oculto) -->
+      <col style="width:0">    <!-- NAVIO (oculto) -->
+      <col style="width:0">    <!-- DESCARGA (oculto) -->
+      <col style="width:0">    <!-- DEADLINE (oculto) -->
+      <col style="width:6%">   <!-- DEVOLUÇÃO -->
+      <col style="width:4%">   <!-- USE DAYS -->
+      <col style="width:4%">   <!-- FREE TIME -->
+      <col style="width:4%">   <!-- DIAS -->
+      <col style="width:11%">  <!-- STATUS -->
+      <col style="width:7%">   <!-- ENVIADO EM -->
+      <col style="width:5%">   <!-- AÇÕES -->
     `;
     thead.innerHTML = `
       <tr>
-        <th>CONTAINER</th><th>BL</th><th>CNEE</th><th>TIPO</th>
-        <th>POL</th><th>POD</th><th>NAVIO</th>
-        <th>DESCARGA</th><th>DEADLINE</th><th>DEVOLUÇÃO</th>
+        <th>CONTAINER</th><th>BL</th><th>CNEE</th><th>CNPJ</th>
+        <th class="trk-col-hidden">TIPO</th>
+        <th class="trk-col-hidden">POL</th>
+        <th class="trk-col-hidden">POD</th>
+        <th class="trk-col-hidden">NAVIO</th>
+        <th class="trk-col-hidden">DESCARGA</th>
+        <th class="trk-col-hidden">DEADLINE</th>
+        <th>DEVOLUÇÃO</th>
         <th>USE DAYS</th><th>FREE TIME</th><th>DIAS</th><th>STATUS</th>
-        <th>ENVIADO EM</th>
+        <th>ENVIADO EM</th><th>AÇÕES</th>
       </tr>
       <tr class="trk-filter-row">
         <th><input type="text" id="tf-container" placeholder="filtrar..." oninput="renderTracking()"></th>
         <th><input type="text" id="tf-bl"        placeholder="filtrar..." oninput="renderTracking()"></th>
         <th><input type="text" id="tf-cnee"      placeholder="filtrar..." oninput="renderTracking()"></th>
-        <th><input type="text" id="tf-type"      placeholder="tipo..."    oninput="renderTracking()"></th>
-        <th><input type="text" id="tf-pol"       placeholder="..."        oninput="renderTracking()"></th>
-        <th><input type="text" id="tf-pod"       placeholder="..."        oninput="renderTracking()"></th>
-        <th><input type="text" id="tf-vessel"    placeholder="filtrar..." oninput="renderTracking()"></th>
-        <th><input type="text" id="tf-discharge" placeholder="DD/MM..."   oninput="renderTracking()"></th>
-        <th><input type="text" id="tf-deadline"  placeholder="DD/MM..."   oninput="renderTracking()"></th>
+        <th><input type="text" id="tf-cnpj"      placeholder="filtrar..." oninput="renderTracking()"></th>
+        <th class="trk-col-hidden"><input type="text" id="tf-type"      placeholder="tipo..."    oninput="renderTracking()"></th>
+        <th class="trk-col-hidden"><input type="text" id="tf-pol"       placeholder="..."        oninput="renderTracking()"></th>
+        <th class="trk-col-hidden"><input type="text" id="tf-pod"       placeholder="..."        oninput="renderTracking()"></th>
+        <th class="trk-col-hidden"><input type="text" id="tf-vessel"    placeholder="filtrar..." oninput="renderTracking()"></th>
+        <th class="trk-col-hidden"><input type="text" id="tf-discharge" placeholder="DD/MM..."   oninput="renderTracking()"></th>
+        <th class="trk-col-hidden"><input type="text" id="tf-deadline"  placeholder="DD/MM..."   oninput="renderTracking()"></th>
         <th><input type="text" id="tf-return"    placeholder="DD/MM..."   oninput="renderTracking()"></th>
         <th><input type="text" id="tf-usedays"   placeholder="..."        oninput="renderTracking()"></th>
         <th><input type="text" id="tf-freetime"  placeholder="..."        oninput="renderTracking()"></th>
@@ -1471,6 +1479,7 @@ function _updateTrkTableHeader() {
           </select>
         </th>
         <th><input type="text" id="tf-migratedat" placeholder="DD/MM..." oninput="renderTracking()"></th>
+        <th></th>
       </tr>
     `;
   }
