@@ -504,46 +504,8 @@ async function deleteCheckpoint(id) {
   }
 }
 
-// Auto-checkpoint diário às 23:59
-async function _tryAutoCheckpoint() {
-  if (!window._dmFireSaveCheckpoint) return;
-  const KEY = 'dm_last_auto_checkpoint';
-  const today = new Date().toISOString().slice(0, 10);
-  try {
-    const last = localStorage.getItem(KEY);
-    if (last === today) return; // proteção extra: já criou hoje
-    const bls = window._dmStore?.bls || [];
-    const trk = window._dmStore?.trk || [];
-    if (!bls.length && !trk.length) return; // nada para salvar
-    const label = 'Auto – ' + new Date().toLocaleString('pt-BR');
-    const result = await window._dmFireSaveCheckpoint(label, 'auto');
-    if (result) {
-      localStorage.setItem(KEY, today);
-      logAuditAction('criacao_checkpoint', { label, tipo: 'auto', checkpoint_id: result.id });
-      console.log('[CHECKPOINT] Auto-checkpoint criado:', result.id);
-    }
-  } catch(e) {
-    console.warn('[CHECKPOINT] auto-checkpoint error:', e);
-  }
-}
-
-// Agenda o auto-checkpoint para as 23:59 — reagenda automaticamente a cada dia
-function _scheduleAutoCheckpoint() {
-  const now = new Date();
-  const target = new Date();
-  target.setHours(23, 59, 0, 0);
-  let delay = target - now;
-  if (delay <= 0) {
-    // Já passou das 23:59 hoje, agenda para amanhã
-    target.setDate(target.getDate() + 1);
-    delay = target - now;
-  }
-  console.log('[CHECKPOINT] Próximo auto-checkpoint em', Math.round(delay / 60000), 'min');
-  setTimeout(async function() {
-    await _tryAutoCheckpoint();
-    _scheduleAutoCheckpoint(); // re-agenda para o próximo dia
-  }, delay);
-}
+// Auto-checkpoint diário gerenciado pelo Supabase pg_cron (02:59 UTC = 23:59 BRT)
+// Nenhuma lógica de agendamento necessária no frontend.
 
 // ── ALERT SYSTEM ──────────────────────────────────────────────────────────
 // ── STORAGE: Alert days (Firestore via window._dmStore) ───────────────────
@@ -1719,8 +1681,7 @@ window._dmOnReady = function() {
   const overlay = document.getElementById('dm-loading-overlay');
   if (overlay) overlay.style.display = 'none';
 
-  // Agenda auto-checkpoint para as 23:59 (não dispara no login)
-  _scheduleAutoCheckpoint();
+  // Auto-checkpoint diário gerenciado pelo pg_cron no Supabase (23:59 BRT)
 
   // FIX-QUOTA #H: flag anti-cascata para evitar loop onSnapshot → trkSave → onSnapshot
   var _trkSaving = false;

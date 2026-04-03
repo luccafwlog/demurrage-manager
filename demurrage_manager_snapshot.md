@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v3.1 | **Cache:** `?v=119` | **Atualizado:** 2026-04-03
+> **Versão:** v3.2 | **Cache:** `?v=119` | **Atualizado:** 2026-04-03
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -357,7 +357,8 @@ items.forEach(item => {
 - Taxas D&D: customizáveis pela interface, persistidas em `localStorage` (`dm_rates_v2`)
 - `alertDays`: persistido no Supabase via `_dmSaveAlertDays(n)`
 - Backup: exporta/importa JSON com snapshot de `_dmStore`
-- Checkpoints: `createCheckpoint(tipo)`, `renderCheckpointList()`, `restoreCheckpoint(id,label)`, `deleteCheckpoint(id)`, `_tryAutoCheckpoint()` (auto-checkpoint diário às **23:59** via `_scheduleAutoCheckpoint()` — NÃO dispara no login; `localStorage` key `dm_last_auto_checkpoint` mantida como proteção anti-duplicata)
+- Checkpoints: `createCheckpoint(tipo)`, `renderCheckpointList()`, `restoreCheckpoint(id,label)`, `deleteCheckpoint(id)`
+- **Auto-checkpoint**: gerenciado pelo **Supabase pg_cron** — função `public.auto_checkpoint_daily()` agendada para `59 2 * * *` (02:59 UTC = **23:59 BRT**). Roda no servidor, independente do app estar aberto. Proteção anti-duplicata via checagem de `criado_em::date` no próprio banco. Frontend não tem mais nenhuma lógica de agendamento.
 
 ---
 
@@ -438,13 +439,19 @@ git push origin main
 
 ## 10. Changelog Recente
 
-### v3.1 — 2026-04-03 — Auto-checkpoint agendado para 23:59
+### v3.2 — 2026-04-03 — Auto-checkpoint server-side via pg_cron
+
+**Supabase (migration: `auto_checkpoint_pg_cron`)**
+- Habilitada extensão `pg_cron`.
+- Criada função `public.auto_checkpoint_daily()`: monta payload com `jsonb_agg` das tabelas `bls`, `containers` e `clients`; proteção anti-duplicata via `(criado_em AT TIME ZONE 'America/Sao_Paulo')::date`; insere com `criado_por = 'SISTEMA'`.
+- Job agendado: `cron.schedule('auto-checkpoint-diario', '59 2 * * *', ...)` — **02:59 UTC = 23:59 BRT**.
+- O checkpoint agora ocorre **no servidor**, independente de qualquer browser estar aberto.
 
 **`js/init.js`**
-- Removido: `setTimeout(_tryAutoCheckpoint, 2000)` no boot (checkpoint no login).
-- Adicionado: `_scheduleAutoCheckpoint()` — calcula milissegundos até as 23:59 e usa `setTimeout` para disparar o checkpoint exatamente nesse horário; ao concluir, re-agenda automaticamente para o dia seguinte.
-- `_tryAutoCheckpoint()`: mantido com guard `localStorage` como proteção extra anti-duplicata (ex.: múltiplas abas abertas na mesma meia-noite).
-- **Resultado**: sistema cria exatamente **1 auto-checkpoint por dia** (às 23:59), independentemente de quantos logins ocorram.
+- Removidas funções `_tryAutoCheckpoint()` e `_scheduleAutoCheckpoint()` (frontend não agenda mais nada).
+- Checkpoints manuais (`createCheckpoint('manual')`) continuam funcionando normalmente.
+
+### v3.1 — 2026-04-03 — Auto-checkpoint agendado para 23:59 (substituído por v3.2)
 
 ---
 
