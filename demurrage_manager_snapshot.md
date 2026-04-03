@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v3.0 | **Cache:** `?v=118` | **Atualizado:** 2026-04-03
+> **Versão:** v3.1 | **Cache:** `?v=119` | **Atualizado:** 2026-04-03
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -357,7 +357,7 @@ items.forEach(item => {
 - Taxas D&D: customizáveis pela interface, persistidas em `localStorage` (`dm_rates_v2`)
 - `alertDays`: persistido no Supabase via `_dmSaveAlertDays(n)`
 - Backup: exporta/importa JSON com snapshot de `_dmStore`
-- Checkpoints: `createCheckpoint(tipo)`, `renderCheckpointList()`, `restoreCheckpoint(id,label)`, `deleteCheckpoint(id)`, `_tryAutoCheckpoint()` (auto-checkpoint diário via `localStorage` key `dm_last_auto_checkpoint`)
+- Checkpoints: `createCheckpoint(tipo)`, `renderCheckpointList()`, `restoreCheckpoint(id,label)`, `deleteCheckpoint(id)`, `_tryAutoCheckpoint()` (auto-checkpoint diário às **23:59** via `_scheduleAutoCheckpoint()` — NÃO dispara no login; `localStorage` key `dm_last_auto_checkpoint` mantida como proteção anti-duplicata)
 
 ---
 
@@ -437,6 +437,16 @@ git push origin main
 ---
 
 ## 10. Changelog Recente
+
+### v3.1 — 2026-04-03 — Auto-checkpoint agendado para 23:59
+
+**`js/init.js`**
+- Removido: `setTimeout(_tryAutoCheckpoint, 2000)` no boot (checkpoint no login).
+- Adicionado: `_scheduleAutoCheckpoint()` — calcula milissegundos até as 23:59 e usa `setTimeout` para disparar o checkpoint exatamente nesse horário; ao concluir, re-agenda automaticamente para o dia seguinte.
+- `_tryAutoCheckpoint()`: mantido com guard `localStorage` como proteção extra anti-duplicata (ex.: múltiplas abas abertas na mesma meia-noite).
+- **Resultado**: sistema cria exatamente **1 auto-checkpoint por dia** (às 23:59), independentemente de quantos logins ocorram.
+
+---
 
 ### v3.0 — 2026-04-03 — Dashboards KPI reativos (Faturamento + Containers)
 
