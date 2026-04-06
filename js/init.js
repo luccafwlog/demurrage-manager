@@ -1608,6 +1608,16 @@ window._dmOnReady = function() {
     // 1) backfill venc
     bls.forEach(b => { if (!b.venc) { b.venc = nextBusinessDay(null); changed = true; } });
 
+    // 1b) avança venc vencido apenas em BLs Pendentes (!billed && !paid)
+    //     BLs Faturados mantêm o venc original (já comunicado ao cliente na fatura)
+    const todayStr = new Date().toISOString().slice(0, 10);
+    bls.forEach(b => {
+      if (!b.billed && !b.paid && b.venc && b.venc < todayStr) {
+        b.venc = nextBusinessDay(null);
+        changed = true;
+      }
+    });
+
     // 2) backfill docnum
     bls.forEach(b => { if (!b.docnum) { b.docnum = genDocnum(b.bl); changed = true; } });
 

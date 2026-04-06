@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v3.10 | **Cache:** `?v=127` | **Atualizado:** 2026-04-06
+> **Versão:** v3.11 | **Cache:** `?v=128` | **Atualizado:** 2026-04-06
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -438,6 +438,17 @@ git push origin main
 ---
 
 ## 10. Changelog Recente
+
+### v3.11 — 2026-04-06 — Fix: vencimento de BLs Pendentes avança automaticamente para próximo dia útil
+
+**`js/init.js`**
+- `runStartupMigrations()`: nova etapa **1b** que, a cada abertura do sistema, verifica BLs Pendentes (`!billed && !paid`) cujo `venc` seja anterior a hoje e os avança para `nextBusinessDay(null)` (próximo dia útil a partir de hoje).
+- BLs Faturados (`billed && !paid`) **não** são alterados — o venc foi comunicado ao cliente na fatura e não deve mudar.
+- Cache bump: `?v=127` → `?v=128`.
+
+**Regra de negócio:** `venc` de BLs Pendentes é sempre >= próximo dia útil. Se o usuário abrir o sistema em uma segunda-feira após um fim de semana, todos os Pendentes com venc no passado são automaticamente atualizados para a terça-feira.
+
+---
 
 ### v3.10 — 2026-04-06 — Painel: card Faturados + reorganização da seção Faturamento
 
