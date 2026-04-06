@@ -1564,7 +1564,7 @@ Encaminhamos em anexo a Fatura de Sobreestadia de Container referente ao BL abai
   Nº Fatura : ${docnum}
   BL         : ${b.bl}
   Navio/Voy  : ${b.vessel || '—'}
-  Container(s): ${(b.containers||[]).map(c=>c.container).join(', ')}
+  Container(s): ${(b.containers||[]).filter(c => { const dc = daysBetween(c.discharge, c.emptyReturn); return calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD > 0; }).map(c=>c.container).join(', ')}
   Total      : R$ ${totalFmt}
   Vencimento : ${vencFmt}
 
