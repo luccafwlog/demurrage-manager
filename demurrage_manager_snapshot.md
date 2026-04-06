@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v3.9 | **Cache:** `?v=126` | **Atualizado:** 2026-04-06
+> **Versão:** v3.10 | **Cache:** `?v=127` | **Atualizado:** 2026-04-06
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -438,6 +438,21 @@ git push origin main
 ---
 
 ## 10. Changelog Recente
+
+### v3.10 — 2026-04-06 — Painel: card Faturados + reorganização da seção Faturamento
+
+**`app.html`**
+- Card **🧾 Faturados** adicionado ao painel principal (`id="dk-faturados"`): BLs faturados aguardando pagamento (billed && !paid).
+- Card **Pendentes** corrigido para apontar corretamente BLs não faturados (!billed && !paid).
+- Linha 1 de Faturamento: 4 cards iguais — Total de BLs | Pendentes | Faturados | Pagos (era 3 + 1 hero).
+- Linha 2 de Faturamento: 3 cards financeiros — Saldo em Aberto (2fr) | Faturado (1.2fr) | Em Disputa (1fr).
+- Onclicks dos cards de contagem atualizados para `setBillingSubTab()` em vez de `setFilter()`.
+- Cache bump: `?v=126` → `?v=127`.
+
+**`js/init.js`**
+- `renderDashboard()`: `pendentes` corrigido para `!b.billed && !b.paid` (antes estava calculando `b.billed && !b.paid`, ou seja, Faturados); nova variável `faturados = b.billed && !b.paid`; `dk-faturados` atualizado.
+
+---
 
 ### v3.9 — 2026-04-06 — CNPJ obrigatório no import + barras de pesquisa ampliadas
 

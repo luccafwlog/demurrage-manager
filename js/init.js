@@ -987,9 +987,10 @@ function renderDashboard() {
   if (greetEl) greetEl.textContent = greet + ' 👋';
   if (dateEl)  dateEl.textContent  = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
 
-  const totalBLs  = bls.length;
-  const pendentes = bls.filter(b => b.billed && !b.paid).length;
-  const pagos     = bls.filter(b => b.paid).length;
+  const totalBLs   = bls.length;
+  const pendentes  = bls.filter(b => !b.billed && !b.paid).length;
+  const faturados  = bls.filter(b => !!b.billed && !b.paid).length;
+  const pagos      = bls.filter(b => b.paid).length;
   let totalAberto   = 0;
   let totalFaturado = 0;
   let totalDisputa  = 0;
@@ -1016,6 +1017,7 @@ function renderDashboard() {
 
   document.getElementById('dk-total-bls').textContent  = totalBLs;
   document.getElementById('dk-pendentes').textContent  = pendentes;
+  document.getElementById('dk-faturados').textContent  = faturados;
   document.getElementById('dk-pagos').textContent      = pagos;
   const totalStr = 'R$ ' + totalAberto.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const totalEl  = document.getElementById('dk-total-aberto');
