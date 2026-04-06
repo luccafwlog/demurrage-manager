@@ -121,9 +121,31 @@ function processTrkFile(file) {
     const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array', cellDates:false});
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
+
+    // Validação: CNPJ obrigatório em todas as linhas
+    const semCnpj = rows.filter(row => {
+      const n = {};
+      Object.entries(row).forEach(([k,v]) => { n[trkNk(k)] = v; });
+      const raw = String(n['CNPJ'] || '').replace(/\D/g,'').trim();
+      const cnpj = raw.length === 13 ? '0' + raw : raw;
+      return cnpj.length !== 14;
+    });
+
+    if (semCnpj.length > 0) {
+      trkImportRaw = null;
+      document.getElementById('trk-import-btn').disabled = true;
+      document.getElementById('trk-drop-zone').innerHTML = `
+        <div class="drop-icon">❌</div>
+        <p><strong>${file.name}</strong></p>
+        <p>${rows.length} linha(s) encontrada(s) — <span style="color:#dc2626;font-weight:700;">${semCnpj.length} sem CNPJ válido</span></p>
+        <p style="color:#dc2626;font-size:12px;margin-top:4px;">Preencha o CNPJ (14 dígitos) de todos os containers e importe novamente.</p>`;
+      toast(`${semCnpj.length} container(s) sem CNPJ válido. Corrija a planilha.`, 'error');
+      return;
+    }
+
     trkImportRaw = rows;
     document.getElementById('trk-import-btn').disabled = false;
-    document.getElementById('trk-drop-zone').innerHTML = `<div class="drop-icon">✅</div><p><strong>${file.name}</strong></p><p>${rows.length} linha(s) encontrada(s)</p>`;
+    document.getElementById('trk-drop-zone').innerHTML = `<div class="drop-icon">✅</div><p><strong>${file.name}</strong></p><p>${rows.length} linha(s) encontrada(s) — todos os CNPJs OK</p>`;
     toast(`${rows.length} linha(s) lidas.`, 'success');
   };
   reader.readAsArrayBuffer(file);

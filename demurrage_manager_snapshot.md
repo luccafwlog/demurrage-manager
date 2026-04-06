@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v3.8 | **Cache:** `?v=125` | **Atualizado:** 2026-04-06
+> **Versão:** v3.9 | **Cache:** `?v=126` | **Atualizado:** 2026-04-06
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -438,6 +438,19 @@ git push origin main
 ---
 
 ## 10. Changelog Recente
+
+### v3.9 — 2026-04-06 — CNPJ obrigatório no import + barras de pesquisa ampliadas
+
+**`js/tracking.js`**
+- `processTrkFile()`: validação de CNPJ adicionada antes de habilitar o botão de importar. Se qualquer linha tiver CNPJ ausente ou inválido (≠ 14 dígitos), o botão permanece desabilitado, a drop-zone exibe mensagem de erro com o número de containers problemáticos, e um toast de erro é disparado.
+- Importação com todos os CNPJs válidos exibe confirmação "todos os CNPJs OK" na drop-zone.
+
+**`app.html`**
+- Barra de pesquisa de **Controle de Containers** (`#trk-search`): `flex:1;max-width:400px` → `flex:2;min-width:240px;max-width:600px`.
+- Barra de pesquisa de **Clientes** (`#cli-search`): mesmo ajuste.
+- Cache bump: `?v=125` → `?v=126`.
+
+---
 
 ### v3.8 — 2026-04-06 — Faturamento: 3 abas (Pendentes / Faturados / Pagos)
 
