@@ -164,7 +164,11 @@ function doTrkImport() {
     if (r.emptyReturn && r.discharge) {
       const used = trkDaysBetween(r.discharge, r.emptyReturn);
       const ft   = r.freeTime || 21;
-      if (used !== null && used <= ft) { skippedFt++; return false; }
+      // Só ignora se for NOVO (não existe ainda no sistema).
+      // Containers já cadastrados sempre recebem a atualização da data de devolução,
+      // mesmo que a devolução tenha ocorrido dentro do free time.
+      const alreadyExists = trkData.some(x => x.container === r.container && x.bl === r.bl);
+      if (used !== null && used <= ft && !alreadyExists) { skippedFt++; return false; }
     }
     return true;
   });
@@ -248,7 +252,7 @@ function doTrkImport() {
   // Save unificado: 1 write batch para bls (diff ignora BLs inalterados)
   if (blsModified || newBLs > 0 || updatedContainers > 0) save(bls);
 
-  let msg = `Importado: ${added} novo(s), ${updated} atualizado(s)${skippedFt > 0 ? `, ${skippedFt} ignorado(s) (devolvidos no free time)` : ''}.`;
+  let msg = `Importado: ${added} novo(s), ${updated} atualizado(s)${skippedFt > 0 ? `, ${skippedFt} ignorado(s) (novos containers devolvidos no free time)` : ''}.`;
   if (newBLs > 0) msg += ` ${newBLs} BL(s) migrado(s) para Faturamento!`;
   if (updatedContainers > 0) msg += ` ${updatedContainers} BL(s) com containers atualizados.`;
   if (clientsLinked > 0) msg += ` ${clientsLinked} CNPJ(s) vinculado(s) a clientes.`;
