@@ -874,7 +874,7 @@ function exportReport() {
         'STATUS':         b.paid ? 'PAGO' : b.billed ? 'FATURADO' : 'PENDENTE',
         'DISPUTA':        b.dispute && b.dispute.open ? b.dispute.status.toUpperCase() : '—',
         'DATA PAGAMENTO': b.paid && b.paidAt ? new Date(b.paidAt+'T12:00:00').toLocaleDateString('pt-BR') : '—',
-        'VALOR PAGO (BRL)': b.paid ? (frozenTotal ?? parseFloat(blBRL.toFixed(2))) : '—',
+        'VALOR PAGO (BRL)': b.paid ? parseFloat(totalBRLWithDiscount.toFixed(2)) : '—',
       });
     });
   });
