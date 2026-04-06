@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v3.7 | **Cache:** `?v=124` | **Atualizado:** 2026-04-03
+> **Versão:** v3.8 | **Cache:** `?v=125` | **Atualizado:** 2026-04-06
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -438,6 +438,26 @@ git push origin main
 ---
 
 ## 10. Changelog Recente
+
+### v3.8 — 2026-04-06 — Faturamento: 3 abas (Pendentes / Faturados / Pagos)
+
+**`app.html`**
+- Nova aba **⏳ Pendentes** adicionada antes de "Faturados" na barra de sub-tabs do módulo Faturamento (`id="subtab-pendentes"`, `id="badge-pendentes"`).
+- Subfilters da aba Pendentes adicionados (`id="subfilters-pendentes"`): Todos | 💚 Com Desconto | ⚠️ Em Disputa.
+- Subfilters da aba Faturados simplificados (removidos botões ⏳ Pendentes e 📄 Faturados, que eram redundantes com as abas).
+- Cache bump: `?v=124` → `?v=125`.
+
+**`js/init.js`**
+- `activeBillingSubTab` permanece `'faturados'` como padrão.
+- `setBillingSubTab()` atualizado para suportar 3 valores: `'pendentes'`, `'faturados'`, `'pagos'`.
+- `updateBillingBadges()` atualizado: badge Pendentes = `!b.billed && !b.paid`; badge Faturados = `!!b.billed && !b.paid`; badge Pagos = `!!b.paid`.
+
+**`js/billing.js`**
+- `renderList()`: lógica `inScope` refatorada para 3 abas — `inPend = !b.billed && !b.paid`, `inFat = !!b.billed && !b.paid`, `inPago = !!b.paid`.
+- `setFilter()`: filtros `'unpaid'` e `'billed'` removidos (substituídos pelas abas). Adicionado suporte ao botão `filter-all-pendentes`.
+- `toggleDiscountFilter()` e `toggleDisputeFilter()`: incluídos seletores dos novos botões `#filter-discount-btn-pendentes` e `#filter-dispute-btn-pendentes`.
+
+---
 
 ### v3.5 — 2026-04-03 — Controle de Containers: colunas ocultas, Sem CNPJ, Limpar Filtros
 

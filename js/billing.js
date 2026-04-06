@@ -161,23 +161,25 @@ let showOnlyWithDispute = false;
 
 function setFilter(f) {
   activeFilter = f;
-  ['all','unpaid','paid','billed'].forEach(k => {
+  ['all','all-pendentes','paid'].forEach(k => {
     const el = document.getElementById('filter-'+k);
-    if (el) el.style.fontWeight  = k===f ? '700' : '400';
-    if (el) el.style.borderColor = k===f ? 'var(--navy)' : '';
-    if (el) el.style.color       = k===f ? 'var(--navy)' : '';
+    // Ambos filter-all e filter-all-pendentes representam o filtro 'all'
+    const active = (k === 'all-pendentes') ? f === 'all' : k === f;
+    if (el) el.style.fontWeight  = active ? '700' : '400';
+    if (el) el.style.borderColor = active ? 'var(--navy)' : '';
+    if (el) el.style.color       = active ? 'var(--navy)' : '';
   });
   // Quando "Todos" é selecionado, desmarca filtros adicionais automaticamente
   if (f === 'all') {
     if (showOnlyWithDiscount) {
       showOnlyWithDiscount = false;
-      document.querySelectorAll('#filter-discount-btn, #filter-discount-btn-paid').forEach(btn => {
+      document.querySelectorAll('#filter-discount-btn, #filter-discount-btn-paid, #filter-discount-btn-pendentes').forEach(btn => {
         btn.style.fontWeight = '400'; btn.style.borderColor = ''; btn.style.color = ''; btn.style.background = '';
       });
     }
     if (showOnlyWithDispute) {
       showOnlyWithDispute = false;
-      document.querySelectorAll('#filter-dispute-btn, #filter-dispute-btn-paid').forEach(btn => {
+      document.querySelectorAll('#filter-dispute-btn, #filter-dispute-btn-paid, #filter-dispute-btn-pendentes').forEach(btn => {
         btn.style.fontWeight = '400'; btn.style.borderColor = ''; btn.style.color = ''; btn.style.background = '';
       });
     }
@@ -187,7 +189,7 @@ function setFilter(f) {
 
 function toggleDiscountFilter() {
   showOnlyWithDiscount = !showOnlyWithDiscount;
-  const btns = document.querySelectorAll('#filter-discount-btn, #filter-discount-btn-paid');
+  const btns = document.querySelectorAll('#filter-discount-btn, #filter-discount-btn-paid, #filter-discount-btn-pendentes');
   btns.forEach(btn => {
     if (showOnlyWithDiscount) {
       btn.style.fontWeight = '700';
@@ -206,7 +208,7 @@ function toggleDiscountFilter() {
 
 function toggleDisputeFilter() {
   showOnlyWithDispute = !showOnlyWithDispute;
-  const btns = document.querySelectorAll('#filter-dispute-btn, #filter-dispute-btn-paid');
+  const btns = document.querySelectorAll('#filter-dispute-btn, #filter-dispute-btn-paid, #filter-dispute-btn-pendentes');
   btns.forEach(btn => {
     if (showOnlyWithDispute) {
       btn.style.fontWeight = '700';
@@ -480,14 +482,15 @@ function renderList() {
   const filtered = bls.filter(b => {
     const matchQ = !q || (b.bl+' '+b.client+' '+(b.containers||[]).map(c=>c.container).join(' ')).toLowerCase().includes(q);
     // Sub-tab scope
-    const inFat  = !b.paid;
+    const inPend = !b.billed && !b.paid;
+    const inFat  = !!b.billed && !b.paid;
     const inPago = !!b.paid;
-    const inScope = activeBillingSubTab === 'faturados' ? inFat : inPago;
+    const inScope = activeBillingSubTab === 'pendentes' ? inPend
+                  : activeBillingSubTab === 'faturados' ? inFat
+                  : inPago;
     const matchF = inScope && (
       activeFilter === 'all'
-      || (activeFilter === 'paid'   && !!b.paid)
-      || (activeFilter === 'billed' && !!b.billed && !b.paid)
-      || (activeFilter === 'unpaid' && !b.paid && !b.billed)
+      || (activeFilter === 'paid' && !!b.paid)
     );
     // Apply discount filter if active
     const matchDiscount = !showOnlyWithDiscount || (b.discount && b.discount.value > 0);

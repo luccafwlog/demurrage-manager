@@ -1136,27 +1136,32 @@ function setBillingSubTab(tab) {
   activeBillingSubTab = tab;
 
   // Toggle active class on sub-tabs
-  ['faturados','pagos'].forEach(t => {
+  ['pendentes','faturados','pagos'].forEach(t => {
     const el = document.getElementById('subtab-' + t);
     if (el) el.classList.toggle('active', t === tab);
   });
 
   // Show/hide sub-filters
+  const sfPend = document.getElementById('subfilters-pendentes');
   const sfFat  = document.getElementById('subfilters-faturados');
   const sfPago = document.getElementById('subfilters-pagos');
+  if (sfPend) sfPend.style.display = tab === 'pendentes' ? 'flex' : 'none';
   if (sfFat)  sfFat.style.display  = tab === 'faturados' ? 'flex' : 'none';
   if (sfPago) sfPago.style.display = tab === 'pagos'     ? 'flex' : 'none';
 
   // Reset filter to the appropriate default
-  if (tab === 'faturados') setFilter('all');
-  else                     setFilter('paid');
+  if (tab === 'pagos') setFilter('paid');
+  else                 setFilter('all');
 }
 
 function updateBillingBadges() {
-  const nFat  = bls.filter(b => !b.paid).length;
+  const nPend = bls.filter(b => !b.billed && !b.paid).length;
+  const nFat  = bls.filter(b => !!b.billed && !b.paid).length;
   const nPago = bls.filter(b => !!b.paid).length;
+  const bPend = document.getElementById('badge-pendentes');
   const bFat  = document.getElementById('badge-faturados');
   const bPago = document.getElementById('badge-pagos');
+  if (bPend) bPend.textContent = nPend || '';
   if (bFat)  bFat.textContent  = nFat  || '';
   if (bPago) bPago.textContent = nPago || '';
 }
