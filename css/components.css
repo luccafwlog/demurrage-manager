@@ -85,7 +85,13 @@ div.invoice { border: 1px solid #ccc; padding: 36px 40px; font-size: 13px; color
 .ptax-error { color: #fbbf24; font-size: 12px; display: flex; align-items: center; gap: 8px; }
 .ptax-retry { background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.3); color: #f59e0b; border-radius: 5px; padding: 3px 10px; cursor: pointer; font-size: 12px; font-family: var(--font); }
 .ptax-retry:hover { background: rgba(245,158,11,0.22); }
-.ptax-src { color: rgba(255,255,255,0.2); font-size: 10px; margin-left: auto; }
+.ptax-src { color: rgba(255,255,255,0.2); font-size: 10px; }
+.ptax-right-group { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+.ptax-upload-badge { display: flex; align-items: center; gap: 5px; }
+.ptax-upload-icon { font-size: 11px; line-height: 1; }
+.ptax-upload-label { color: rgba(255,255,255,0.35); font-size: 10px; letter-spacing: 0.3px; text-transform: uppercase; white-space: nowrap; }
+.ptax-upload-time { color: rgba(255,255,255,0.7); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.ptax-right-sep { width: 1px; height: 14px; background: rgba(255,255,255,0.12); flex-shrink: 0; }
 .ptax-manual-tag { background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.3); color: #f59e0b; border-radius: 4px; font-size: 10px; padding: 1px 6px; margin-left: 4px; }
 .ptax-manual-sep { width: 1px; height: 16px; background: rgba(255,255,255,0.15); margin: 0 4px; }
 .ptax-manual-area { display: flex; align-items: center; gap: 7px; }

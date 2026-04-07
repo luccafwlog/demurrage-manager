@@ -87,7 +87,7 @@ const _CONFLICT = {
   while (true) {
     const { data: page, error: pageErr } = await sb
       .from('containers')
-      .select('container, bl, data')
+      .select('container, bl, data, updated_at')
       .range(trkFrom, trkFrom + TRK_PAGE - 1);
     if (pageErr) { trkError = pageErr; break; }
     trkAllRows.push(...(page || []));
@@ -122,6 +122,40 @@ const _CONFLICT = {
   const profile = profRes.data;
   window._dmIsAdmin  = !!profile?.admin;
   window._dmUserData = profile || {};
+
+  // ── Último upload de containers ────────────────────────────
+  window._dmRenderLastUpload = function(isoDate) {
+    const badge = document.getElementById('last-upload-badge');
+    const timeEl = document.getElementById('last-upload-time');
+    if (!badge || !timeEl) return;
+    if (!isoDate) { badge.style.display = 'none'; return; }
+    try {
+      const d = new Date(isoDate);
+      const now = new Date();
+      const diffMs = now - d;
+      const diffH = diffMs / 3600000;
+      let label;
+      if (diffH < 1) {
+        const diffMin = Math.round(diffMs / 60000);
+        label = diffMin <= 1 ? 'agora mesmo' : `há ${diffMin} min`;
+      } else if (diffH < 24) {
+        label = `hoje ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+      } else {
+        label = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+              + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      }
+      timeEl.textContent = label;
+      badge.style.display = 'flex';
+    } catch(e) { badge.style.display = 'none'; }
+  };
+  // Calcula max updated_at dos containers carregados
+  if (trkAllRows.length > 0) {
+    const maxUpd = trkAllRows.reduce((max, r) => {
+      const t = r.updated_at || '';
+      return t > max ? t : max;
+    }, '');
+    if (maxUpd) window._dmRenderLastUpload(maxUpd);
+  }
 
   // ================= SAVE (full array diff) =================
   window._dmFireSave = function(type, newData) {

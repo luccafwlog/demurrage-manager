@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v3.11 | **Cache:** `?v=128` | **Atualizado:** 2026-04-06
+> **Versão:** v3.12 | **Cache:** `?v=129` | **Atualizado:** 2026-04-06
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -438,6 +438,27 @@ git push origin main
 ---
 
 ## 10. Changelog Recente
+
+### v3.12 — 2026-04-06 — feat: indicador de último upload de containers na barra PTAX
+
+**`app.html`**
+- Adicionado `#last-upload-badge` dentro da `.ptax-banner`, agrupado em `.ptax-right-group` com o label "Fonte: BCB".
+- Exibe: ícone 📦 + "Último upload:" + timestamp relativo (ex.: "hoje 14:23", "há 5 min", "01/04/2026 08:10").
+
+**`css/components.css`**
+- Novos seletores: `.ptax-right-group`, `.ptax-upload-badge`, `.ptax-upload-label`, `.ptax-upload-time`, `.ptax-right-sep`.
+- `.ptax-src` removido o `margin-left: auto` (agora pertence ao grupo direito).
+
+**`js/db.js`**
+- Query de containers passa a selecionar `updated_at` além de `container, bl, data`.
+- Após carregar, calcula `MAX(updated_at)` dos registros e chama `_dmRenderLastUpload()`.
+- `window._dmRenderLastUpload(isoDate)`: função global que formata e renderiza o timestamp no badge.
+
+**`js/tracking.js`**
+- `doTrkImport()`: após salvar os dados, chama `window._dmRenderLastUpload(new Date().toISOString())` para atualizar o badge em tempo real.
+- Cache bump: `?v=128` → `?v=129`.
+
+---
 
 ### v3.11 — 2026-04-06 — Fix: vencimento de BLs Pendentes avança automaticamente para próximo dia útil
 

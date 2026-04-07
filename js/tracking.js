@@ -273,6 +273,8 @@ function doTrkImport() {
   renderTracking();
   // Save unificado: 1 write batch para bls (diff ignora BLs inalterados)
   if (blsModified || newBLs > 0 || updatedContainers > 0) save(bls);
+  // Atualiza o indicador de último upload na barra PTAX
+  if (window._dmRenderLastUpload) window._dmRenderLastUpload(new Date().toISOString());
 
   let msg = `Importado: ${added} novo(s), ${updated} atualizado(s)${skippedFt > 0 ? `, ${skippedFt} ignorado(s) (novos containers devolvidos no free time)` : ''}.`;
   if (newBLs > 0) msg += ` ${newBLs} BL(s) migrado(s) para Faturamento!`;
