@@ -132,17 +132,22 @@ const _CONFLICT = {
     try {
       const d = new Date(isoDate);
       const now = new Date();
-      const diffMs = now - d;
-      const diffH = diffMs / 3600000;
+      // Comparar datas do calendário (ano/mês/dia), não horas decorridas
+      const dDate   = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const diffDays = Math.round((nowDate - dDate) / 86400000);
+      const timeStr  = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       let label;
-      if (diffH < 1) {
-        const diffMin = Math.round(diffMs / 60000);
-        label = diffMin <= 1 ? 'agora mesmo' : `há ${diffMin} min`;
-      } else if (diffH < 24) {
-        label = `hoje ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+      if (diffDays === 0) {
+        const diffMin = Math.round((now - d) / 60000);
+        if (diffMin < 2)       label = 'agora mesmo';
+        else if (diffMin < 60) label = `há ${diffMin} min`;
+        else                   label = `hoje ${timeStr}`;
+      } else if (diffDays === 1) {
+        label = `ontem ${timeStr}`;
       } else {
         label = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-              + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+              + ' ' + timeStr;
       }
       timeEl.textContent = label;
       badge.style.display = 'flex';
