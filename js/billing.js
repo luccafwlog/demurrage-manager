@@ -613,6 +613,7 @@ function clearForm() {
   document.getElementById('f-discount-approver').value='';
   document.getElementById('discount-preview').style.display='none';
   document.getElementById('f-dispute-open').checked=false;
+  document.getElementById('f-dispute-subject').value='';
   document.getElementById('f-dispute-reason').value='';
   document.getElementById('f-dispute-status').value='aberto';
   document.getElementById('f-dispute-notes').value='';
@@ -652,11 +653,13 @@ function fillForm(b) {
   // Fill dispute fields
   if (b.dispute && b.dispute.open) {
     document.getElementById('f-dispute-open').checked=true;
+    document.getElementById('f-dispute-subject').value=b.dispute.subject||'';
     document.getElementById('f-dispute-reason').value=b.dispute.reason||'';
     document.getElementById('f-dispute-status').value=b.dispute.status||'aberto';
     document.getElementById('f-dispute-notes').value=b.dispute.notes||'';
   } else {
     document.getElementById('f-dispute-open').checked=false;
+    document.getElementById('f-dispute-subject').value='';
     document.getElementById('f-dispute-reason').value='';
     document.getElementById('f-dispute-status').value='aberto';
     document.getElementById('f-dispute-notes').value='';
@@ -750,8 +753,15 @@ function saveBL() {
 
   // Collect dispute fields
   const disputeOpen = document.getElementById('f-dispute-open').checked;
+  const disputeSubject = document.getElementById('f-dispute-subject').value.trim();
+  if (disputeOpen && !disputeSubject) {
+    toast('O campo "Assunto do E-mail" é obrigatório para registrar uma disputa.', 'error');
+    document.getElementById('f-dispute-subject').focus();
+    return;
+  }
   const dispute = disputeOpen ? {
     open: true,
+    subject: disputeSubject,
     reason: document.getElementById('f-dispute-reason').value,
     status: document.getElementById('f-dispute-status').value,
     notes: document.getElementById('f-dispute-notes').value.trim(),

@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v3.12 | **Cache:** `?v=129` | **Atualizado:** 2026-04-06
+> **Versão:** v3.13 | **Cache:** `?v=130` | **Atualizado:** 2026-04-06
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -438,6 +438,21 @@ git push origin main
 ---
 
 ## 10. Changelog Recente
+
+### v3.13 — 2026-04-06 — feat: campo "Assunto do E-mail" obrigatório na seção Disputa
+
+**`app.html`**
+- Adicionado `#f-dispute-subject` (input text) dentro de `#dispute-details`, logo acima de "Observações".
+- Label exibe indicador visual `*obrigatório` em vermelho.
+
+**`js/billing.js`**
+- `saveBL()`: valida que `f-dispute-subject` está preenchido quando a disputa está marcada como aberta; exibe toast de erro e dá foco no campo se vazio.
+- `dispute` object: inclui novo campo `subject` ao persistir.
+- `fillForm()`: preenche `f-dispute-subject` a partir de `b.dispute.subject` ao editar BL existente.
+- `resetForm()`: limpa `f-dispute-subject` ao abrir modal de novo BL.
+- Cache bump: `?v=129` → `?v=130`.
+
+---
 
 ### v3.12 — 2026-04-06 — feat: indicador de último upload de containers na barra PTAX
 
