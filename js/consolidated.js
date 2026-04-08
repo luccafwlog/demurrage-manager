@@ -13,7 +13,8 @@
 // ============================================================
 // COBRANÇA CONSOLIDADA — mapa de clientes
 // ============================================================
-let _consMap = {};   // cnpj → { name, emails, bls[] }
+let _consMap = {};          // cnpj → { name, emails, bls[] }
+let _consSelectedBLs = new Set();  // IDs dos BLs selecionados no preview
 
 function _rebuildConsMap() {
   _consMap = {};
@@ -129,6 +130,7 @@ function clearConsolidatedSelection() {
   document.getElementById('cons-dropdown').style.display = 'none';
   document.getElementById('cons-preview').style.display = 'none';
   document.getElementById('cons-empty').style.display   = 'none';
+  _consSelectedBLs.clear();
   document.getElementById('cons-send-btn').disabled     = true;
   document.getElementById('cons-pdf-btn').disabled      = true;
   document.getElementById('cons-receipts-btn').disabled = true;
@@ -140,18 +142,14 @@ function _renderConsPreview(cnpj) {
   const eligible = bls.filter(b => b.cnpj === cnpj && !b.paid);
   const preview  = document.getElementById('cons-preview');
   const empty    = document.getElementById('cons-empty');
-  const sendBtn  = document.getElementById('cons-send-btn');
-  const pdfBtn   = document.getElementById('cons-pdf-btn');
 
   if (!eligible.length) {
     preview.style.display = 'none';
     const hintEl2 = document.getElementById('cons-hint');
     if (hintEl2) hintEl2.style.display = 'none';
-    empty.style.display   = '';
-    sendBtn.disabled = true;
-    pdfBtn.disabled  = true;
-    const receiptsBtnDis = document.getElementById('cons-receipts-btn');
-    if (receiptsBtnDis) receiptsBtnDis.disabled = true;
+    empty.style.display = '';
+    _consSelectedBLs.clear();
+    _updateConsBLButtons();
     return;
   }
 
@@ -159,22 +157,24 @@ function _renderConsPreview(cnpj) {
   if (hint) hint.style.display = 'none';
   preview.style.display = '';
   empty.style.display   = 'none';
-  sendBtn.disabled = false;
-  pdfBtn.disabled  = false;
-  const receiptsBtn = document.getElementById('cons-receipts-btn');
-  if (receiptsBtn) receiptsBtn.disabled = false;
 
-  let grand = 0;
+  // Pré-seleciona todos os BLs por padrão
+  _consSelectedBLs = new Set(eligible.map(b => b.id));
+
   document.getElementById('cons-tbody').innerHTML = eligible.map(b => {
     const total  = blTotalBRL(b);
-    grand += total;
     const docnum = b.docnum || genDocnum(b.bl);
     const venc   = b.venc ? new Date(b.venc+'T12:00:00').toLocaleDateString('pt-BR') : '—';
     const status = b.billed
       ? '<span style="color:var(--blue);font-size:11px;">📄 Faturado</span>'
       : '<span style="color:#d97706;font-size:11px;">⏳ Pendente</span>';
     const ctrs = (b.containers||[]).map(c=>c.container).join(', ');
-    return `<tr style="border-bottom:1px solid #f1f5f9;">
+    return `<tr id="cons-bl-row-${b.id}" style="border-bottom:1px solid #f1f5f9;transition:background 0.12s;">
+      <td style="padding:5px 8px;text-align:center;width:32px;">
+        <input type="checkbox" class="cons-bl-cb" data-id="${b.id}" data-total="${blTotalBRL(b)}" checked
+          style="width:15px;height:15px;cursor:pointer;accent-color:var(--blue-btn);"
+          onchange="_toggleConsBL('${b.id}', this.checked)">
+      </td>
       <td style="padding:5px 8px;font-family:monospace;font-size:11px;white-space:nowrap;">${docnum}</td>
       <td style="padding:5px 8px;font-size:12px;">${b.bl}</td>
       <td style="padding:5px 8px;font-size:11px;color:var(--muted);">${ctrs}</td>
@@ -184,19 +184,85 @@ function _renderConsPreview(cnpj) {
     </tr>`;
   }).join('');
 
-  document.getElementById('cons-grand-total').textContent = fmtBRL(grand);
+  _updateConsPreviewTotal();
+  _updateConsBLButtons();
+
   const info   = _consMap[cnpj] || {};
   const emails = info.emails || [];
   document.getElementById('cons-to-display').textContent =
     emails.length ? emails.join(', ') : '⚠ Nenhum e-mail cadastrado';
 }
 
+// Toggle individual BL checkbox
+function _toggleConsBL(id, checked) {
+  if (checked) {
+    _consSelectedBLs.add(id);
+  } else {
+    _consSelectedBLs.delete(id);
+  }
+  // Estilo visual na linha
+  const row = document.getElementById('cons-bl-row-' + id);
+  if (row) row.style.opacity = checked ? '1' : '0.45';
+  _updateConsPreviewTotal();
+  _updateConsBLButtons();
+}
+
+// Selecionar / Desselecionar todos no preview
+function _toggleAllConsBLs(selectAll) {
+  document.querySelectorAll('.cons-bl-cb').forEach(cb => {
+    cb.checked = selectAll;
+    const row = document.getElementById('cons-bl-row-' + cb.dataset.id);
+    if (row) row.style.opacity = selectAll ? '1' : '0.45';
+    if (selectAll) _consSelectedBLs.add(cb.dataset.id);
+    else _consSelectedBLs.delete(cb.dataset.id);
+  });
+  _updateConsPreviewTotal();
+  _updateConsBLButtons();
+}
+
+// Recalcula e exibe o total dos BLs selecionados
+function _updateConsPreviewTotal() {
+  const cnpj = document.getElementById('cons-cnpj-hidden').value;
+  if (!cnpj) return;
+  let grand = 0;
+  const checkboxes = document.querySelectorAll('.cons-bl-cb');
+  checkboxes.forEach(cb => {
+    if (cb.checked) {
+      const b = bls.find(x => x.id === cb.dataset.id);
+      if (b) grand += blTotalBRL(b);
+    }
+  });
+  const totalEl = document.getElementById('cons-grand-total');
+  if (totalEl) totalEl.textContent = fmtBRL(grand);
+
+  // Atualiza contador de selecionados
+  const n = _consSelectedBLs.size;
+  const total = checkboxes.length;
+  const countEl = document.getElementById('cons-bl-sel-count');
+  if (countEl) countEl.textContent = `${n} de ${total} selecionada${n !== 1 ? 's' : ''}`;
+}
+
+// Habilita/desabilita botões de ação conforme seleção
+function _updateConsBLButtons() {
+  const hasAny = _consSelectedBLs.size > 0;
+  const sendBtn = document.getElementById('cons-send-btn');
+  const pdfBtn  = document.getElementById('cons-pdf-btn');
+  const receiptsBtn = document.getElementById('cons-receipts-btn');
+  if (sendBtn)     sendBtn.disabled     = !hasAny;
+  if (pdfBtn)      pdfBtn.disabled      = !hasAny;
+  if (receiptsBtn) receiptsBtn.disabled = !hasAny;
+}
+
 // Send consolidated email
 function sendConsolidatedEmail() {
   const cnpj = document.getElementById('cons-cnpj-hidden').value;
   if (!cnpj) return;
-  const eligible = bls.filter(b => b.cnpj === cnpj && !b.paid);
-  if (!eligible.length) return;
+  // Usa apenas BLs selecionados via checkbox no preview
+  const allUnpaid  = bls.filter(b => b.cnpj === cnpj && !b.paid);
+  const eligible   = _consSelectedBLs.size > 0
+    ? allUnpaid.filter(b => _consSelectedBLs.has(b.id))
+    : allUnpaid;
+  if (!eligible.length) { toast('Nenhuma fatura selecionada.', 'error'); return; }
   const info  = _consMap[cnpj] || {};
   const nome  = info.name || cnpj;
   const emails = info.emails || getEmailsForBL(eligible[0]);
@@ -389,8 +455,12 @@ async function _fetchPrintCSS() {
 async function printAllInvoices() {
   const cnpj = document.getElementById('cons-cnpj-hidden').value;
   if (!cnpj) { toast('Nenhum cliente selecionado.', 'error'); return; }
-  const eligible = bls.filter(b => b.cnpj === cnpj && !b.paid);
-  if (!eligible.length) { toast('Nenhum BL em aberto para este cliente.', 'error'); return; }
+  const allUnpaid = bls.filter(b => b.cnpj === cnpj && !b.paid);
+  // Filtra pelos selecionados no preview (se houver seleção ativa)
+  const eligible = _consSelectedBLs.size > 0
+    ? allUnpaid.filter(b => _consSelectedBLs.has(b.id))
+    : allUnpaid;
+  if (!eligible.length) { toast('Nenhuma fatura selecionada.', 'error'); return; }
   const prevBL=currentBL,prevType=currentType,prevRoe=ovRoe,prevTot=ovTotal;
   const invoiceData = eligible.map(b => {
     currentBL=b;currentType='invoice';ovRoe=null;ovTotal=null;
