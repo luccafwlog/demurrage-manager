@@ -59,6 +59,10 @@ function openConsolidatedEmail() {
   document.getElementById('cons-pdf-btn').disabled      = true;
   document.getElementById('cons-receipts-btn').disabled = true;
   _consSelected.clear();
+  _consSelectedBLs.clear();
+  // Garante que a lista de clientes apareça ao abrir
+  const listEl = document.getElementById('cons-client-list');
+  if (listEl) listEl.style.display = '';
   openModal('modal-consolidated');
   renderConsClientList('');
   _updateConsFooter();
@@ -118,7 +122,10 @@ function selectConsCnpj(cnpj) {
     `${formatCnpj(cnpj)} — ${info.name}`;
   chip.style.display = 'flex';
 
-  renderConsClientList(document.getElementById('cons-search').value);
+  // Esconde a lista de clientes para que o preview fique visível imediatamente
+  const listEl = document.getElementById('cons-client-list');
+  if (listEl) listEl.style.display = 'none';
+
   _renderConsPreview(cnpj);
 }
 
@@ -131,6 +138,9 @@ function clearConsolidatedSelection() {
   document.getElementById('cons-preview').style.display = 'none';
   document.getElementById('cons-empty').style.display   = 'none';
   _consSelectedBLs.clear();
+  // Restaura a lista de clientes ao voltar para a busca
+  const listEl = document.getElementById('cons-client-list');
+  if (listEl) { listEl.style.display = ''; renderConsClientList(''); }
   document.getElementById('cons-send-btn').disabled     = true;
   document.getElementById('cons-pdf-btn').disabled      = true;
   document.getElementById('cons-receipts-btn').disabled = true;
