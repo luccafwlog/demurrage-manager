@@ -225,8 +225,25 @@ async function saveCfgRate(idx) {
   if (rate.p1) rate.p1.usd = p1usd;
   if (rate.p2) rate.p2.usd = p2usd;
 
-  // Persiste no localStorage (sem dependência de tabela extra)
+  // Persiste no Supabase (compartilhado entre todos os usuários)
   try {
+    const sb = window._dmDb;
+    if (sb) {
+      const { error } = await sb.from('rates').upsert({
+        type:       rate.type,
+        free_until: ft,
+        p1_usd:     p1usd,
+        p2_usd:     p2usd,
+        updated_at: new Date().toISOString(),
+        updated_by: window._dmUser?.email || ''
+      }, { onConflict: 'type' });
+      if (error) {
+        console.error('[RATES] upsert Supabase:', error);
+        toast('Erro ao salvar taxa no servidor: ' + error.message, 'error');
+        return;
+      }
+    }
+    // Fallback: mantém localStorage como cache local
     const allRates = (window._cfgRates || RATES).map(r => ({
       type: r.type,
       freeUntil: r.freeUntil,
@@ -242,19 +259,51 @@ async function saveCfgRate(idx) {
   }
 }
 
-function loadCfgRatesFromFirestore() {
-  // Carrega taxas customizadas do localStorage
+async function loadCfgRatesFromFirestore() {
+  // Carrega taxas customizadas do Supabase (compartilhadas entre todos os usuários)
+  // Fallback: localStorage se Supabase não estiver disponível
+  let loaded = false;
   try {
-    const saved = JSON.parse(localStorage.getItem('dm_rates_v2') || 'null');
-    if (!saved || !Array.isArray(saved)) return;
-    saved.forEach(s => {
-      const r = RATES.find(r => r.type === s.type);
-      if (!r) return;
-      if (s.freeUntil != null) r.freeUntil = s.freeUntil;
-      if (r.p1 && s.p1usd  != null) r.p1.usd = s.p1usd;
-      if (r.p2 && s.p2usd  != null) r.p2.usd = s.p2usd;
-    });
-  } catch(e) { /* usar rates padrão */ }
+    const sb = window._dmDb;
+    if (sb) {
+      const { data, error } = await sb.from('rates').select('type, free_until, p1_usd, p2_usd');
+      if (!error && data && data.length > 0) {
+        data.forEach(s => {
+          const r = RATES.find(r => r.type === s.type);
+          if (!r) return;
+          if (s.free_until != null) r.freeUntil = s.free_until;
+          if (r.p1 && s.p1_usd  != null) r.p1.usd = Number(s.p1_usd);
+          if (r.p2 && s.p2_usd  != null) r.p2.usd = Number(s.p2_usd);
+        });
+        // Atualiza cache local
+        const allRates = RATES.map(r => ({
+          type: r.type, freeUntil: r.freeUntil,
+          p1usd: r.p1 ? r.p1.usd : null, p1from: r.p1 ? r.p1.range[0] : null,
+          p2usd: r.p2 ? r.p2.usd : null
+        }));
+        localStorage.setItem('dm_rates_v2', JSON.stringify(allRates));
+        loaded = true;
+        console.log('[RATES] ✓ Carregadas do Supabase:', data.length, 'tipos');
+      }
+    }
+  } catch(e) {
+    console.warn('[RATES] Supabase indisponível, usando fallback localStorage');
+  }
+  // Fallback: localStorage (offline ou primeira vez)
+  if (!loaded) {
+    try {
+      const saved = JSON.parse(localStorage.getItem('dm_rates_v2') || 'null');
+      if (!saved || !Array.isArray(saved)) return;
+      saved.forEach(s => {
+        const r = RATES.find(r => r.type === s.type);
+        if (!r) return;
+        if (s.freeUntil != null) r.freeUntil = s.freeUntil;
+        if (r.p1 && s.p1usd  != null) r.p1.usd = s.p1usd;
+        if (r.p2 && s.p2usd  != null) r.p2.usd = s.p2usd;
+      });
+      console.log('[RATES] Carregadas do localStorage (fallback)');
+    } catch(e) { /* usar rates padrão */ }
+  }
 }
 
 // ── USUÁRIOS — delegado ao módulo users.js via renderUsers() ─────
@@ -410,7 +459,7 @@ function cfgClearCache() {
     toast('Cache limpo com sucesso!', 'success');
   }
 }
-function cfgReloadRates() { loadCfgRatesFromFirestore(); renderCfgRates(); toast('Taxas recarregadas!', 'success'); }
+async function cfgReloadRates() { await loadCfgRatesFromFirestore(); renderCfgRates(); toast('Taxas recarregadas!', 'success'); }
 function cfgShowAuditLog() { switchModule('settings'); setTimeout(function(){ var btn=document.querySelector('.cfg-subtab[onclick*="cfg-users"]'); if(btn) switchCfgPane(btn,'cfg-users'); },50); }
 
 // ── CHECKPOINTS ───────────────────────────────────────────────────────────
@@ -1596,7 +1645,7 @@ function renderTrkGroupedByBL(filtered) {
 
 // INIT — chamado pelo db.js após Supabase carregar os dados
 // See: window._dmOnReady()
-window._dmOnReady = function() {
+window._dmOnReady = async function() {
   // ── Reload all global arrays from Firestore ──
   bls = load();              // ← critical: reatribui bls com dados do Supabase
 
@@ -1653,8 +1702,8 @@ window._dmOnReady = function() {
   updateAlertBadge();
   // MELHORIA #1: aplicar alertas visuais nos containers críticos
   setTimeout(applyContainerAlerts, 500);
-  // Carrega taxas customizadas do localStorage
-  loadCfgRatesFromFirestore();
+  // Carrega taxas do Supabase (compartilhadas) com fallback localStorage
+  await loadCfgRatesFromFirestore();
   switchModule('dashboard');
   // Exibe nome do usuário no header (nome completo ou e-mail como fallback)
   (function() {
