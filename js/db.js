@@ -70,38 +70,37 @@ const _CONFLICT = {
   window._dmIsAdmin = false;
   window._dmSession = 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 
-  // FIX: containers agora seleciona a coluna `bl` separada (nova PK composta)
-  const [blsRes, cliRes, settRes, profRes] = await Promise.all([
-    sb.from('bls').select('id, data'),
-    sb.from('clients').select('id, data'),
+  // FIX: paginação para bls, containers e clients — PostgREST trunca em 1000 linhas.
+  // Todos os três usam busca em chunks até esgotar os registros.
+  async function fetchAllPages(table, columns, extraQuery) {
+    const PAGE = 1000;
+    let from = 0;
+    const allRows = [];
+    while (true) {
+      let q = sb.from(table).select(columns).range(from, from + PAGE - 1);
+      if (extraQuery) q = extraQuery(q);
+      const { data: page, error: pageErr } = await q;
+      if (pageErr) { console.error('[DB] fetchAllPages ' + table + ':', pageErr); break; }
+      allRows.push(...(page || []));
+      if ((page || []).length < PAGE) break;
+      from += PAGE;
+    }
+    return allRows;
+  }
+
+  const [blsAllRows, cliAllRows, trkAllRows, settRes, profRes] = await Promise.all([
+    fetchAllPages('bls',    'id, data'),
+    fetchAllPages('clients','id, data'),
+    fetchAllPages('containers', 'container, bl, data, updated_at'),
     sb.from('settings').select('alert_days').eq('user_id', uid).maybeSingle(),
     sb.from('usuarios').select('*').eq('id', uid).maybeSingle()
   ]);
 
-  // FIX: paginação para containers — PostgREST tem max_rows que trunca resultados.
-  // Busca em páginas de 1000 até obter todos os registros.
-  const trkAllRows = [];
-  const TRK_PAGE  = 1000;
-  let   trkFrom   = 0;
-  let   trkError  = null;
-  while (true) {
-    const { data: page, error: pageErr } = await sb
-      .from('containers')
-      .select('container, bl, data, updated_at')
-      .range(trkFrom, trkFrom + TRK_PAGE - 1);
-    if (pageErr) { trkError = pageErr; break; }
-    trkAllRows.push(...(page || []));
-    if ((page || []).length < TRK_PAGE) break;
-    trkFrom += TRK_PAGE;
-  }
+  console.log('[DB] bls carregados:', blsAllRows.length,
+              '| clients:', cliAllRows.length,
+              '| containers:', trkAllRows.length);
 
-  if (blsRes.error) console.error('[DB] bls:', blsRes.error);
-  if (trkError)     console.error('[DB] containers:', trkError);
-  if (cliRes.error) console.error('[DB] clients:', cliRes.error);
-
-  console.log('[DB] containers carregados:', trkAllRows.length);
-
-  window._dmStore.bls     = (blsRes.data  || []).map(r => r.data);
+  window._dmStore.bls = blsAllRows.map(r => r.data);
 
   // FIX: mescla as colunas de primeira classe (container, bl) com o jsonb data,
   // garantindo que container e bl SEMPRE existem no objeto local.
@@ -112,7 +111,7 @@ const _CONFLICT = {
   }));
 
   // FIX: garante que todo cliente tem um `id` válido ao carregar do banco
-  window._dmStore.clients = (cliRes.data || []).map(r => ({
+  window._dmStore.clients = cliAllRows.map(r => ({
     ...r.data,
     id: r.id || (r.data && r.data.id) || (r.data && r.data.cnpj) || ''
   }));
@@ -163,7 +162,24 @@ const _CONFLICT = {
   }
 
   // ================= SAVE (full array diff) =================
+  // FIX: mutex por tipo — serializa saves concorrentes para evitar race conditions.
+  // Se um save chega enquanto outro do mesmo tipo está em andamento, a versão mais
+  // recente dos dados é salva automaticamente ao final.
+  const _saveLocks   = {};   // tipo → boolean (save em andamento?)
+  const _savePending = {};   // tipo → newData mais recente aguardando
+
   window._dmFireSave = function(type, newData) {
+    // Sempre atualiza os dados pendentes com a versão mais recente
+    _savePending[type] = newData;
+
+    // Se já há um save em andamento para este tipo, ele vai pegar o pending ao final
+    if (_saveLocks[type]) return;
+
+    _saveLocks[type] = true;
+    _runSave(type);
+  };
+
+  async function _runSave(type) {
     const TABLE = { bls: 'bls', trk: 'containers', clients: 'clients' };
     const STORE = { bls: 'bls', trk: 'trk',        clients: 'clients' };
 
@@ -173,87 +189,93 @@ const _CONFLICT = {
     const colsFn   = _COLS_FN[type];
     const conflict = _CONFLICT[type];
 
-    if (!table || !sKey || !keyFn) return;
+    if (!table || !sKey || !keyFn) { _saveLocks[type] = false; return; }
 
-    // Snapshot imutável do store atual (evita que mutações posteriores ao array
-    // do módulo invalidem o diff antes do upsert assíncrono completar)
-    const oldStore = JSON.parse(JSON.stringify(window._dmStore[sKey] || []));
+    try {
+      // Consome os dados pendentes — libera slot para próximas chamadas enfileirarem
+      const newData = _savePending[type];
+      delete _savePending[type];
 
-    // FIX: deduplicação usa chave composta (container|bl para trk, id para os outros)
-    const oldMap = new Map(
-      oldStore.map(r => [keyFn(r), JSON.stringify(sanitize(r))])
-    );
+      // Snapshot imutável do store atual (evita que mutações posteriores ao array
+      // do módulo invalidem o diff antes do upsert assíncrono completar)
+      const oldStore = JSON.parse(JSON.stringify(window._dmStore[sKey] || []));
 
-    const newKeySet = new Set(newData.map(r => keyFn(r)));
+      // FIX: deduplicação usa chave composta (container|bl para trk, id para os outros)
+      const oldMap = new Map(
+        oldStore.map(r => [keyFn(r), JSON.stringify(sanitize(r))])
+      );
 
-    // Registros a deletar: estavam no store antigo mas não estão no novo
-    const toDeleteKeys = oldStore
-      .filter(r => !newKeySet.has(keyFn(r)))
-      .map(r => keyFn(r));
+      const newKeySet = new Set(newData.map(r => keyFn(r)));
 
-    // Registros a upsert: novos ou com dados diferentes
-    const toUpsert = newData.filter(r => {
-      const key = keyFn(r);
-      return !oldMap.has(key) || oldMap.get(key) !== JSON.stringify(sanitize(r));
-    });
+      // Registros a deletar: estavam no store antigo mas não estão no novo
+      const toDeleteKeys = oldStore
+        .filter(r => !newKeySet.has(keyFn(r)))
+        .map(r => keyFn(r));
 
-    (async () => {
-      try {
-        // DELETE — usa filtros específicos por tipo para garantir user_id
-        if (toDeleteKeys.length > 0) {
-          if (type === 'trk') {
-            // FIX: containers precisam de delete por (container, bl) — chave composta
-            for (const key of toDeleteKeys) {
-              const [container, bl] = key.split('\x00');
-              const { error: delErr } = await sb.from(table).delete()
-                .eq('user_id', uid)
-                .eq('container', container)
-                .eq('bl', bl);
-              if (delErr) console.error('[DB-SAVE] delete container error:', delErr);
-            }
-          } else {
-            // bls e clients têm id simples — delete em batch
-            const idCol = type === 'bls' ? 'id' : 'id';
-            const ids = toDeleteKeys;
+      // Registros a upsert: novos ou com dados diferentes
+      const toUpsert = newData.filter(r => {
+        const key = keyFn(r);
+        return !oldMap.has(key) || oldMap.get(key) !== JSON.stringify(sanitize(r));
+      });
+
+      // DELETE — usa filtros específicos por tipo para garantir user_id
+      if (toDeleteKeys.length > 0) {
+        if (type === 'trk') {
+          // FIX: containers precisam de delete por (container, bl) — chave composta
+          for (const key of toDeleteKeys) {
+            const [container, bl] = key.split('\x00');
             const { error: delErr } = await sb.from(table).delete()
               .eq('user_id', uid)
-              .in(idCol, ids);
-            if (delErr) console.error('[DB-SAVE] delete error:', delErr);
+              .eq('container', container)
+              .eq('bl', bl);
+            if (delErr) console.error('[DB-SAVE] delete container error:', delErr);
           }
+        } else {
+          // bls e clients têm id simples — delete em batch
+          const idCol = 'id';
+          const ids = toDeleteKeys;
+          const { error: delErr } = await sb.from(table).delete()
+            .eq('user_id', uid)
+            .in(idCol, ids);
+          if (delErr) console.error('[DB-SAVE] delete error:', delErr);
         }
-
-        // UPSERT
-        if (toUpsert.length > 0) {
-          // FIX: rowMap usa chave composta para evitar duplicatas no batch
-          const rowMap = new Map();
-          for (const r of toUpsert) {
-            const key = keyFn(r);
-            rowMap.set(key, {
-              ...colsFn(r),         // colunas de primeira classe (container+bl, ou id)
-              user_id: uid,
-              data: sanitize(r),
-              updated_at: new Date().toISOString()
-            });
-          }
-          const rows = Array.from(rowMap.values());
-          const CHUNK = 50;
-          for (let i = 0; i < rows.length; i += CHUNK) {
-            const chunk = rows.slice(i, i + CHUNK);
-            const { error: upsErr } = await sb.from(table).upsert(chunk, { onConflict: conflict });
-            if (upsErr) { console.error('[DB-SAVE] upsert error (chunk ' + i + '):', upsErr); break; }
-          }
-        }
-
-        // FIX: armazena cópia profunda — NUNCA a referência direta.
-        // Se _dmStore[sKey] === newData (mesma referência), mutações futuras
-        // no array do módulo já refletem em oldStore, tornando o diff sempre
-        // vazio e impedindo saves subsequentes.
-        window._dmStore[sKey] = JSON.parse(JSON.stringify(newData));
-      } catch(e) {
-        console.error('[DB-SAVE]', e);
       }
-    })();
-  };
+
+      // UPSERT
+      if (toUpsert.length > 0) {
+        // FIX: rowMap usa chave composta para evitar duplicatas no batch
+        const rowMap = new Map();
+        for (const r of toUpsert) {
+          const key = keyFn(r);
+          rowMap.set(key, {
+            ...colsFn(r),         // colunas de primeira classe (container+bl, ou id)
+            user_id: uid,
+            data: sanitize(r),
+            updated_at: new Date().toISOString()
+          });
+        }
+        const rows = Array.from(rowMap.values());
+        const CHUNK = 50;
+        for (let i = 0; i < rows.length; i += CHUNK) {
+          const chunk = rows.slice(i, i + CHUNK);
+          const { error: upsErr } = await sb.from(table).upsert(chunk, { onConflict: conflict });
+          if (upsErr) { console.error('[DB-SAVE] upsert error (chunk ' + i + '):', upsErr); break; }
+        }
+      }
+
+      // FIX: armazena cópia profunda — NUNCA a referência direta.
+      window._dmStore[sKey] = JSON.parse(JSON.stringify(newData));
+    } catch(e) {
+      console.error('[DB-SAVE]', e);
+    }
+
+    // Se novos dados chegaram enquanto este save rodava, executa novamente
+    if (_savePending[type] !== undefined) {
+      _runSave(type);
+    } else {
+      _saveLocks[type] = false;
+    }
+  }
 
   // ================= SAVE ONE RECORD =================
   window._dmFireSaveOne = function(type, id, data) {
@@ -550,10 +572,22 @@ const _CONFLICT = {
   console.log('[DB] ✓ Supabase inicializado — usuário:', user.email);
 
   // Aguarda o app estar pronto e inicializa a UI
+  // FIX: timeout de 15s com mensagem de erro em vez de polling infinito (tela branca)
+  let _waitAttempts = 0;
+  const _WAIT_MAX   = 300; // 300 × 50ms = 15 segundos
+
   function waitForAppReady() {
     if (window._dmOnReady) {
       console.log('[DB] Chamando _dmOnReady...');
       window._dmOnReady();
+    } else if (++_waitAttempts > _WAIT_MAX) {
+      console.error('[DB] Timeout aguardando _dmOnReady — scripts podem ter falhado ao carregar.');
+      const el = document.getElementById('loading-overlay') || document.body;
+      el.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:Inter,sans-serif;color:#64748b;gap:16px;padding:24px;text-align:center">'
+        + '<div style="font-size:24px;font-weight:600;color:#ef4444">Erro ao carregar</div>'
+        + '<div>Alguns scripts não carregaram corretamente.<br>Verifique sua conexão e tente novamente.</div>'
+        + '<button onclick="location.reload()" style="padding:10px 24px;border-radius:8px;border:none;background:#3b82f6;color:#fff;font-size:14px;cursor:pointer">Recarregar</button>'
+        + '</div>';
     } else {
       setTimeout(waitForAppReady, 50);
     }
