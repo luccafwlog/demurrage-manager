@@ -1384,7 +1384,11 @@ function toggleBilled(id) {
     b.billedAt = null;
     b.frozenRoe = null;
     b.frozenTotal = null;
-    toast('Status "Faturado" removido. Valores liberados.', '');
+    // Recalcula vencimento: próximo dia útil a partir de hoje (regra de negócio)
+    const newVenc = nextBusinessDay(null);
+    b.venc = newVenc;
+    logAuditAction('reversao_fatura', {blId: id, bl: b.bl, newVenc: newVenc});
+    toast(`Status "Faturado" removido. Novo vencimento: ${newVenc.split('-').reverse().join('/')} 📅`, '');
   } else {
     const roe = effectiveROE(b);
     const total = blTotal(b, null);

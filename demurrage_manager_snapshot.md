@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v3.14 | **Cache:** `?v=136` | **Atualizado:** 2026-04-10
+> **Versão:** v3.15 | **Cache:** `?v=136` | **Atualizado:** 2026-04-10
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -438,6 +438,26 @@ git push origin main
 ---
 
 ## 10. Changelog Recente
+
+### v3.15 — 2026-04-10 — fix: recálculo automático de vencimento ao reverter FATURADO→PENDENTE
+
+**Problema corrigido**
+- Ao desmarcar uma fatura como "Faturado" (`toggleBilled`), o campo `venc` (data de vencimento) permanecia com o valor anterior, sem recálculo.
+
+**Solução aplicada — `js/billing.js`**
+- No branch de reversão de `toggleBilled()`, adicionadas 3 linhas:
+  1. `const newVenc = nextBusinessDay(null)` — calcula próximo dia útil a partir de hoje.
+  2. `b.venc = newVenc` — atualiza o campo no objeto em memória (persiste via `saveOne(b)`).
+  3. `logAuditAction('reversao_fatura', {blId, bl, newVenc})` — rastreabilidade no log de auditoria.
+- Toast atualizado para exibir o novo vencimento calculado.
+
+**Regra de negócio**
+- FATURADO → PENDENTE sempre recalcula `venc` = próximo dia útil após a data da reversão.
+- Finais de semana tratados: sexta → segunda, sábado → segunda, domingo → segunda.
+- Nenhuma outra transição de status é afetada.
+- `nextBusinessDay()` preexistente reutilizada sem modificação.
+
+---
 
 ### v3.14 — 2026-04-10 — feat: Recibo Consolidado + restrição de recibo para faturas pagas
 
