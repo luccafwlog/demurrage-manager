@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v3.13 | **Cache:** `?v=130` | **Atualizado:** 2026-04-06
+> **Versão:** v3.14 | **Cache:** `?v=136` | **Atualizado:** 2026-04-10
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -438,6 +438,35 @@ git push origin main
 ---
 
 ## 10. Changelog Recente
+
+### v3.14 — 2026-04-10 — feat: Recibo Consolidado + restrição de recibo para faturas pagas
+
+**Regras de Negócio**
+- Recibo (`viewDoc(..., 'receipt')`) bloqueado para faturas não pagas — toast de erro + retorno antecipado.
+- Botão "🧾 Recibo" desabilitado visualmente (opacity 0.38, cursor not-allowed) para BLs não pagos.
+- `generateSelectedReceipts()` e `generateConsolidatedReceipts()` validam `b.paid` antes de gerar; retornam erro `"Receipt can only be issued for paid invoices"` se houver não-pagos selecionados.
+
+**`app.html`** (cache `?v=135` → `?v=136`)
+- Botão `#btn-cobranca-consolidada` e `#btn-recibo-consolidado` adicionados na toolbar do módulo Faturamento.
+- "Recibo Consolidado" visível apenas na aba "✔ Pagos"; "Cobrança Consolidada" oculto nessa aba.
+- Removido botão `#cons-receipts-btn` do footer do modal Cobrança Consolidada.
+- Novo modal `#modal-consolidated-receipt` com filtro de cliente/BL, listagem de faturas pagas com checkbox, seleção em massa e botão "🧾 Gerar Recibos".
+
+**`js/billing.js`**
+- Linha ~553: botão Recibo renderizado com classe `receipt-locked` + style inline quando `!isPaid`.
+- `viewDoc()`: guard de negócio — bloqueia `type === 'receipt'` para `!b.paid`.
+
+**`js/consolidated.js`**
+- `openReceiptSelectModal()`: filtra `bls` para `b.cnpj === cnpj && b.paid` (antes incluía não-pagos).
+- Checkboxes do `modal-receipt-select` agora nascem todos marcados (todos são pagos).
+- `generateSelectedReceipts()`: validação de `b.paid` nos selecionados antes de gerar.
+- Removidas referências a `cons-receipts-btn` de `openConsolidatedEmail()`, `_clearConsSelection()` e `_updateConsBLButtons()`.
+- Novas funções: `openConsolidatedReceiptModal()`, `filterConsolidatedReceiptList()`, `_renderCrList()`, `_updateCrCount()`, `_toggleAllCrCheckboxes()`, `generateConsolidatedReceipts()`.
+
+**`js/init.js`**
+- `setBillingSubTab()`: toggle de visibilidade `#btn-cobranca-consolidada` ↔ `#btn-recibo-consolidado` conforme aba ativa.
+
+---
 
 ### v3.13 — 2026-04-06 — feat: campo "Assunto do E-mail" obrigatório na seção Disputa
 

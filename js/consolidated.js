@@ -55,9 +55,8 @@ function openConsolidatedEmail() {
   document.getElementById('cons-dropdown').style.display = 'none';
   document.getElementById('cons-preview').style.display = 'none';
   document.getElementById('cons-empty').style.display   = 'none';
-  document.getElementById('cons-send-btn').disabled     = true;
-  document.getElementById('cons-pdf-btn').disabled      = true;
-  document.getElementById('cons-receipts-btn').disabled = true;
+  document.getElementById('cons-send-btn').disabled = true;
+  document.getElementById('cons-pdf-btn').disabled  = true;
   _consSelected.clear();
   _consSelectedBLs.clear();
   // Garante que a lista de clientes apareça ao abrir
@@ -141,9 +140,8 @@ function clearConsolidatedSelection() {
   // Restaura a lista de clientes ao voltar para a busca
   const listEl = document.getElementById('cons-client-list');
   if (listEl) { listEl.style.display = ''; renderConsClientList(''); }
-  document.getElementById('cons-send-btn').disabled     = true;
-  document.getElementById('cons-pdf-btn').disabled      = true;
-  document.getElementById('cons-receipts-btn').disabled = true;
+  document.getElementById('cons-send-btn').disabled = true;
+  document.getElementById('cons-pdf-btn').disabled  = true;
   document.getElementById('cons-search').focus();
 }
 
@@ -257,10 +255,8 @@ function _updateConsBLButtons() {
   const hasAny = _consSelectedBLs.size > 0;
   const sendBtn = document.getElementById('cons-send-btn');
   const pdfBtn  = document.getElementById('cons-pdf-btn');
-  const receiptsBtn = document.getElementById('cons-receipts-btn');
-  if (sendBtn)     sendBtn.disabled     = !hasAny;
-  if (pdfBtn)      pdfBtn.disabled      = !hasAny;
-  if (receiptsBtn) receiptsBtn.disabled = !hasAny;
+  if (sendBtn) sendBtn.disabled = !hasAny;
+  if (pdfBtn)  pdfBtn.disabled  = !hasAny;
 }
 
 // Send consolidated email
@@ -507,8 +503,8 @@ function openReceiptSelectModal() {
   const cnpj = document.getElementById('cons-cnpj-hidden').value;
   if (!cnpj) { toast('Nenhum cliente selecionado.', 'error'); return; }
 
-  // Todos os BLs deste CNPJ (paid e unpaid) — dados já em memória, sem Firestore
-  const allBLs = bls.filter(b => b.cnpj === cnpj);
+  // Apenas BLs PAGOS — recibo só pode ser emitido para faturas pagas
+  const allBLs = bls.filter(b => b.cnpj === cnpj && b.paid);
   if (!allBLs.length) {
     toast('Nenhum BL encontrado para este cliente.', 'error');
     return;
@@ -536,16 +532,11 @@ function openReceiptSelectModal() {
     const docnum  = b.docnum || genDocnum(b.bl);
     const ctrs    = (b.containers || []).map(c => c.container).join(', ') || '—';
     const total   = blTotalBRL(b);
-    const statusTxt = b.paid
-      ? `<span style="font-size:11px;color:#15803d;font-weight:600;">✔ Pago</span>`
-      : b.billed
-        ? `<span style="font-size:11px;color:var(--blue);">📄 Faturado</span>`
-        : `<span style="font-size:11px;color:#d97706;">⏳ Pendente</span>`;
-    // Pré-selecionar apenas BLs pagos por padrão
-    const checked = b.paid ? 'checked' : '';
+    // Todos os BLs aqui já são pagos (filtro na abertura do modal)
+    const statusTxt = `<span style="font-size:11px;color:#15803d;font-weight:600;">✔ Pago</span>`;
     return `<label style="display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:white;transition:background 0.12s;"
         onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-      <input type="checkbox" class="rsel-cb" data-id="${b.id}" ${checked}
+      <input type="checkbox" class="rsel-cb" data-id="${b.id}" checked
         style="margin-top:3px;width:15px;height:15px;cursor:pointer;accent-color:var(--blue-btn);"
         onchange="_updateReceiptSelectCount()">
       <div style="flex:1;min-width:0;">
@@ -588,6 +579,13 @@ async function generateSelectedReceipts() {
   const selectedBLs = selectedIds.map(id => bls.find(b => b.id === id)).filter(Boolean);
   if (!selectedBLs.length) { toast('BLs não encontrados.', 'error'); return; }
 
+  // ── Validação backend: recibo apenas para faturas PAGAS ──────
+  const unpaid = selectedBLs.filter(b => !b.paid);
+  if (unpaid.length) {
+    toast(`Receipt can only be issued for paid invoices. ${unpaid.length} fatura(s) não paga(s) selecionada(s).`, 'error');
+    return;
+  }
+
   const prevBL=currentBL, prevType=currentType, prevRoe=ovRoe, prevTot=ovTotal;
   const receiptData = selectedBLs.map(b => {
     currentBL=b; currentType='receipt'; ovRoe=null; ovTotal=null;
@@ -619,6 +617,135 @@ async function generateSelectedReceipts() {
     w.document.close();
     closeModal('modal-receipt-select');
     closeModal('modal-consolidated');
+    toast(`${n} recibo${n > 1 ? 's' : ''} gerado${n > 1 ? 's' : ''} — Ctrl+P para PDF.`, 'success');
+  } else {
+    toast('Permita pop-ups para este site.', 'error');
+  }
+}
+
+// ============================================================
+// RECIBO CONSOLIDADO — modal independente (aba Faturas Pagas)
+// ============================================================
+
+// Abre o modal de Recibo Consolidado (acesso direto, sem depender da Cobrança Consolidada)
+function openConsolidatedReceiptModal() {
+  document.getElementById('cr-search').value = '';
+  _renderCrList('');
+  openModal('modal-consolidated-receipt');
+  document.getElementById('cr-search').focus();
+}
+
+// Renderiza/filtra a lista de faturas pagas no modal
+function filterConsolidatedReceiptList() {
+  const q = (document.getElementById('cr-search').value || '').trim().toLowerCase();
+  _renderCrList(q);
+}
+
+function _renderCrList(q) {
+  const listEl  = document.getElementById('cr-list');
+  const emptyEl = document.getElementById('cr-empty');
+
+  // Apenas faturas com status PAGO
+  const paidBLs = bls.filter(b => b.paid);
+  const filtered = q
+    ? paidBLs.filter(b =>
+        (b.client || '').toLowerCase().includes(q) ||
+        (b.bl     || '').toLowerCase().includes(q) ||
+        (b.cnpj   || '').includes(q))
+    : paidBLs;
+
+  if (!filtered.length) {
+    listEl.innerHTML = '';
+    emptyEl.style.display = '';
+    document.getElementById('cr-generate-btn').disabled = true;
+    document.getElementById('cr-count').textContent = '';
+    return;
+  }
+
+  emptyEl.style.display = 'none';
+  listEl.innerHTML = filtered.map(b => {
+    const docnum = b.docnum || genDocnum(b.bl);
+    const ctrs   = (b.containers || []).map(c => c.container).join(', ') || '—';
+    const total  = blTotalBRL(b);
+    const paidDate = b.paidAt ? ` · ${fmtDate(b.paidAt)}` : '';
+    return `<label style="display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:white;transition:background 0.12s;"
+        onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+      <input type="checkbox" class="cr-cb" data-id="${b.id}" checked
+        style="margin-top:3px;width:15px;height:15px;cursor:pointer;accent-color:var(--blue-btn);"
+        onchange="_updateCrCount()">
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-family:monospace;font-size:11px;color:var(--muted);">${docnum}</span>
+          <span style="font-weight:600;font-size:13px;color:var(--navy);">${b.bl}</span>
+          <span style="font-size:12px;color:var(--muted);">${b.client || '—'}</span>
+          <span style="font-size:11px;color:#15803d;font-weight:600;">✔ Pago${paidDate}</span>
+          <span style="margin-left:auto;font-weight:700;font-size:13px;color:var(--navy);">${fmtBRL(total)}</span>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px;">${ctrs}</div>
+      </div>
+    </label>`;
+  }).join('');
+
+  _updateCrCount();
+}
+
+// Atualiza contador e habilita/desabilita botão Gerar
+function _updateCrCount() {
+  const checkboxes = document.querySelectorAll('.cr-cb');
+  const selected   = Array.from(checkboxes).filter(cb => cb.checked).length;
+  const countEl    = document.getElementById('cr-count');
+  const genBtn     = document.getElementById('cr-generate-btn');
+  countEl.textContent = selected ? `${selected} selecionado${selected > 1 ? 's' : ''}` : '';
+  genBtn.disabled = selected === 0;
+}
+
+// Seleciona / desmarca todos no modal Recibo Consolidado
+function _toggleAllCrCheckboxes(selectAll) {
+  document.querySelectorAll('.cr-cb').forEach(cb => { cb.checked = selectAll; });
+  _updateCrCount();
+}
+
+// Gera recibos em massa a partir do modal Recibo Consolidado
+async function generateConsolidatedReceipts() {
+  const selectedIds = Array.from(document.querySelectorAll('.cr-cb:checked')).map(cb => cb.dataset.id);
+  if (!selectedIds.length) { toast('Selecione ao menos um BL.', 'error'); return; }
+
+  const selectedBLs = selectedIds.map(id => bls.find(b => b.id === id)).filter(Boolean);
+  if (!selectedBLs.length) { toast('BLs não encontrados.', 'error'); return; }
+
+  // ── Validação backend: recibo apenas para faturas PAGAS ──────
+  const unpaid = selectedBLs.filter(b => !b.paid);
+  if (unpaid.length) {
+    toast(`Receipt can only be issued for paid invoices. ${unpaid.length} fatura(s) não paga(s) detectada(s).`, 'error');
+    return;
+  }
+
+  const prevBL=currentBL, prevType=currentType, prevRoe=ovRoe, prevTot=ovTotal;
+  const receiptData = selectedBLs.map(b => {
+    currentBL=b; currentType='receipt'; ovRoe=null; ovTotal=null;
+    renderDoc(b, 'receipt');
+    const docnum  = b.docnum || genDocnum(b.bl);
+    const recHTML = document.getElementById('doc-content').innerHTML;
+    return { docnum, recHTML };
+  });
+  currentBL=prevBL; currentType=prevType; ovRoe=prevRoe; ovTotal=prevTot;
+  if (prevBL) renderDoc(prevBL, prevType || 'invoice');
+  else document.getElementById('doc-content').innerHTML = '';
+
+  const css = await _fetchPrintCSS();
+  const n   = receiptData.length;
+  const ttl = `Recibos Demurrage — ${n} recibo${n > 1 ? 's' : ''}`;
+  const body = receiptData.map(({recHTML}, i) =>
+    `<div class="pp${i === receiptData.length - 1 ? ' lp' : ''}">${recHTML}</div>`
+  ).join('');
+
+  const docHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${ttl}</title><style>${css}html,body{margin:0;padding:0;background:#f1f5f9}.top-bar{position:sticky;top:0;z-index:200;display:flex;align-items:center;gap:12px;padding:10px 20px;background:#0f2a4a;color:#fff;font-family:Arial,sans-serif;font-size:13px}.top-bar strong{flex:1}.top-bar button{padding:7px 20px;background:#f59e0b;color:#111;border:none;border-radius:6px;cursor:pointer;font-weight:700}.pp{background:#fff;margin:20px auto;max-width:900px;page-break-after:always;break-after:page}.lp{page-break-after:avoid;break-after:avoid}@page{margin:0;}@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}html,body{background:#fff;margin:0;padding:0}.top-bar{display:none!important}.pp{margin:0;padding:0;max-width:100%;page-break-after:always;break-after:page}.lp{page-break-after:avoid;break-after:avoid}}</style></head><body><div class="top-bar"><strong>🧾 ${ttl}</strong><span style="opacity:.75;font-size:12px">Ctrl+P para PDF</span><button onclick="window.print()">🖨️ Imprimir / PDF</button></div>${body}</body></html>`;
+
+  const w = window.open('', '_blank');
+  if (w) {
+    w.document.write(docHtml);
+    w.document.close();
+    closeModal('modal-consolidated-receipt');
     toast(`${n} recibo${n > 1 ? 's' : ''} gerado${n > 1 ? 's' : ''} — Ctrl+P para PDF.`, 'success');
   } else {
     toast('Permita pop-ups para este site.', 'error');

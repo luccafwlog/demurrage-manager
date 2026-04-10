@@ -550,7 +550,11 @@ function renderList() {
         <div class="bl-action-divider"></div>
         <div class="bl-action-group bl-action-docs">
           <button class="act-btn invoice" onclick="viewDoc('${b.id}','invoice')" title="Visualizar Fatura">📄 Fatura</button>
-          <button class="act-btn receipt" onclick="viewDoc('${b.id}','receipt')" title="Visualizar Recibo">🧾 Recibo</button>
+          <button class="act-btn receipt${isPaid ? '' : ' receipt-locked'}"
+            onclick="viewDoc('${b.id}','receipt')"
+            title="${isPaid ? 'Visualizar Recibo' : 'Recibo disponível apenas para faturas pagas'}"
+            ${isPaid ? '' : 'style="opacity:0.38;cursor:not-allowed;"'}
+          >🧾 Recibo</button>
         </div>
         <div class="bl-action-divider"></div>
         <div class="bl-action-group bl-action-meta">
@@ -1458,6 +1462,11 @@ function doImport() {
 // ============================================================
 function viewDoc(id, type) {
   const b=bls.find(x=>x.id===id); if(!b) return;
+  // ── Regra de negócio: recibo apenas para faturas PAGAS ──────
+  if (type === 'receipt' && !b.paid) {
+    toast('Recibo disponível apenas para faturas pagas.', 'error');
+    return;
+  }
   currentBL=b; currentType=type; ovTotal=null; ovRoe=null;
   // Show/hide email button based on BL email or client registry
   const emailBtn = document.getElementById('email-btn');
