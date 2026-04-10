@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v3.16 | **Cache:** `?v=137` | **Atualizado:** 2026-04-10
+> **Versão:** v3.17 | **Cache:** `?v=138` | **Atualizado:** 2026-04-10
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -438,6 +438,23 @@ git push origin main
 ---
 
 ## 10. Changelog Recente
+
+### v3.17 — 2026-04-10 — fix: firstBilledAt imutável + colunas de faturamento no relatório
+
+**Problema corrigido**
+- `billedAt` era sobrescrito toda vez que o usuário marcava uma fatura como "Faturado" novamente após reverter, perdendo a data original.
+
+**Solução aplicada — `js/billing.js`**
+- Novo campo `firstBilledAt`: definido apenas na **primeira** vez que o BL é marcado como faturado; nunca sobrescrito em reativações.
+- `billedAt` agora representa a data do **último** faturamento (sempre atualizado).
+- Ao reverter para Pendente, `firstBilledAt` é preservado; `billedAt` é limpo.
+- Card chip na aba Faturados exibe "📄 1ª emissão: DD/MM/AAAA" e, se houver refaturamento, também "· Última: DD/MM/AAAA".
+- Filtro de período na aba Faturados filtra por `firstBilledAt` (data canônica da 1ª emissão).
+- Aging badge continua usando `billedAt` (dias desde o último faturamento — mais relevante para cobrança).
+- Relatório Excel: duas novas colunas **1º FATURAMENTO** e **ÚLT. FATURAMENTO**.
+- Cache bumped: `?v=138`
+
+---
 
 ### v3.16 — 2026-04-10 — feat: datas e filtro por período em todas as abas de Faturamento
 

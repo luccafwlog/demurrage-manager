@@ -520,7 +520,7 @@ function renderList() {
     const dfrom = document.getElementById('date-from-' + activeBillingSubTab)?.value || '';
     const dto   = document.getElementById('date-to-'   + activeBillingSubTab)?.value || '';
     const dateField = activeBillingSubTab === 'pendentes' ? computeReadyAt(b)
-                    : activeBillingSubTab === 'faturados' ? (b.billedAt || '')
+                    : activeBillingSubTab === 'faturados' ? (b.firstBilledAt || b.billedAt || '')
                     : (b.paidAt || '');
     const matchDate = (!dfrom && !dto) || (
       (!dfrom || (dateField && dateField >= dfrom)) &&
@@ -574,8 +574,8 @@ function renderList() {
     const _readyAt = computeReadyAt(b);
     const dateChip = activeBillingSubTab === 'pendentes' && _readyAt
       ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#92400e;background:#fef3c7;border:1px solid #fde68a;padding:2px 8px;border-radius:20px;margin-top:4px;">📅 Pronto p/ faturar: ${fmtDate(_readyAt)}</span>`
-      : activeBillingSubTab === 'faturados' && b.billedAt
-      ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#1e40af;background:#dbeafe;border:1px solid #bfdbfe;padding:2px 8px;border-radius:20px;margin-top:4px;">📄 Faturado em: ${fmtDate(b.billedAt)}</span>`
+      : activeBillingSubTab === 'faturados' && (b.firstBilledAt || b.billedAt)
+      ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#1e40af;background:#dbeafe;border:1px solid #bfdbfe;padding:2px 8px;border-radius:20px;margin-top:4px;">📄 1ª emissão: ${fmtDate(b.firstBilledAt || b.billedAt)}${b.billedAt && b.billedAt !== (b.firstBilledAt || b.billedAt) ? ` · Última: ${fmtDate(b.billedAt)}` : ''}</span>`
       : activeBillingSubTab === 'pagos' && b.paidAt
       ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#166534;background:#dcfce7;border:1px solid #bbf7d0;padding:2px 8px;border-radius:20px;margin-top:4px;">✅ Pago em: ${fmtDate(b.paidAt)}</span>`
       : '';
@@ -933,10 +933,12 @@ function exportReport() {
         'DESCONTO':       b.discount && b.discount.value > 0 ? `${b.discount.value}${b.discount.mode === 'percent' ? '%' : 'R$'}` : '—',
         'VALOR DESCONTO': parseFloat(discountAmt.toFixed(2)),
         'TOTAL FINAL':    parseFloat(totalBRLWithDiscount.toFixed(2)),
-        'VENCIMENTO':     b.venc ? new Date(b.venc+'T12:00:00').toLocaleDateString('pt-BR') : '—',
-        'STATUS':         b.paid ? 'PAGO' : b.billed ? 'FATURADO' : 'PENDENTE',
-        'DISPUTA':        b.dispute && b.dispute.open ? b.dispute.status.toUpperCase() : '—',
-        'DATA PAGAMENTO': b.paid && b.paidAt ? new Date(b.paidAt+'T12:00:00').toLocaleDateString('pt-BR') : '—',
+        'VENCIMENTO':       b.venc ? new Date(b.venc+'T12:00:00').toLocaleDateString('pt-BR') : '—',
+        'STATUS':           b.paid ? 'PAGO' : b.billed ? 'FATURADO' : 'PENDENTE',
+        'DISPUTA':          b.dispute && b.dispute.open ? b.dispute.status.toUpperCase() : '—',
+        '1º FATURAMENTO':   (b.firstBilledAt || b.billedAt) ? new Date((b.firstBilledAt || b.billedAt)+'T12:00:00').toLocaleDateString('pt-BR') : '—',
+        'ÚLT. FATURAMENTO': b.billedAt ? new Date(b.billedAt+'T12:00:00').toLocaleDateString('pt-BR') : '—',
+        'DATA PAGAMENTO':   b.paid && b.paidAt ? new Date(b.paidAt+'T12:00:00').toLocaleDateString('pt-BR') : '—',
         'VALOR PAGO (BRL)': b.paid ? parseFloat(totalBRLWithDiscount.toFixed(2)) : '—',
       });
     });
@@ -958,7 +960,7 @@ function exportReport() {
     'DIAS COBRÁVEIS':10,'DIAS 1º PER.':9,'USD/DIA P1':9,
     'DIAS 2º PER.':9,'USD/DIA P2':9,'TOTAL USD':11,'ROE':9,
     'TOTAL BRL':13,'DESCONTO':12,'VALOR DESCONTO':14,'TOTAL FINAL':14,'VENCIMENTO':12,
-    'STATUS':12,'DISPUTA':12,'DATA PAGAMENTO':16,'VALOR PAGO (BRL)':16,
+    'STATUS':12,'DISPUTA':12,'1º FATURAMENTO':16,'ÚLT. FATURAMENTO':16,'DATA PAGAMENTO':16,'VALOR PAGO (BRL)':16,
   };
   ws['!cols'] = headers.map(h => ({ wch: colWidths[h] || 12 }));
 
@@ -1427,7 +1429,8 @@ function toggleBilled(id) {
   if (b.billed) {
     if (!confirm('Desmarcar esta fatura como "Faturado"?\nAs informações serão descongeladas.')) return;
     b.billed = false;
-    b.billedAt = null;
+    b.billedAt = null;   // data do último faturamento (limpa ao reverter)
+    // firstBilledAt é preservado para manter histórico da 1ª emissão
     b.frozenRoe = null;
     b.frozenTotal = null;
     // Recalcula vencimento: próximo dia útil a partir de hoje (regra de negócio)
@@ -1438,11 +1441,13 @@ function toggleBilled(id) {
   } else {
     const roe = effectiveROE(b);
     const total = blTotal(b, null);
+    const today = new Date().toISOString().slice(0,10);
     b.billed = true;
-    b.billedAt = new Date().toISOString().slice(0,10);
+    b.billedAt = today;                          // data do ÚLTIMO faturamento (sempre atualiza)
+    if (!b.firstBilledAt) b.firstBilledAt = today; // data do 1º faturamento (só define uma vez)
     b.frozenRoe = roe;
     b.frozenTotal = total;
-    logAuditAction('marcacao_fatura', {blId: id, bl: b.bl, total: total});
+    logAuditAction('marcacao_fatura', {blId: id, bl: b.bl, total: total, firstBilledAt: b.firstBilledAt});
     toast('Fatura marcada como Faturada! Valores congelados. 📄', 'success');
   }
   // FIX-QUOTA #G: apenas 1 write (documento modificado)
