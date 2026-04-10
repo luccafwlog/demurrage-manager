@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v3.15 | **Cache:** `?v=136` | **Atualizado:** 2026-04-10
+> **Versão:** v3.16 | **Cache:** `?v=137` | **Atualizado:** 2026-04-10
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -438,6 +438,25 @@ git push origin main
 ---
 
 ## 10. Changelog Recente
+
+### v3.16 — 2026-04-10 — feat: datas e filtro por período em todas as abas de Faturamento
+
+**Funcionalidade adicionada**
+- Cada sub-aba do módulo de Faturamento exibe a data relevante em cada card:
+  - **Pendentes**: data em que todos os containers foram devolvidos (`readyAt` = max `emptyReturn`) — chip amarelo "📅 Pronto p/ faturar"
+  - **Faturados**: data em que o usuário marcou como faturado (`billedAt`) — chip azul "📄 Faturado em"
+  - **Pagos**: data do pagamento (`paidAt`) — chip verde "✅ Pago em"
+- Filtro de período (De → Até) adicionado na barra de filtros de cada sub-aba, filtrando pelo campo de data correspondente
+- Botão "✕ Limpar datas" aparece automaticamente quando um filtro de data está ativo
+- `computeReadyAt(b)` — nova função helper em `billing.js` que calcula a data de prontidão de um BL a partir dos containers
+- `clearDateFilter(tab)` — função para limpar o filtro de data de uma aba específica
+- `readyAt` é calculado automaticamente ao salvar ou importar BLs
+
+**Arquivos modificados**
+- `js/billing.js` — `computeReadyAt`, `clearDateFilter`, `renderList` (filtro de data + chip no card), `saveBL` e `doImport` (cálculo automático de `readyAt`)
+- `app.html` — inputs de data adicionados aos três `subfilters-*` divs; cache bumped `?v=137`
+
+---
 
 ### v3.15 — 2026-04-10 — fix: recálculo automático de vencimento ao reverter FATURADO→PENDENTE
 

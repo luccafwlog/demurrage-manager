@@ -144,7 +144,7 @@ var MiniZip = (function() {
 
 <!-- ── SUPABASE SDK + DB MODULE ────────────────────────────────── -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script type="module" src="js/db.js?v=136"></script>
+<script type="module" src="js/db.js?v=137"></script>
 
 
 <div id="app">
@@ -386,22 +386,37 @@ var MiniZip = (function() {
       <div class="results-count" id="results-count" style="margin:0"></div>
       <div style="margin-left:auto;display:flex;gap:6px;" id="billing-subfilters">
         <!-- pendentes sub-filters (hidden by default) -->
-        <div id="subfilters-pendentes" style="display:none;gap:6px;">
+        <div id="subfilters-pendentes" style="display:none;gap:6px;align-items:center;flex-wrap:wrap;">
           <button class="btn btn-sm btn-outline" id="filter-all-pendentes" onclick="setFilter('all')" style="font-size:12px">Todos</button>
           <button class="btn btn-sm btn-outline" id="filter-discount-btn-pendentes" onclick="toggleDiscountFilter()" style="font-size:12px;margin-left:8px;border-left:1px solid var(--border);padding-left:10px;">💚 Com Desconto</button>
           <button class="btn btn-sm btn-outline" id="filter-dispute-btn-pendentes" onclick="toggleDisputeFilter()" style="font-size:12px;">⚠️ Em Disputa</button>
+          <span style="font-size:11px;color:var(--muted);margin-left:8px;padding-left:10px;border-left:1px solid var(--border);">📅 Pronto desde:</span>
+          <input type="date" id="date-from-pendentes" onchange="renderList()" title="Data inicial" style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 8px;background:white;color:var(--text);cursor:pointer;">
+          <span style="font-size:11px;color:var(--muted);">até</span>
+          <input type="date" id="date-to-pendentes" onchange="renderList()" title="Data final" style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 8px;background:white;color:var(--text);cursor:pointer;">
+          <button class="btn btn-sm btn-outline" id="clear-date-btn-pendentes" onclick="clearDateFilter('pendentes')" style="display:none;font-size:11px;color:#dc2626;border-color:#fca5a5;">✕ Limpar datas</button>
         </div>
         <!-- faturados sub-filters -->
-        <div id="subfilters-faturados" style="display:flex;gap:6px;">
+        <div id="subfilters-faturados" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
           <button class="btn btn-sm btn-outline" id="filter-all"    onclick="setFilter('all')"    style="font-size:12px">Todos</button>
           <button class="btn btn-sm btn-outline" id="filter-discount-btn" onclick="toggleDiscountFilter()" style="font-size:12px;margin-left:8px;border-left:1px solid var(--border);padding-left:10px;">💚 Com Desconto</button>
           <button class="btn btn-sm btn-outline" id="filter-dispute-btn" onclick="toggleDisputeFilter()" style="font-size:12px;">⚠️ Em Disputa</button>
+          <span style="font-size:11px;color:var(--muted);margin-left:8px;padding-left:10px;border-left:1px solid var(--border);">📄 Faturado em:</span>
+          <input type="date" id="date-from-faturados" onchange="renderList()" title="Data inicial" style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 8px;background:white;color:var(--text);cursor:pointer;">
+          <span style="font-size:11px;color:var(--muted);">até</span>
+          <input type="date" id="date-to-faturados" onchange="renderList()" title="Data final" style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 8px;background:white;color:var(--text);cursor:pointer;">
+          <button class="btn btn-sm btn-outline" id="clear-date-btn-faturados" onclick="clearDateFilter('faturados')" style="display:none;font-size:11px;color:#dc2626;border-color:#fca5a5;">✕ Limpar datas</button>
         </div>
         <!-- pagos sub-filters (hidden by default) -->
-        <div id="subfilters-pagos" style="display:none;gap:6px;">
+        <div id="subfilters-pagos" style="display:none;gap:6px;align-items:center;flex-wrap:wrap;">
           <button class="btn btn-sm btn-outline" id="filter-paid" onclick="setFilter('paid')" style="font-size:12px">✔ Todos os Pagos</button>
           <button class="btn btn-sm btn-outline" id="filter-discount-btn-paid" onclick="toggleDiscountFilter()" style="font-size:12px;margin-left:8px;border-left:1px solid var(--border);padding-left:10px;">💚 Com Desconto</button>
           <button class="btn btn-sm btn-outline" id="filter-dispute-btn-paid" onclick="toggleDisputeFilter()" style="font-size:12px;">⚠️ Em Disputa</button>
+          <span style="font-size:11px;color:var(--muted);margin-left:8px;padding-left:10px;border-left:1px solid var(--border);">✅ Pago em:</span>
+          <input type="date" id="date-from-pagos" onchange="renderList()" title="Data inicial" style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 8px;background:white;color:var(--text);cursor:pointer;">
+          <span style="font-size:11px;color:var(--muted);">até</span>
+          <input type="date" id="date-to-pagos" onchange="renderList()" title="Data final" style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 8px;background:white;color:var(--text);cursor:pointer;">
+          <button class="btn btn-sm btn-outline" id="clear-date-btn-pagos" onclick="clearDateFilter('pagos')" style="display:none;font-size:11px;color:#dc2626;border-color:#fca5a5;">✕ Limpar datas</button>
         </div>
       </div>
     </div>
@@ -1175,26 +1190,26 @@ function downloadTemplate() {
      ════════════════════════════════════════════════════════════════ -->
 
 <!-- Utilitários puros — sem dependências externas -->
-<script src="js/utils.js?v=136"></script>
-<script src="js/rates.js?v=136"></script>
+<script src="js/utils.js?v=137"></script>
+<script src="js/rates.js?v=137"></script>
 
 <!-- Módulo de Faturamento (BLs, PTAX, Cálculo D&D) -->
-<script src="js/billing.js?v=136"></script>
+<script src="js/billing.js?v=137"></script>
 
 <!-- Módulo de Rastreamento de Containers -->
-<script src="js/tracking.js?v=136"></script>
+<script src="js/tracking.js?v=137"></script>
 
 <!-- Módulo de Clientes (CNPJ, e-mails) -->
-<script src="js/clients.js?v=136"></script>
+<script src="js/clients.js?v=137"></script>
 
 <!-- Módulo Admin: Usuários e Log de Auditoria -->
-<script src="js/users.js?v=136"></script>
+<script src="js/users.js?v=137"></script>
 
 <!-- Módulo de Cobrança Consolidada por CNPJ -->
-<script src="js/consolidated.js?v=136"></script>
+<script src="js/consolidated.js?v=137"></script>
 
 <!-- Inicialização: Dashboard, Configurações, window._dmOnReady -->
-<script src="js/init.js?v=136"></script>
+<script src="js/init.js?v=137"></script>
 
 
 <!-- ══════════════════════════════════════════════════════════════

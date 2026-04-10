@@ -279,6 +279,26 @@ function showGenericModal(title, html, width) {
   m.style.display = 'flex';
 }
 function fmtDate(s) { return s ? new Date(s+'T12:00:00').toLocaleDateString('pt-BR') : ''; }
+
+// Retorna a data em que todos os containers do BL foram devolvidos
+// (máximo dos emptyReturn), ou null se algum container ainda não foi devolvido.
+function computeReadyAt(b) {
+  const ctrs = (b.containers || []).filter(c => c.discharge);
+  if (!ctrs.length) return null;
+  if (!ctrs.every(c => !!c.emptyReturn)) return null;
+  return ctrs.reduce((max, c) => (c.emptyReturn > max ? c.emptyReturn : max), ctrs[0].emptyReturn);
+}
+
+// Limpa os filtros de data de uma sub-aba específica
+function clearDateFilter(tab) {
+  const f = document.getElementById('date-from-' + tab);
+  const t = document.getElementById('date-to-'   + tab);
+  if (f) f.value = '';
+  if (t) t.value = '';
+  const btn = document.getElementById('clear-date-btn-' + tab);
+  if (btn) btn.style.display = 'none';
+  renderList();
+}
 function fmtBRL(v) { return 'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function parseDs(v) {
   if (!v) return '';
@@ -496,8 +516,23 @@ function renderList() {
     const matchDiscount = !showOnlyWithDiscount || (b.discount && b.discount.value > 0);
     // Apply dispute filter if active
     const matchDispute = !showOnlyWithDispute || (b.dispute && b.dispute.open);
-    return matchQ && matchF && matchDiscount && matchDispute;
+    // Apply date range filter (field depends on active sub-tab)
+    const dfrom = document.getElementById('date-from-' + activeBillingSubTab)?.value || '';
+    const dto   = document.getElementById('date-to-'   + activeBillingSubTab)?.value || '';
+    const dateField = activeBillingSubTab === 'pendentes' ? computeReadyAt(b)
+                    : activeBillingSubTab === 'faturados' ? (b.billedAt || '')
+                    : (b.paidAt || '');
+    const matchDate = (!dfrom && !dto) || (
+      (!dfrom || (dateField && dateField >= dfrom)) &&
+      (!dto   || (dateField && dateField <= dto))
+    );
+    return matchQ && matchF && matchDiscount && matchDispute && matchDate;
   });
+  // Atualiza visibilidade do botão "Limpar datas"
+  const _dfrom = document.getElementById('date-from-' + activeBillingSubTab)?.value || '';
+  const _dto   = document.getElementById('date-to-'   + activeBillingSubTab)?.value || '';
+  const _clearBtn = document.getElementById('clear-date-btn-' + activeBillingSubTab);
+  if (_clearBtn) _clearBtn.style.display = (_dfrom || _dto) ? '' : 'none';
   updateBillingBadges();
   updateBillingKPIs(filtered);
   document.getElementById('results-count').textContent = `${filtered.length} resultado(s) encontrado(s)`;
@@ -535,12 +570,21 @@ function renderList() {
     const paidClass   = isPaid   ? 'paid'        : 'unpaid';
     const billedLabel = isBilled ? '📄 Faturado' : '○ Faturado';
     const billedClass = isBilled ? 'billed'      : 'unbilled';
+    // Date chip: exibe a data relevante para a sub-aba ativa
+    const _readyAt = computeReadyAt(b);
+    const dateChip = activeBillingSubTab === 'pendentes' && _readyAt
+      ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#92400e;background:#fef3c7;border:1px solid #fde68a;padding:2px 8px;border-radius:20px;margin-top:4px;">📅 Pronto p/ faturar: ${fmtDate(_readyAt)}</span>`
+      : activeBillingSubTab === 'faturados' && b.billedAt
+      ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#1e40af;background:#dbeafe;border:1px solid #bfdbfe;padding:2px 8px;border-radius:20px;margin-top:4px;">📄 Faturado em: ${fmtDate(b.billedAt)}</span>`
+      : activeBillingSubTab === 'pagos' && b.paidAt
+      ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#166534;background:#dcfce7;border:1px solid #bbf7d0;padding:2px 8px;border-radius:20px;margin-top:4px;">✅ Pago em: ${fmtDate(b.paidAt)}</span>`
+      : '';
     return `<div class="bl-card${isPaid?' is-paid':''}${isBilled?' is-paid':''}${isDisputed?' is-disputed':''}">
       <span class="bl-badge">BL</span>
       <div class="bl-info">
         <div class="bl-number">${b.bl}${paidBadge}${discountBadge}${disputeBadge}${billedBadge}${agingBadge}</div>
         <div class="bl-client">${b.client||'—'}</div>
-        <div class="bl-meta"><span>${billableCtrs.length} contêiner(es) c/ demurrage${ctrs.length > billableCtrs.length ? ` (${ctrs.length} total)` : ""}${totStr}</span>${tags}${more}</div>
+        <div class="bl-meta"><span>${billableCtrs.length} contêiner(es) c/ demurrage${ctrs.length > billableCtrs.length ? ` (${ctrs.length} total)` : ""}${totStr}</span>${tags}${more}${dateChip}</div>
       </div>
       <div class="bl-actions">
         <div class="bl-action-group bl-action-status">
@@ -801,6 +845,8 @@ function saveBL() {
     dispute: dispute,
     createdAt: editingId?(bls.find(x=>x.id===editingId)?.createdAt||Date.now()):Date.now(),
   };
+  // Computa readyAt (data em que todos os containers foram devolvidos)
+  obj.readyAt = computeReadyAt(obj);
   if (editingId) {
     const i=bls.findIndex(x=>x.id===editingId);
     bls[i]=obj;
@@ -1453,6 +1499,7 @@ function doImport() {
   });
   let added=0, updated=0;
   Object.values(grouped).forEach(imp => {
+    imp.readyAt = computeReadyAt(imp);
     const i=bls.findIndex(x=>x.bl===imp.bl);
     if(i>=0){bls[i]={...bls[i],...imp};updated++;}else{bls.unshift(imp);added++;}
   });
