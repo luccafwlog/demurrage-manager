@@ -1,6 +1,6 @@
 # Demurrage Manager — Snapshot de Engenharia
 
-> **Versão:** v3.17 | **Cache:** `?v=138` | **Atualizado:** 2026-04-10
+> **Versão:** v3.18 | **Cache:** `?v=139` | **Atualizado:** 2026-04-11
 > **Repositório:** https://github.com/luccafwlog/demurrage-manager (`main`)
 > **Produção:** https://demurragemanager.web.app
 > **Supabase:** `vcdivphwlspsymgibfri` · us-east-1 · PostgreSQL 17.6
@@ -438,6 +438,20 @@ git push origin main
 ---
 
 ## 10. Changelog Recente
+
+### v3.18 — 2026-04-11 — fix: firstBilledAt backfill em BLs existentes + proteção na reversão
+
+**Causa raiz do bug anterior**
+- BLs faturados antes da v3.17 existir tinham `billedAt` mas nenhum `firstBilledAt`.
+- Ao reverter, `billedAt` era zerado sem antes salvar seu valor em `firstBilledAt`.
+- No re-faturamento, `if (!b.firstBilledAt)` era `true` → recebia a data nova, sobrescrevendo o histórico.
+
+**Correções — `js/billing.js`**
+- `load()`: backfill automático ao carregar — se `billedAt` existe mas `firstBilledAt` não, define `firstBilledAt = billedAt`. Cobre todos os BLs existentes sem necessidade de re-faturamento.
+- `toggleBilled()` (reversão): antes de zerar `billedAt`, verifica `if (!b.firstBilledAt && b.billedAt)` e salva o valor como `firstBilledAt`. Garante que nenhuma reversão futura perca a data original.
+- `?v=139` | versão v3.18
+
+---
 
 ### v3.17 — 2026-04-10 — fix: firstBilledAt imutável + colunas de faturamento no relatório
 

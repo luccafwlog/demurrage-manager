@@ -139,7 +139,15 @@ function effectiveROE(b) {
 // ── STORAGE: BLs (Firestore via window._dmStore) ──────────────────────────
 // FIX #2: retorna cópia profunda para que o diff em _dmFireSave compare
 // oldStore (referência ao store) vs newData (cópia local modificada) corretamente.
-function load()  { return JSON.parse(JSON.stringify((window._dmStore && window._dmStore.bls) || [])); }
+function load() {
+  const raw = JSON.parse(JSON.stringify((window._dmStore && window._dmStore.bls) || []));
+  // Backfill: BLs faturados antes de firstBilledAt existir só têm billedAt.
+  // Garante que firstBilledAt sempre reflita a data de emissão conhecida mais antiga.
+  raw.forEach(b => {
+    if (!b.firstBilledAt && b.billedAt) b.firstBilledAt = b.billedAt;
+  });
+  return raw;
+}
 function save(b) {
   // NÃO atualiza _dmStore aqui — _dmFireSave faz o diff correto e atualiza o store
   if (window._dmFireSave) window._dmFireSave('bls', b);
@@ -1428,9 +1436,11 @@ function toggleBilled(id) {
   if (!b) return;
   if (b.billed) {
     if (!confirm('Desmarcar esta fatura como "Faturado"?\nAs informações serão descongeladas.')) return;
+    // Backfill: garante que firstBilledAt existe ANTES de zerar billedAt.
+    // Cobre BLs que foram faturados antes desta funcionalidade existir.
+    if (!b.firstBilledAt && b.billedAt) b.firstBilledAt = b.billedAt;
     b.billed = false;
-    b.billedAt = null;   // data do último faturamento (limpa ao reverter)
-    // firstBilledAt é preservado para manter histórico da 1ª emissão
+    b.billedAt = null;   // limpa último faturamento; firstBilledAt permanece intacto
     b.frozenRoe = null;
     b.frozenTotal = null;
     // Recalcula vencimento: próximo dia útil a partir de hoje (regra de negócio)
