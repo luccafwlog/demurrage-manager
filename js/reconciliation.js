@@ -22,15 +22,29 @@ function _ofxDate(raw) {
 function parseOFX(text) {
   const transactions = [];
   const blockRe = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;
+  let idx = 0;
   let m;
   while ((m = blockRe.exec(text)) !== null) {
-    const block = m[1];
-    const type   = _ofxTag(block, 'TRNTYPE').toUpperCase();
+    const block  = m[1];
     const date   = _ofxDate(_ofxTag(block, 'DTPOSTED'));
     const amount = parseFloat(_ofxTag(block, 'TRNAMT').replace(',', '.')) || 0;
-    const fitid  = _ofxTag(block, 'FITID');
     const memo   = _ofxTag(block, 'MEMO') || _ofxTag(block, 'NAME');
-    transactions.push({ type, date, amount, fitid, memo });
+
+    // TRNTYPE: OFX usa "CREDIT"/"DEBIT"; OFC usa "1" para ambos (sinal do valor define)
+    const rawType = _ofxTag(block, 'TRNTYPE').toUpperCase();
+    let type;
+    if (rawType === 'CREDIT' || rawType === 'DEBIT') {
+      type = rawType;
+    } else {
+      type = amount >= 0 ? 'CREDIT' : 'DEBIT';
+    }
+
+    // FITID: OFC exporta vazio — gera ID sintético para anti-duplicidade
+    const rawFitid = _ofxTag(block, 'FITID');
+    const fitid = rawFitid || `${date}-${Math.abs(amount).toFixed(2)}-${idx}`;
+
+    transactions.push({ type, date, amount: Math.abs(amount), fitid, memo });
+    idx++;
   }
   return transactions;
 }
