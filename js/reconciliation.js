@@ -146,7 +146,8 @@ function processExtratoFile(file) {
 
       dropZone.innerHTML = `<div class="drop-icon">✅</div><p><strong>${file.name}</strong></p><p>${transactions.length} transação(ões) lida(s)</p>`;
 
-      const matches = matchTransactions(transactions, window.bls || []);
+      // `bls` é let no billing.js — acessível no escopo global mas não em window.bls
+      const matches = matchTransactions(transactions, typeof bls !== 'undefined' ? bls : []);
       _pendingMatches = matches;
       renderReconciliationPreview(matches, transactions.length);
     } catch (err) {
@@ -164,12 +165,18 @@ function renderReconciliationPreview(matches, totalTransactions) {
   const confirmBtn = document.getElementById('btn-confirmar-conciliacao');
 
   if (matches.length === 0) {
+    // Diagnóstico: quantas faturas elegíveis existem?
+    const blsRef = typeof bls !== 'undefined' ? bls : [];
+    const elegíveis = blsRef.filter(b => b.billed && !b.paid && b.docnum);
+    const dica = elegíveis.length === 0
+      ? 'Nenhuma fatura faturada e não paga encontrada no sistema. Certifique-se de ter emitido a fatura (botão "Emitir Fatura") antes de importar o extrato.'
+      : `${elegíveis.length} fatura(s) elegível(is) no sistema. Verifique se o txid no campo MEMO do extrato corresponde ao número da fatura (ex: DEM2026EKG0762 para a fatura DEM-2026-EKG0762).`;
     preview.style.display = 'block';
     preview.innerHTML = `
       <div style="padding:16px;background:#fef9c3;border:1px solid #fde047;border-radius:8px;font-size:13px;color:#713f12;">
         <strong>Nenhuma correspondência encontrada.</strong><br>
-        De ${totalTransactions} transação(ões) lida(s), nenhuma PIX pôde ser associada a uma fatura em aberto.<br>
-        Verifique se as faturas possuem QR Code com txid (gerado após atualização do sistema).
+        De ${totalTransactions} transação(ões) lida(s), nenhuma PIX pôde ser associada a uma fatura em aberto.<br><br>
+        ${dica}
       </div>`;
     confirmBtn.disabled = true;
     return;
