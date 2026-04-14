@@ -1591,17 +1591,18 @@ function pixTLV(id, value) {
   return id + String(value.length).padStart(2, '0') + value;
 }
 
-function buildPixPayload(chavePix, nomeBeneficiario, cidade, valor) {
+function buildPixPayload(chavePix, nomeBeneficiario, cidade, valor, txid) {
   // Remove non-alphanumeric from name/city (PIX spec)
   const nome = nomeBeneficiario.substring(0, 25).replace(/[^A-Za-z0-9 ]/g, '').trim();
   const cid  = cidade.substring(0, 15).replace(/[^A-Za-z0-9 ]/g, '').trim();
   const chave = chavePix.replace(/[^0-9]/g, ''); // only digits for CNPJ
+  const tid = (txid || '').replace(/[^A-Za-z0-9]/g, '').substring(0, 35) || '***';
 
-  // GUI = br.gov.bcb.pix, KEY = chave, TXID = ***
+  // GUI = br.gov.bcb.pix, KEY = chave, TXID = tid
   const merchantAccountInfo =
     pixTLV('00', 'br.gov.bcb.pix') +
     pixTLV('01', chave) +
-    pixTLV('05', '***');  // txid
+    pixTLV('05', tid);  // txid
 
   const valorStr = valor > 0 ? valor.toFixed(2) : '';
 
@@ -1614,7 +1615,7 @@ function buildPixPayload(chavePix, nomeBeneficiario, cidade, valor) {
     pixTLV('58', 'BR') +                           // country
     pixTLV('59', nome) +                            // merchant name
     pixTLV('60', cid) +                             // merchant city
-    pixTLV('62', pixTLV('05', '***')) +            // additional data
+    pixTLV('62', pixTLV('05', tid)) +              // additional data
     '6304';                                         // CRC placeholder
 
   return payload + pixCRC16(payload);
@@ -1816,7 +1817,7 @@ function renderDoc(b, type) {
     setTimeout(() => {
       const qrEl = document.getElementById('pix-qr-' + docnum);
       if (qrEl && typeof QRCode !== 'undefined') {
-        const pixPayload = buildPixPayload('06352972000121', 'TRANSHIPPING AGENC MARITIMO', 'VIT', parseFloat(totalBRL.toFixed(2)));
+        const pixPayload = buildPixPayload('06352972000121', 'TRANSHIPPING AGENC MARITIMO', 'VIT', parseFloat(totalBRL.toFixed(2)), docnum);
         qrEl.innerHTML = '';
         new QRCode(qrEl, {
           text: pixPayload,

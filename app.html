@@ -375,6 +375,7 @@ var MiniZip = (function() {
       <button class="btn btn-outline" onclick="exportReport()" title="Exportar relatório Excel">📊 Relatório</button>
       <button id="btn-cobranca-consolidada" class="btn btn-outline" onclick="openConsolidatedEmail()" title="Enviar cobrança consolidada por CNPJ">📧 Cobrança Consolidada</button>
       <button id="btn-recibo-consolidado" class="btn btn-outline" onclick="openConsolidatedReceiptModal()" title="Gerar recibos em massa para faturas pagas" style="display:none;">🧾 Recibo Consolidado</button>
+      <button class="btn btn-outline" onclick="openExtratoImport()" title="Importar extrato OFX e conciliar pagamentos PIX automaticamente">🏦 Importar Extrato</button>
       <!-- Espaçador → empurra ação destrutiva para extremo direito -->
       <div style="flex:1;min-width:8px;"></div>
       <!-- Ação destrutiva -->
@@ -835,6 +836,39 @@ var MiniZip = (function() {
   </div>
 </div>
 
+<!-- MODAL: IMPORTAR EXTRATO BANCÁRIO OFX -->
+<div class="overlay" id="modal-extrato-import" role="dialog" aria-modal="true" aria-label="Importar Extrato Bancário OFX">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">🏦 Conciliação Bancária — Importar Extrato OFX</div>
+      <button class="modal-close" onclick="closeModal('modal-extrato-import')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="drop-zone" id="extrato-drop-zone" onclick="document.getElementById('extrato-file-input').click()"
+        ondragover="event.preventDefault();this.classList.add('drag')"
+        ondragleave="this.classList.remove('drag')"
+        ondrop="handleExtratoDrop(event)">
+        <div class="drop-icon">⬆️</div>
+        <p><strong>Arraste ou selecione o extrato OFX</strong></p>
+        <p>(.ofx)</p>
+      </div>
+      <input type="file" id="extrato-file-input" accept=".ofx,.OFX" style="display:none" onchange="handleExtratoFile(event)">
+      <div class="columns-hint">
+        <strong>Como obter o extrato OFX:</strong>
+        <div style="margin-top:6px;font-size:12px;line-height:1.6;">
+          No Itaú, acesse <em>Conta Corrente → Extrato → Exportar</em> e selecione o formato <strong>OFX</strong>.
+          Os pagamentos PIX recebidos com txid vinculado à fatura serão identificados automaticamente pelo campo de descrição.
+        </div>
+      </div>
+      <div id="extrato-preview" style="display:none;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-extrato-import')">Cancelar</button>
+      <button class="btn btn-primary" id="btn-confirmar-conciliacao" onclick="confirmConciliacao()" disabled>✔ Confirmar Conciliação</button>
+    </div>
+  </div>
+</div>
+
 <div id="doc-view" class="doc-page">
   <div class="doc-toolbar">
     <button class="btn btn-outline btn-sm" onclick="closeDoc()">← Voltar</button>
@@ -1195,6 +1229,9 @@ function downloadTemplate() {
 
 <!-- Módulo de Faturamento (BLs, PTAX, Cálculo D&D) -->
 <script src="js/billing.js?v=139"></script>
+
+<!-- Conciliação Bancária via Extrato OFX -->
+<script src="js/reconciliation.js?v=1"></script>
 
 <!-- Módulo de Rastreamento de Containers -->
 <script src="js/tracking.js?v=139"></script>
