@@ -1728,6 +1728,11 @@ function renderDoc(b, type) {
     totalBRL = Math.max(0, subtotalBRL - discountAmt);
   }
 
+  // Pré-gera payload PIX para uso no template HTML (copia e cola) e no QR Code
+  const pixPayload = isInv
+    ? buildPixPayload('06352972000121', 'TRANSHIPPING AGENC MARITIMO', 'VIT', parseFloat(totalBRL.toFixed(2)), docnum)
+    : '';
+
   const colspan = isInv ? 8 : 7;
   const colsI = `<th>CONTAINER</th><th>TIPO</th><th>DIAS 1º PER.</th><th>USD/Dia</th><th>DIAS 2º PER.</th><th>USD/Dia</th><th>DESCARGA</th><th>RETORNO</th><th>LÍQUIDO</th>`;
   const colsR = `<th>CONTAINER</th><th>TIPO</th><th>DIAS 1º PER.</th><th>USD/Dia</th><th>DIAS 2º PER.</th><th>USD/Dia</th><th>DESCARGA</th><th>LÍQUIDO</th>`;
@@ -1804,20 +1809,22 @@ function renderDoc(b, type) {
       <div class="inv-pix-qr" id="pix-qr-${docnum}"></div>
       <div class="inv-pix-info">
         <strong>Pagamento via PIX</strong>
-        Escaneie o QR Code ao lado ou utilize a chave PIX abaixo para realizar o pagamento.<br>
-        Valor da fatura: <strong>${fmtBRL(totalBRL)}</strong><br>
-        <span class="inv-pix-key">🔑 Chave PIX (CNPJ): 06.352.972/0001-21</span>
+        Escaneie o QR Code ao lado ou utilize o código Pix Copia e Cola abaixo para realizar o pagamento.<br>
+        Valor da fatura: <strong>${fmtBRL(totalBRL)}</strong>
+        <div class="inv-pix-copiacola">
+          <span class="inv-pix-copiacola-label">Pix Copia e Cola</span>
+          <span class="inv-pix-copiacola-code">${pixPayload}</span>
+        </div>
       </div>
     </div>` : ''}
     <div class="inv-date">Vitória, ${cap(b.docDate ? new Date(b.docDate+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',year:'numeric',month:'long',day:'numeric'}) : longDate())}</div>
   </div>`;
 
-  // Generate PIX QR Code only for invoices
+  // Generate PIX QR Code only for invoices (reuses pixPayload already built above)
   if (isInv) {
     setTimeout(() => {
       const qrEl = document.getElementById('pix-qr-' + docnum);
       if (qrEl && typeof QRCode !== 'undefined') {
-        const pixPayload = buildPixPayload('06352972000121', 'TRANSHIPPING AGENC MARITIMO', 'VIT', parseFloat(totalBRL.toFixed(2)), docnum);
         qrEl.innerHTML = '';
         new QRCode(qrEl, {
           text: pixPayload,
