@@ -1203,8 +1203,10 @@ function setBillingSubTab(tab) {
   // Alterna botões da toolbar: "Cobrança Consolidada" ↔ "Recibo Consolidado"
   const btnCobranca = document.getElementById('btn-cobranca-consolidada');
   const btnRecibo   = document.getElementById('btn-recibo-consolidado');
-  if (btnCobranca) btnCobranca.style.display = tab === 'pagos' ? 'none' : '';
-  if (btnRecibo)   btnRecibo.style.display   = tab === 'pagos' ? ''     : 'none';
+  const btnExtrato  = document.getElementById('btn-importar-extrato');
+  if (btnCobranca) btnCobranca.style.display = tab === 'pagos'     ? 'none' : '';
+  if (btnRecibo)   btnRecibo.style.display   = tab === 'pagos'     ? ''     : 'none';
+  if (btnExtrato)  btnExtrato.style.display  = tab === 'faturados' ? ''     : 'none';
 
   // Reset filter to the appropriate default
   if (tab === 'pagos') setFilter('paid');
