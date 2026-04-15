@@ -1,121 +1,176 @@
-// ── Conciliação Bancária via Extrato OFX ──────────────────────────────────
-// Importa extrato OFX do Itaú e concilia pagamentos PIX com faturas emitidas.
-// Estratégia de correspondência: CNPJ do pagador (extraído do MEMO) + valor exato.
-// O banco não repassa o txid no OFX; o CNPJ aparece no final do campo MEMO.
+// ── Conciliação Bancária via Planilha Excel PIX ────────────────────────────
+// Importa planilha Excel do Itaú Empresas (QR Codes recebidos) e concilia
+// com faturas emitidas.
+// Estratégia: matching por txid (coluna "identificador" == docnum normalizado),
+// com fallback por CNPJ (14 dígitos) + valor para pagamentos sem txid mapeado.
 
 'use strict';
 
-// ─── Parser OFX ──────────────────────────────────────────────────────────────
+// ─── Parser Excel (SheetJS) ───────────────────────────────────────────────────
 
-function _ofxTag(block, tag) {
-  const re = new RegExp('<' + tag + '>([^<\\r\\n]+)', 'i');
-  const m = block.match(re);
-  return m ? m[1].trim() : '';
-}
+/**
+ * Lê a planilha de "QR Codes recebidos" do Itaú Empresas.
+ * Estrutura esperada:
+ *   Linhas 1-10: metadados do banco (ignorados)
+ *   Linha 11:    título "QR Codes recebidos" (ignorada)
+ *   Linha 12:    cabeçalhos — identificador | pagador efetivo | cpf/cnpj |
+ *                             vencimento ou expiração | pago em |
+ *                             valor emitido (R$) | valor pago (R$) | tarifa (R$)
+ *   Linha 13+:   dados
+ *
+ * @param {ArrayBuffer} arrayBuffer
+ * @returns {{ txid, cnpj, date, amount }[]}
+ */
+function parseExcelPix(arrayBuffer) {
+  if (typeof XLSX === 'undefined') {
+    throw new Error('Biblioteca XLSX não carregada. Recarregue a página.');
+  }
 
-function _ofxDate(raw) {
-  const digits = (raw || '').replace(/[^0-9]/g, '');
-  if (digits.length < 8) return '';
-  return digits.slice(0, 4) + '-' + digits.slice(4, 6) + '-' + digits.slice(6, 8);
-}
+  const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array', raw: false });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
 
-function parseOFX(text) {
+  // Localiza a linha de cabeçalho pela presença de "identificador"
+  let headerRowIdx = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].some(cell => String(cell).toLowerCase().trim() === 'identificador')) {
+      headerRowIdx = i;
+      break;
+    }
+  }
+
+  if (headerRowIdx === -1) {
+    throw new Error(
+      'Formato não reconhecido. A coluna "identificador" não foi encontrada. ' +
+      'Verifique se é a planilha de "QR Codes recebidos" do Itaú Empresas.'
+    );
+  }
+
+  const headers = rows[headerRowIdx].map(h => String(h).toLowerCase().trim());
+
+  const colId    = headers.indexOf('identificador');
+  const colCnpj  = headers.findIndex(h => h.includes('cpf') || h.includes('cnpj'));
+  const colDate  = headers.findIndex(h => h.includes('pago em'));
+  const colValue = headers.findIndex(h => h.includes('valor pago'));
+
+  if (colId === -1)    throw new Error('Coluna "identificador" não encontrada.');
+  if (colValue === -1) throw new Error('Coluna "valor pago" não encontrada.');
+
   const transactions = [];
-  const blockRe = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;
-  let idx = 0;
-  let m;
-  while ((m = blockRe.exec(text)) !== null) {
-    const block  = m[1];
-    const date   = _ofxDate(_ofxTag(block, 'DTPOSTED'));
-    const amount = parseFloat(_ofxTag(block, 'TRNAMT').replace(',', '.')) || 0;
-    const memo   = _ofxTag(block, 'MEMO') || _ofxTag(block, 'NAME');
 
-    // TRNTYPE: OFX usa "CREDIT"/"DEBIT"; OFC usa "1" para ambos (sinal do valor define)
-    const rawType = _ofxTag(block, 'TRNTYPE').toUpperCase();
-    let type;
-    if (rawType === 'CREDIT' || rawType === 'DEBIT') {
-      type = rawType;
-    } else {
-      type = amount >= 0 ? 'CREDIT' : 'DEBIT';
+  for (let i = headerRowIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    const txid = String(row[colId] || '').trim();
+    if (!txid) continue;
+
+    // Data: formato dd/mm/yyyy → yyyy-mm-dd
+    let date = '';
+    if (colDate >= 0) {
+      const raw = String(row[colDate] || '').trim();
+      const parts = raw.split('/');
+      if (parts.length === 3) {
+        date = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
     }
 
-    // FITID: OFC exporta vazio — gera ID sintético para anti-duplicidade
-    const rawFitid = _ofxTag(block, 'FITID');
-    const fitid = rawFitid || `${date}-${Math.abs(amount).toFixed(2)}-${idx}`;
+    // Valor: formato brasileiro "1.234,56" → float
+    let amount = 0;
+    if (colValue >= 0) {
+      const raw = String(row[colValue] || '').trim();
+      amount = parseFloat(raw.replace(/\./g, '').replace(',', '.')) || 0;
+    }
 
-    transactions.push({ type, date, amount: Math.abs(amount), fitid, memo });
-    idx++;
+    if (amount <= 0) continue;
+
+    const cnpj = colCnpj >= 0 ? String(row[colCnpj] || '').trim() : '';
+
+    transactions.push({ txid, cnpj, date, amount });
   }
+
   return transactions;
 }
 
-// ─── Extração de CNPJ do campo MEMO ──────────────────────────────────────────
+// ─── Normalização ─────────────────────────────────────────────────────────────
 
 function _normCnpj(str) {
   return (str || '').replace(/\D/g, '');
 }
 
-/**
- * Extrai o CNPJ do pagador do campo MEMO.
- * O Itaú coloca o CNPJ formatado no final:
- *   "PIX QR CODE RECEBIDO NOME14/04 NOME COMPLETO LTDA 12.345.678/0001-90"
- * Retorna string de 14 dígitos ou null.
- */
-function extractCNPJ(memo) {
-  if (!memo) return null;
-  const m = memo.match(/(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\s*$/);
-  if (!m) return null;
-  const norm = _normCnpj(m[1]);
-  return norm.length === 14 ? norm : null;
+function _normTxid(str) {
+  return (str || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 }
 
 // ─── Correspondência com faturas ──────────────────────────────────────────────
 
 /**
  * Cruza transações com faturas faturadas e não pagas.
- * Para cada transação CREDIT com CNPJ identificável no MEMO, busca BLs onde:
- *   - b.cnpj (normalizado) === CNPJ extraído
- *   - b.frozenTotal ≈ tx.amount (tolerância de R$ 0,02)
  *
- * Resultado por match:
- *   { transaction, bl, candidates, ambiguous }
- *   - ambiguous: false → correspondência única (bl = o BL encontrado)
- *   - ambiguous: true  → múltiplos BLs possíveis (usuário escolhe via select)
+ * Estratégia (em ordem de prioridade):
+ *   1. txid → docnum normalizado  (matching exato, sem ambiguidade)
+ *   2. CNPJ (14 dígitos) + valor  (fallback para pagamentos sem txid mapeado)
+ *
+ * Resultado por match: { transaction, bl, candidates, ambiguous, matchType }
+ *   matchType: 'txid' | 'cnpj'
  */
 function matchTransactions(transactions, blsArray) {
-  // Monta mapa CNPJ → [BLs faturados e não pagos]
+  // Mapa txid normalizado → BL faturado e não pago
+  const txidMap = {};
+  blsArray.forEach(b => {
+    if (!b.billed || b.paid || !b.docnum) return;
+    const key = _normTxid(b.docnum);
+    if (key) txidMap[key] = b;
+  });
+
+  // Mapa CNPJ → BLs faturados e não pagos (fallback)
   const cnpjMap = {};
   blsArray.forEach(b => {
     if (!b.billed || b.paid) return;
     const cnpj = _normCnpj(b.cnpj);
-    if (!cnpj || cnpj.length !== 14) return;
-    if (!cnpjMap[cnpj]) cnpjMap[cnpj] = [];
-    cnpjMap[cnpj].push(b);
+    if (cnpj && cnpj.length === 14) {
+      if (!cnpjMap[cnpj]) cnpjMap[cnpj] = [];
+      cnpjMap[cnpj].push(b);
+    }
   });
 
-  // FITIDs já conciliados (anti-duplicidade)
-  const usedFitids = new Set();
-  blsArray.forEach(b => { if (b.pixFitid) usedFitids.add(b.pixFitid); });
+  // txids já conciliados (anti-duplicidade)
+  const usedTxids = new Set();
+  blsArray.forEach(b => {
+    if (b.pixTxid)  usedTxids.add(b.pixTxid);
+    if (b.pixFitid) usedTxids.add(b.pixFitid); // retrocompat. com conciliações OFX anteriores
+  });
 
   const matches = [];
   transactions.forEach(tx => {
-    if (tx.type !== 'CREDIT' || tx.amount <= 0) return;
-    if (usedFitids.has(tx.fitid)) return;
+    if (usedTxids.has(tx.txid)) return;
 
-    const cnpj = extractCNPJ(tx.memo);
-    if (!cnpj) return;
+    // 1. Matching por txid (identificador == docnum normalizado)
+    const key = _normTxid(tx.txid);
+    if (key && txidMap[key]) {
+      matches.push({
+        transaction: tx,
+        bl:          txidMap[key],
+        candidates:  [txidMap[key]],
+        ambiguous:   false,
+        matchType:   'txid'
+      });
+      return;
+    }
+
+    // 2. Fallback: CNPJ + valor (apenas CNPJ com 14 dígitos)
+    const cnpj = _normCnpj(tx.cnpj);
+    if (!cnpj || cnpj.length !== 14) return;
 
     const candidates = (cnpjMap[cnpj] || []).filter(b =>
       b.frozenTotal != null && Math.abs(b.frozenTotal - tx.amount) < 0.02
     );
-
     if (candidates.length === 0) return;
 
     matches.push({
       transaction: tx,
       bl:          candidates[0],
       candidates,
-      ambiguous:   candidates.length > 1
+      ambiguous:   candidates.length > 1,
+      matchType:   'cnpj'
     });
   });
 
@@ -134,7 +189,7 @@ function openExtratoImport() {
   if (fileInput) fileInput.value = '';
   const dropZone = document.getElementById('extrato-drop-zone');
   if (dropZone) {
-    dropZone.innerHTML = '<div class="drop-icon">⬆️</div><p><strong>Arraste ou selecione o extrato OFX</strong></p><p>(.ofx)</p>';
+    dropZone.innerHTML = '<div class="drop-icon">⬆️</div><p><strong>Arraste ou selecione a planilha PIX</strong></p><p>(.xlsx)</p>';
     dropZone.classList.remove('drag');
   }
   const preview = document.getElementById('extrato-preview');
@@ -163,11 +218,10 @@ function processExtratoFile(file) {
   const reader = new FileReader();
   reader.onload = e => {
     try {
-      const text = e.target.result;
-      const transactions = parseOFX(text);
+      const transactions = parseExcelPix(e.target.result);
 
       if (transactions.length === 0) {
-        dropZone.innerHTML = '<div class="drop-icon">⚠️</div><p><strong>Nenhuma transação encontrada.</strong></p><p>Verifique se é um extrato OFX válido.</p>';
+        dropZone.innerHTML = '<div class="drop-icon">⚠️</div><p><strong>Nenhuma transação encontrada.</strong></p><p>Verifique se é a planilha de "QR Codes recebidos" do Itaú Empresas.</p>';
         return;
       }
 
@@ -184,7 +238,7 @@ function processExtratoFile(file) {
   reader.onerror = () => {
     dropZone.innerHTML = '<div class="drop-icon">❌</div><p><strong>Erro ao ler o arquivo.</strong></p>';
   };
-  reader.readAsText(file, 'UTF-8');
+  reader.readAsArrayBuffer(file);
 }
 
 // ─── Preview ──────────────────────────────────────────────────────────────────
@@ -194,10 +248,10 @@ function renderReconciliationPreview(matches, totalTransactions, blsRef) {
   const confirmBtn = document.getElementById('btn-confirmar-conciliacao');
 
   if (matches.length === 0) {
-    const elegíveis = (blsRef || []).filter(b => b.billed && !b.paid && b.cnpj);
+    const elegíveis = (blsRef || []).filter(b => b.billed && !b.paid && b.docnum);
     const dica = elegíveis.length === 0
-      ? 'Nenhuma fatura faturada e não paga com CNPJ cadastrado encontrada. Certifique-se de ter emitido a fatura e de que o cliente possui CNPJ registrado no BL.'
-      : `${elegíveis.length} fatura(s) elegível(is) no sistema. Nenhum CNPJ do extrato coincidiu com o valor de uma fatura em aberto.`;
+      ? 'Nenhuma fatura faturada e não paga encontrada. Certifique-se de ter emitido a fatura.'
+      : `${elegíveis.length} fatura(s) elegível(is) no sistema. Nenhum identificador (txid) ou CNPJ da planilha coincidiu com uma fatura em aberto.`;
     preview.style.display = 'block';
     preview.innerHTML = `
       <div style="padding:16px;background:#fef9c3;border:1px solid #fde047;border-radius:8px;font-size:13px;color:#713f12;">
@@ -223,13 +277,18 @@ function renderReconciliationPreview(matches, totalTransactions, blsRef) {
       : `<span style="font-weight:600;color:#166534;">${m.bl.bl || m.bl.id}</span>
          <span style="font-size:11px;color:#6b7280;display:block;">${m.bl.docnum || '—'}</span>`;
 
+    const matchBadge = m.matchType === 'txid'
+      ? '<span style="font-size:10px;background:#dcfce7;color:#166534;padding:1px 5px;border-radius:4px;margin-left:4px;">txid</span>'
+      : '<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;margin-left:4px;">cnpj</span>';
+
     return `
       <tr style="border-bottom:1px solid #f3f4f6;">
         <td style="padding:8px 10px;">
           <input type="checkbox" class="recon-check" data-idx="${i}" checked style="cursor:pointer;">
         </td>
-        <td style="padding:8px 10px;">${blCell}</td>
+        <td style="padding:8px 10px;">${blCell}${matchBadge}</td>
         <td style="padding:8px 10px;font-size:12px;">${m.bl.client || '—'}</td>
+        <td style="padding:8px 10px;font-size:11px;color:#6b7280;font-family:monospace;">${m.transaction.txid}</td>
         <td style="padding:8px 10px;font-size:12px;color:#1d4ed8;font-weight:600;">${fmtBRL(m.transaction.amount)}</td>
         <td style="padding:8px 10px;font-size:12px;color:#374151;">${m.bl.frozenTotal != null ? fmtBRL(m.bl.frozenTotal) : '—'}</td>
         <td style="padding:8px 10px;font-size:12px;">${fmtDate(m.transaction.date)}</td>
@@ -253,6 +312,7 @@ function renderReconciliationPreview(matches, totalTransactions, blsRef) {
               <th style="padding:8px 10px;text-align:left;font-size:11px;color:#6b7280;font-weight:600;"></th>
               <th style="padding:8px 10px;text-align:left;font-size:11px;color:#6b7280;font-weight:600;">BL / Fatura</th>
               <th style="padding:8px 10px;text-align:left;font-size:11px;color:#6b7280;font-weight:600;">Cliente</th>
+              <th style="padding:8px 10px;text-align:left;font-size:11px;color:#6b7280;font-weight:600;">Identificador PIX</th>
               <th style="padding:8px 10px;text-align:left;font-size:11px;color:#6b7280;font-weight:600;">Valor PIX</th>
               <th style="padding:8px 10px;text-align:left;font-size:11px;color:#6b7280;font-weight:600;">Valor Fatura</th>
               <th style="padding:8px 10px;text-align:left;font-size:11px;color:#6b7280;font-weight:600;">Data PIX</th>
@@ -283,7 +343,6 @@ function confirmConciliacao() {
 
     let bl = match.bl;
     if (match.ambiguous) {
-      // Lê qual candidato o usuário escolheu no select
       const sel = document.querySelector(`.recon-select[data-idx="${idx}"]`);
       const ci  = sel ? parseInt(sel.value, 10) : 0;
       bl = match.candidates[ci] || match.bl;
@@ -303,21 +362,22 @@ function confirmConciliacao() {
     const roe   = (bl.billed && bl.frozenRoe   != null) ? bl.frozenRoe   : effectiveROE(bl);
     const total = (bl.billed && bl.frozenTotal != null) ? bl.frozenTotal : blTotal(bl, null);
 
-    bl.paid                = true;
-    bl.paidAt              = tx.date;
-    bl.frozenRoe           = roe;
-    bl.frozenTotal         = total;
+    bl.paid                 = true;
+    bl.paidAt               = tx.date;
+    bl.frozenRoe            = roe;
+    bl.frozenTotal          = total;
     bl.conciliadoPorExtrato = true;
-    bl.pixFitid            = tx.fitid;
+    bl.pixTxid              = tx.txid;
 
     logAuditAction('conciliacao_automatica', {
-      blId:   bl.id,
-      bl:     bl.bl,
-      docnum: bl.docnum,
+      blId:      bl.id,
+      bl:        bl.bl,
+      docnum:    bl.docnum,
       total,
-      paidAt: tx.date,
-      fitid:  tx.fitid,
-      cnpj:   bl.cnpj
+      paidAt:    tx.date,
+      txid:      tx.txid,
+      matchType: match.matchType,
+      cnpj:      bl.cnpj
     });
 
     saveOne(bl);

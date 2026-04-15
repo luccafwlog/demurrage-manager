@@ -836,11 +836,11 @@ var MiniZip = (function() {
   </div>
 </div>
 
-<!-- MODAL: IMPORTAR EXTRATO BANCÁRIO OFX -->
-<div class="overlay" id="modal-extrato-import" role="dialog" aria-modal="true" aria-label="Importar Extrato Bancário OFX">
+<!-- MODAL: IMPORTAR EXTRATO BANCÁRIO PIX -->
+<div class="overlay" id="modal-extrato-import" role="dialog" aria-modal="true" aria-label="Importar Extrato Bancário PIX">
   <div class="modal">
     <div class="modal-header">
-      <div class="modal-title">🏦 Conciliação Bancária — Importar Extrato OFX</div>
+      <div class="modal-title">🏦 Conciliação Bancária — Importar Extrato PIX</div>
       <button class="modal-close" onclick="closeModal('modal-extrato-import')">✕</button>
     </div>
     <div class="modal-body">
@@ -849,15 +849,15 @@ var MiniZip = (function() {
         ondragleave="this.classList.remove('drag')"
         ondrop="handleExtratoDrop(event)">
         <div class="drop-icon">⬆️</div>
-        <p><strong>Arraste ou selecione o extrato OFX</strong></p>
-        <p>(.ofx)</p>
+        <p><strong>Arraste ou selecione a planilha PIX</strong></p>
+        <p>(.xlsx)</p>
       </div>
-      <input type="file" id="extrato-file-input" accept=".ofx,.OFX,.ofc,.OFC" style="display:none" onchange="handleExtratoFile(event)">
+      <input type="file" id="extrato-file-input" accept=".xlsx,.xls" style="display:none" onchange="handleExtratoFile(event)">
       <div class="columns-hint">
-        <strong>Como obter o extrato OFX:</strong>
+        <strong>Como obter a planilha:</strong>
         <div style="margin-top:6px;font-size:12px;line-height:1.6;">
-          No Itaú, acesse <em>Conta Corrente → Extrato → Exportar</em> e selecione o formato <strong>OFX</strong>.
-          Os pagamentos PIX recebidos com txid vinculado à fatura serão identificados automaticamente pelo campo de descrição.
+          No Itaú Empresas, acesse <em>Pix → Minha Área Pix → QR Code → Exportar</em> e exporte no formato <strong>Excel (.xlsx)</strong>.
+          Os pagamentos são identificados automaticamente pelo <strong>identificador</strong> (txid) de cada QR Code.
         </div>
       </div>
       <div id="extrato-preview" style="display:none;"></div>
@@ -1230,8 +1230,8 @@ function downloadTemplate() {
 <!-- Módulo de Faturamento (BLs, PTAX, Cálculo D&D) -->
 <script src="js/billing.js?v=139"></script>
 
-<!-- Conciliação Bancária via Extrato OFX -->
-<script src="js/reconciliation.js?v=1"></script>
+<!-- Conciliação Bancária via Planilha Excel PIX -->
+<script src="js/reconciliation.js?v=2"></script>
 
 <!-- Módulo de Rastreamento de Containers -->
 <script src="js/tracking.js?v=139"></script>
