@@ -44,6 +44,7 @@ const RATES = [
       '40FR','40F0','40F1',                 // Flat Rack 40
       '40OT','40O0','40O1','40P0','40P1',   // Open Top 40 / Platform
       '45FR','45OT',
+      '40FH_45P3','40FR_42P3',              // variações ISO cadastradas como FR/OT
       '40FR/OT',
     ],
     freeUntil:21, p1:{range:[22,30],usd:100}, p2:{range:[31,Infinity],usd:140} },
@@ -68,10 +69,10 @@ const RATES = [
 
 function getRate(typeStr) {
   if (!typeStr) return RATES[1];
-  const t = typeStr.toUpperCase().trim().replace(/[\s\-\/]+/g,'');
-  const exact = RATES.find(r => r.aliases.some(a => a.replace(/[\s\-\/]+/g,'') === t));
+  const t = typeStr.toUpperCase().trim().replace(/[\s\-\/_]+/g,'');
+  const exact = RATES.find(r => r.aliases.some(a => a.replace(/[\s\-\/_]+/g,'') === t));
   if (exact) return exact;
-  const prefix = RATES.find(r => r.aliases.some(a => t.startsWith(a.replace(/[\s\-\/]+/g,''))));
+  const prefix = RATES.find(r => r.aliases.some(a => t.startsWith(a.replace(/[\s\-\/_]+/g,''))));
   if (prefix) return prefix;
   return RATES[1];
 }
