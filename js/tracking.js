@@ -1037,10 +1037,11 @@ function exportDemurrageReport() {
   const todayStr = today.toISOString().slice(0, 10);
   const dateLabel = today.toLocaleDateString('pt-BR');
 
+  const blsData = (window._dmStore && window._dmStore.bls) || [];
   const rows = [];
   let grandTotal = 0;
 
-  bls.forEach(b => {
+  blsData.forEach(b => {
     const ft = b.freeTime ?? 21;
     (b.containers || []).forEach(c => {
       let dc, statusLabel;
@@ -1156,8 +1157,8 @@ function exportDemurrageReport() {
   XLSX.utils.book_append_sheet(wb, ws, 'Demurrage');
   XLSX.writeFile(wb, `Relatorio_Demurrage_${todayStr}.xlsx`);
 
-  if (typeof logAction === 'function') {
-    logAction('export_demurrage_report', { containers: rows.length, totalUSD: parseFloat(grandTotal.toFixed(2)) });
+  if (typeof logAuditAction === 'function') {
+    logAuditAction('exportacao_relatorio', { tipo: 'relatorio_dd', containers: rows.length, totalUSD: parseFloat(grandTotal.toFixed(2)) });
   }
   toast('Relatório D&D exportado!', 'success');
 }
