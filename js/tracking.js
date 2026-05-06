@@ -1032,4 +1032,133 @@ function exportTrkReport() {
   toast('Relatório exportado!', 'success');
 }
 
+function exportDemurrageReport() {
+  const today = new Date(); today.setHours(12, 0, 0, 0);
+  const todayStr = today.toISOString().slice(0, 10);
+  const dateLabel = today.toLocaleDateString('pt-BR');
+
+  const rows = [];
+  let grandTotal = 0;
+
+  bls.forEach(b => {
+    const ft = b.freeTime ?? 21;
+    (b.containers || []).forEach(c => {
+      let dc, statusLabel;
+      if (c.emptyReturn) {
+        dc = daysBetween(c.discharge, c.emptyReturn);
+        if (dc <= ft) return;
+        statusLabel = 'Devolvido';
+      } else {
+        dc = daysBetween(c.discharge, todayStr);
+        if (dc <= ft) return;
+        statusLabel = 'Em D&D';
+      }
+
+      const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1 || null, b.ov2 || null);
+      if (calc.totalUSD <= 0) return;
+      grandTotal += calc.totalUSD;
+
+      rows.push({
+        'BL':            b.bl,
+        'NAVIO':         b.vessel || '—',
+        'CNPJ':          b.cnpj || '—',
+        'CNEE':          b.client || '—',
+        'CONTAINER':     c.container,
+        'TIPO':          c.type || '—',
+        'DESCARGA':      c.discharge ? new Date(c.discharge + 'T12:00:00').toLocaleDateString('pt-BR') : '—',
+        'DEVOLUÇÃO':     c.emptyReturn ? new Date(c.emptyReturn + 'T12:00:00').toLocaleDateString('pt-BR') : 'Em Aberto',
+        'FREE TIME':     ft,
+        'DIAS CORRIDOS': dc,
+        'DIAS EM D&D':   Math.max(0, dc - ft),
+        'DIAS 1º PER.':  calc.diasP1,
+        'USD/DIA P1':    calc.usdP1,
+        'DIAS 2º PER.':  calc.diasP2,
+        'USD/DIA P2':    calc.usdP2,
+        'TOTAL USD':     parseFloat(calc.totalUSD.toFixed(2)),
+        'STATUS':        statusLabel,
+      });
+    });
+  });
+
+  if (!rows.length) {
+    toast('Nenhum container em demurrage para exportar.', 'error');
+    return;
+  }
+
+  const totalsRow = Object.fromEntries(Object.keys(rows[0]).map(k => [k, '']));
+  totalsRow['CONTAINER'] = 'TOTAL';
+  totalsRow['TOTAL USD'] = parseFloat(grandTotal.toFixed(2));
+  const allRows = [...rows, totalsRow];
+
+  const NAVY = '1A2744', GOLD = 'F59E0B', WHITE = 'FFFFFFFF';
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(allRows, { origin: 'A3' });
+
+  const headers = Object.keys(rows[0]);
+  const ncols = headers.length;
+  const nrows = allRows.length;
+
+  const colWidths = {
+    'BL': 20, 'NAVIO': 22, 'CNPJ': 16, 'CNEE': 30,
+    'CONTAINER': 14, 'TIPO': 8,
+    'DESCARGA': 12, 'DEVOLUÇÃO': 14, 'FREE TIME': 8,
+    'DIAS CORRIDOS': 11, 'DIAS EM D&D': 10,
+    'DIAS 1º PER.': 9, 'USD/DIA P1': 9,
+    'DIAS 2º PER.': 9, 'USD/DIA P2': 9,
+    'TOTAL USD': 12, 'STATUS': 14,
+  };
+  ws['!cols'] = headers.map(h => ({ wch: colWidths[h] || 12 }));
+
+  ws['A1'] = { v: 'TRANSHIPPING AGENCIAMENTO MARÍTIMO — Relatório de Demurrage', t: 's' };
+  ws['A2'] = { v: `Gerado em ${dateLabel} · Containers em aberto: referência ${todayStr} · ${rows.length} container(s)`, t: 's' };
+  ws['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: ncols - 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: ncols - 1 } },
+  ];
+  ws['!ref'] = `A1:${XLSX.utils.encode_cell({ r: nrows + 2, c: ncols - 1 })}`;
+
+  ws['A1'].s = { font: { bold: true, color: { rgb: WHITE }, sz: 13 }, fill: { fgColor: { rgb: NAVY } }, alignment: { horizontal: 'center', vertical: 'center' } };
+  ws['A2'].s = { font: { italic: true, color: { rgb: '6B7280' }, sz: 10 }, fill: { fgColor: { rgb: 'F9FAFB' } }, alignment: { horizontal: 'center' } };
+
+  headers.forEach((h, ci) => {
+    const addr = XLSX.utils.encode_cell({ r: 2, c: ci });
+    if (!ws[addr]) ws[addr] = { v: h, t: 's' };
+    ws[addr].s = {
+      font: { bold: true, color: { rgb: WHITE }, sz: 11 },
+      fill: { fgColor: { rgb: NAVY } },
+      alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+      border: { bottom: { style: 'thin', color: { rgb: GOLD } } },
+    };
+  });
+
+  const usdCol = headers.indexOf('TOTAL USD');
+  const stCol  = headers.indexOf('STATUS');
+  for (let ri = 0; ri < nrows; ri++) {
+    const isTotals = ri === nrows - 1;
+    const isEven   = ri % 2 === 0;
+    headers.forEach((h, ci) => {
+      const addr = XLSX.utils.encode_cell({ r: ri + 3, c: ci });
+      if (!ws[addr]) ws[addr] = { v: '', t: 's' };
+      const isUsd = ci === usdCol;
+      ws[addr].s = {
+        font: {
+          bold: isTotals || isUsd,
+          color: { rgb: isTotals ? (isUsd ? GOLD : WHITE) : '111827' },
+          sz: 11,
+        },
+        fill: { fgColor: { rgb: isTotals ? NAVY : (isEven ? 'F9FAFB' : WHITE) } },
+        alignment: { horizontal: isUsd ? 'right' : (ci === stCol ? 'center' : 'left'), vertical: 'center' },
+      };
+      if (isUsd && typeof ws[addr].v === 'number') ws[addr].t = 'n';
+    });
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Demurrage');
+  XLSX.writeFile(wb, `Relatorio_Demurrage_${todayStr}.xlsx`);
+
+  if (typeof logAction === 'function') {
+    logAction('export_demurrage_report', { containers: rows.length, totalUSD: parseFloat(grandTotal.toFixed(2)) });
+  }
+  toast('Relatório D&D exportado!', 'success');
+}
 
