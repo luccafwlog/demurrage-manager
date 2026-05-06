@@ -1037,47 +1037,45 @@ function exportDemurrageReport() {
   const todayStr = today.toISOString().slice(0, 10);
   const dateLabel = today.toLocaleDateString('pt-BR');
 
-  const blsData = (window._dmStore && window._dmStore.bls) || [];
   const rows = [];
   let grandTotal = 0;
 
-  blsData.forEach(b => {
-    const ft = b.freeTime ?? 21;
-    (b.containers || []).forEach(c => {
-      let dc, statusLabel;
-      if (c.emptyReturn) {
-        dc = daysBetween(c.discharge, c.emptyReturn);
-        if (dc <= ft) return;
-        statusLabel = 'Devolvido';
-      } else {
-        dc = daysBetween(c.discharge, todayStr);
-        if (dc <= ft) return;
-        statusLabel = 'Em D&D';
-      }
+  trkData.forEach(r => {
+    const status = trkStatus(r);
+    if (status !== 'dd_open' && status !== 'dd_returned') return;
 
-      const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1 || null, b.ov2 || null);
-      if (calc.totalUSD <= 0) return;
-      grandTotal += calc.totalUSD;
+    const ft = r.freeTime || 21;
+    const dc = status === 'dd_returned'
+      ? trkDaysBetween(r.discharge, r.emptyReturn)
+      : trkDaysElapsed(r.discharge);
 
-      rows.push({
-        'BL':            b.bl,
-        'NAVIO':         b.vessel || '—',
-        'CNPJ':          b.cnpj || '—',
-        'CNEE':          b.client || '—',
-        'CONTAINER':     c.container,
-        'TIPO':          c.type || '—',
-        'DESCARGA':      c.discharge ? new Date(c.discharge + 'T12:00:00').toLocaleDateString('pt-BR') : '—',
-        'DEVOLUÇÃO':     c.emptyReturn ? new Date(c.emptyReturn + 'T12:00:00').toLocaleDateString('pt-BR') : 'Em Aberto',
-        'FREE TIME':     ft,
-        'DIAS CORRIDOS': dc,
-        'DIAS EM D&D':   Math.max(0, dc - ft),
-        'DIAS 1º PER.':  calc.diasP1,
-        'USD/DIA P1':    calc.usdP1,
-        'DIAS 2º PER.':  calc.diasP2,
-        'USD/DIA P2':    calc.usdP2,
-        'TOTAL USD':     parseFloat(calc.totalUSD.toFixed(2)),
-        'STATUS':        statusLabel,
-      });
+    if (!dc || dc <= ft) return;
+
+    const rate = getRateForBL({ freeTime: ft }, r.type);
+    const calc = calcUSD(dc, rate, null, null);
+    if (calc.totalUSD <= 0) return;
+    grandTotal += calc.totalUSD;
+
+    rows.push({
+      'BL':            r.bl || '—',
+      'NAVIO':         r.vessel || '—',
+      'CNPJ':          r.cnpj || '—',
+      'CNEE':          r.cnee || '—',
+      'CONTAINER':     r.container,
+      'TIPO':          r.type || '—',
+      'POL':           r.pol || '—',
+      'POD':           r.pod || '—',
+      'DESCARGA':      r.discharge ? new Date(r.discharge + 'T12:00:00').toLocaleDateString('pt-BR') : '—',
+      'DEVOLUÇÃO':     r.emptyReturn ? new Date(r.emptyReturn + 'T12:00:00').toLocaleDateString('pt-BR') : 'Em Aberto',
+      'FREE TIME':     ft,
+      'DIAS CORRIDOS': dc,
+      'DIAS EM D&D':   Math.max(0, dc - ft),
+      'DIAS 1º PER.':  calc.diasP1,
+      'USD/DIA P1':    calc.usdP1,
+      'DIAS 2º PER.':  calc.diasP2,
+      'USD/DIA P2':    calc.usdP2,
+      'TOTAL USD':     parseFloat(calc.totalUSD.toFixed(2)),
+      'STATUS':        status === 'dd_returned' ? 'Devolvido' : 'Em D&D',
     });
   });
 
@@ -1101,7 +1099,7 @@ function exportDemurrageReport() {
 
   const colWidths = {
     'BL': 20, 'NAVIO': 22, 'CNPJ': 16, 'CNEE': 30,
-    'CONTAINER': 14, 'TIPO': 8,
+    'CONTAINER': 14, 'TIPO': 8, 'POL': 8, 'POD': 8,
     'DESCARGA': 12, 'DEVOLUÇÃO': 14, 'FREE TIME': 8,
     'DIAS CORRIDOS': 11, 'DIAS EM D&D': 10,
     'DIAS 1º PER.': 9, 'USD/DIA P1': 9,
@@ -1111,7 +1109,7 @@ function exportDemurrageReport() {
   ws['!cols'] = headers.map(h => ({ wch: colWidths[h] || 12 }));
 
   ws['A1'] = { v: 'TRANSHIPPING AGENCIAMENTO MARÍTIMO — Relatório de Demurrage', t: 's' };
-  ws['A2'] = { v: `Gerado em ${dateLabel} · Containers em aberto: referência ${todayStr} · ${rows.length} container(s)`, t: 's' };
+  ws['A2'] = { v: `Gerado em ${dateLabel} · Referência D&D em aberto: ${todayStr} · ${rows.length} container(s)`, t: 's' };
   ws['!merges'] = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: ncols - 1 } },
     { s: { r: 1, c: 0 }, e: { r: 1, c: ncols - 1 } },
