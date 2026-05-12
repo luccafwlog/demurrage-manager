@@ -1032,132 +1032,173 @@ function exportTrkReport() {
   toast('Relatório exportado!', 'success');
 }
 
-function exportDemurrageReport() {
+function exportCoscoReport() {
   const today = new Date(); today.setHours(12, 0, 0, 0);
   const todayStr = today.toISOString().slice(0, 10);
-  const dateLabel = today.toLocaleDateString('pt-BR');
 
-  const rows = [];
-  let grandTotal = 0;
+  // Build a lookup map from BL number → billing record
+  const blMap = {};
+  if (typeof bls !== 'undefined' && Array.isArray(bls)) {
+    bls.forEach(b => { if (b.bl) blMap[b.bl] = b; });
+  }
+
+  const receivedRows = [];   // invoiced (billedAt set)
+  const pendingRows  = [];   // not yet invoiced
 
   trkData.forEach(r => {
     const status = trkStatus(r);
     if (status !== 'dd_open' && status !== 'dd_returned') return;
 
     const ft = r.freeTime || 21;
-    const dc = status === 'dd_returned'
+    const dc = r.emptyReturn
       ? trkDaysBetween(r.discharge, r.emptyReturn)
       : trkDaysElapsed(r.discharge);
 
     if (!dc || dc <= ft) return;
 
-    const rate = getRateForBL({ freeTime: ft }, r.type);
-    const calc = calcUSD(dc, rate, null, null);
+    const rate    = getRateForBL({ freeTime: ft }, r.type);
+    const calc    = calcUSD(dc, rate, null, null);
     if (calc.totalUSD <= 0) return;
-    grandTotal += calc.totalUSD;
 
-    rows.push({
-      'BL':            r.bl || '—',
-      'NAVIO':         r.vessel || '—',
-      'CNPJ':          r.cnpj || '—',
-      'CNEE':          r.cnee || '—',
-      'CONTAINER':     r.container,
-      'TIPO':          r.type || '—',
-      'POL':           r.pol || '—',
-      'POD':           r.pod || '—',
-      'DESCARGA':      r.discharge ? new Date(r.discharge + 'T12:00:00').toLocaleDateString('pt-BR') : '—',
-      'DEVOLUÇÃO':     r.emptyReturn ? new Date(r.emptyReturn + 'T12:00:00').toLocaleDateString('pt-BR') : 'Em Aberto',
-      'FREE TIME':     ft,
-      'DIAS CORRIDOS': dc,
-      'DIAS EM D&D':   Math.max(0, dc - ft),
-      'DIAS 1º PER.':  calc.diasP1,
-      'USD/DIA P1':    calc.usdP1,
-      'DIAS 2º PER.':  calc.diasP2,
-      'USD/DIA P2':    calc.usdP2,
-      'TOTAL USD':     parseFloat(calc.totalUSD.toFixed(2)),
-      'STATUS':        status === 'dd_returned' ? 'Devolvido' : 'Em D&D',
-    });
+    const excess   = Math.max(0, dc - ft);
+    const totalUSD = parseFloat(calc.totalUSD.toFixed(2));
+    const blRec    = blMap[r.bl];
+    const isInvoiced = blRec && (blRec.billedAt || blRec.paid);
+
+    const base = {
+      'Container':    r.container || '—',
+      'BL':           r.bl || '—',
+      'Consignee':    r.cnee || '—',
+      'TYPE':         r.type || '—',
+      'POL':          r.pol || '—',
+      'POD':          r.pod || '—',
+      'VESSEL':       r.vessel || '—',
+      'DISCHARGE':    r.discharge ? trkFmtDate(r.discharge) : '—',
+      'EMPTY RETURN': r.emptyReturn ? trkFmtDate(r.emptyReturn) : '—',
+      'USE DAYS':     dc,
+      'EXCESS':       excess,
+      'TOTAL USD':    totalUSD,
+    };
+
+    if (isInvoiced) {
+      let discount = '';
+      if (blRec.discount && blRec.discount.value) {
+        discount = blRec.discount.mode === 'percent'
+          ? `${blRec.discount.value}%`
+          : parseFloat(blRec.discount.value).toFixed(2);
+      }
+      receivedRows.push({ ...base, 'DISCOUNT': discount, 'TOTAL USD': totalUSD });
+    } else {
+      pendingRows.push(base);
+    }
   });
 
-  if (!rows.length) {
+  if (!receivedRows.length && !pendingRows.length) {
     toast('Nenhum container em demurrage para exportar.', 'error');
     return;
   }
 
-  const totalsRow = Object.fromEntries(Object.keys(rows[0]).map(k => [k, '']));
-  totalsRow['CONTAINER'] = 'TOTAL';
-  totalsRow['TOTAL USD'] = parseFloat(grandTotal.toFixed(2));
-  const allRows = [...rows, totalsRow];
-
-  const NAVY = '1A2744', GOLD = 'F59E0B', WHITE = 'FFFFFFFF';
+  const NAVY = '1A2744', WHITE = 'FFFFFFFF', LIGHT = 'F3F4F6';
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(allRows, { origin: 'A3' });
 
-  const headers = Object.keys(rows[0]);
-  const ncols = headers.length;
-  const nrows = allRows.length;
+  function buildSheet(rows, title, hasDiscount) {
+    if (!rows.length) {
+      // Empty placeholder sheet
+      const ws = XLSX.utils.aoa_to_sheet([[title], ['Nenhum registro.']]);
+      ws['A1'].s = { font: { bold: true, color: { rgb: WHITE }, sz: 12 }, fill: { fgColor: { rgb: NAVY } }, alignment: { horizontal: 'center', vertical: 'center' } };
+      ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 11 } }];
+      return ws;
+    }
 
-  const colWidths = {
-    'BL': 20, 'NAVIO': 22, 'CNPJ': 16, 'CNEE': 30,
-    'CONTAINER': 14, 'TIPO': 8, 'POL': 8, 'POD': 8,
-    'DESCARGA': 12, 'DEVOLUÇÃO': 14, 'FREE TIME': 8,
-    'DIAS CORRIDOS': 11, 'DIAS EM D&D': 10,
-    'DIAS 1º PER.': 9, 'USD/DIA P1': 9,
-    'DIAS 2º PER.': 9, 'USD/DIA P2': 9,
-    'TOTAL USD': 12, 'STATUS': 14,
-  };
-  ws['!cols'] = headers.map(h => ({ wch: colWidths[h] || 12 }));
+    // Column order: put DISCOUNT before TOTAL USD for received sheet
+    const colOrder = hasDiscount
+      ? ['Container','BL','Consignee','TYPE','POL','POD','VESSEL','DISCHARGE','EMPTY RETURN','USE DAYS','EXCESS','DISCOUNT','TOTAL USD']
+      : ['Container','BL','Consignee','TYPE','POL','POD','VESSEL','DISCHARGE','EMPTY RETURN','USE DAYS','EXCESS','TOTAL USD'];
 
-  ws['A1'] = { v: 'TRANSHIPPING AGENCIAMENTO MARÍTIMO — Relatório de Demurrage', t: 's' };
-  ws['A2'] = { v: `Gerado em ${dateLabel} · Referência D&D em aberto: ${todayStr} · ${rows.length} container(s)`, t: 's' };
-  ws['!merges'] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: ncols - 1 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: ncols - 1 } },
-  ];
-  ws['!ref'] = `A1:${XLSX.utils.encode_cell({ r: nrows + 2, c: ncols - 1 })}`;
-
-  ws['A1'].s = { font: { bold: true, color: { rgb: WHITE }, sz: 13 }, fill: { fgColor: { rgb: NAVY } }, alignment: { horizontal: 'center', vertical: 'center' } };
-  ws['A2'].s = { font: { italic: true, color: { rgb: '6B7280' }, sz: 10 }, fill: { fgColor: { rgb: 'F9FAFB' } }, alignment: { horizontal: 'center' } };
-
-  headers.forEach((h, ci) => {
-    const addr = XLSX.utils.encode_cell({ r: 2, c: ci });
-    if (!ws[addr]) ws[addr] = { v: h, t: 's' };
-    ws[addr].s = {
-      font: { bold: true, color: { rgb: WHITE }, sz: 11 },
-      fill: { fgColor: { rgb: NAVY } },
-      alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
-      border: { bottom: { style: 'thin', color: { rgb: GOLD } } },
+    const colWidths = {
+      'Container': 13, 'BL': 18, 'Consignee': 35, 'TYPE': 7,
+      'POL': 10, 'POD': 10, 'VESSEL': 22, 'DISCHARGE': 13,
+      'EMPTY RETURN': 14, 'USE DAYS': 10, 'EXCESS': 9,
+      'DISCOUNT': 10, 'TOTAL USD': 13,
     };
-  });
 
-  const usdCol = headers.indexOf('TOTAL USD');
-  const stCol  = headers.indexOf('STATUS');
-  for (let ri = 0; ri < nrows; ri++) {
-    const isTotals = ri === nrows - 1;
-    const isEven   = ri % 2 === 0;
-    headers.forEach((h, ci) => {
-      const addr = XLSX.utils.encode_cell({ r: ri + 3, c: ci });
-      if (!ws[addr]) ws[addr] = { v: '', t: 's' };
-      const isUsd = ci === usdCol;
-      ws[addr].s = {
-        font: {
-          bold: isTotals || isUsd,
-          color: { rgb: isTotals ? (isUsd ? GOLD : WHITE) : '111827' },
-          sz: 11,
-        },
-        fill: { fgColor: { rgb: isTotals ? NAVY : (isEven ? 'F9FAFB' : WHITE) } },
-        alignment: { horizontal: isUsd ? 'right' : (ci === stCol ? 'center' : 'left'), vertical: 'center' },
-      };
-      if (isUsd && typeof ws[addr].v === 'number') ws[addr].t = 'n';
+    // Build ordered rows
+    const orderedRows = rows.map(r => {
+      const obj = {};
+      colOrder.forEach(c => { obj[c] = r[c] !== undefined ? r[c] : ''; });
+      return obj;
     });
+
+    let grandTotal = 0;
+    rows.forEach(r => { grandTotal += r['TOTAL USD'] || 0; });
+
+    const totalsRow = {};
+    colOrder.forEach(c => { totalsRow[c] = ''; });
+    totalsRow['Container'] = 'TOTAL';
+    totalsRow['TOTAL USD'] = parseFloat(grandTotal.toFixed(2));
+    const allRows = [...orderedRows, totalsRow];
+
+    const ws = XLSX.utils.json_to_sheet(allRows, { origin: 'A2', header: colOrder });
+    const ncols = colOrder.length;
+    const nrows = allRows.length;
+
+    ws['!cols'] = colOrder.map(h => ({ wch: colWidths[h] || 12 }));
+
+    // Title row
+    ws['A1'] = { v: title, t: 's', s: {
+      font: { bold: true, color: { rgb: WHITE }, sz: 12 },
+      fill: { fgColor: { rgb: NAVY } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+    }};
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: ncols - 1 } }];
+    ws['!ref'] = `A1:${XLSX.utils.encode_cell({ r: nrows + 1, c: ncols - 1 })}`;
+
+    // Header row (row index 1 = Excel row 2)
+    colOrder.forEach((h, ci) => {
+      const addr = XLSX.utils.encode_cell({ r: 1, c: ci });
+      if (!ws[addr]) ws[addr] = { v: h, t: 's' };
+      ws[addr].s = {
+        font: { bold: true, color: { rgb: WHITE }, sz: 11 },
+        fill: { fgColor: { rgb: NAVY } },
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+      };
+    });
+
+    const usdCol = colOrder.indexOf('TOTAL USD');
+
+    // Data rows
+    for (let ri = 0; ri < nrows; ri++) {
+      const isTotals = ri === nrows - 1;
+      colOrder.forEach((h, ci) => {
+        const addr = XLSX.utils.encode_cell({ r: ri + 2, c: ci });
+        if (!ws[addr]) ws[addr] = { v: '', t: 's' };
+        const isUsd = ci === usdCol;
+        ws[addr].s = {
+          font: { bold: isTotals, color: { rgb: isTotals ? WHITE : '111827' }, sz: 11 },
+          fill: { fgColor: { rgb: isTotals ? NAVY : WHITE } },
+          alignment: { horizontal: isUsd ? 'right' : 'left', vertical: 'center' },
+        };
+        if (isUsd && typeof ws[addr].v === 'number') ws[addr].t = 'n';
+      });
+    }
+
+    return ws;
   }
 
-  XLSX.utils.book_append_sheet(wb, ws, 'Demurrage');
-  XLSX.writeFile(wb, `Relatorio_Demurrage_${todayStr}.xlsx`);
+  const wsReceived = buildSheet(receivedRows, 'RECEIVED — Containers in Demurrage (Invoiced)', true);
+  const wsPending  = buildSheet(pendingRows,  'NOT RECEIVED — Containers in Demurrage (Pending)', false);
+
+  XLSX.utils.book_append_sheet(wb, wsReceived, 'RECEIVED');
+  XLSX.utils.book_append_sheet(wb, wsPending,  'NOT RECEIVED');
+  XLSX.writeFile(wb, `Relatorio_COSCO_${todayStr}.xlsx`);
 
   if (typeof logAuditAction === 'function') {
-    logAuditAction('exportacao_relatorio', { tipo: 'relatorio_dd', containers: rows.length, totalUSD: parseFloat(grandTotal.toFixed(2)) });
+    logAuditAction('exportacao_relatorio', {
+      tipo: 'relatorio_cosco',
+      invoiced: receivedRows.length,
+      pending: pendingRows.length,
+    });
   }
-  toast('Relatório D&D exportado!', 'success');
+  toast('Relatório COSCO exportado!', 'success');
 }
 
