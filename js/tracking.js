@@ -1042,6 +1042,20 @@ function exportCoscoReport() {
     bls.forEach(b => { if (b.bl) blMap[b.bl] = b; });
   }
 
+  // Pre-compute raw USD total per BL (needed for proportional fixed-discount allocation)
+  const blRawUSDMap = {};
+  trkData.forEach(r => {
+    const status = trkStatus(r);
+    if (status !== 'dd_open' && status !== 'dd_returned') return;
+    const ft = r.freeTime || 21;
+    const dc = r.emptyReturn ? trkDaysBetween(r.discharge, r.emptyReturn) : trkDaysElapsed(r.discharge);
+    if (!dc || dc <= ft) return;
+    const rate = getRateForBL({ freeTime: ft }, r.type);
+    const calc = calcUSD(dc, rate, null, null);
+    if (calc.totalUSD <= 0) return;
+    blRawUSDMap[r.bl] = (blRawUSDMap[r.bl] || 0) + calc.totalUSD;
+  });
+
   const receivedRows = [];   // invoiced (billedAt set)
   const pendingRows  = [];   // not yet invoiced
 
@@ -1061,9 +1075,33 @@ function exportCoscoReport() {
     if (calc.totalUSD <= 0) return;
 
     const excess   = Math.max(0, dc - ft);
-    const totalUSD = parseFloat(calc.totalUSD.toFixed(2));
+    const rawUSD   = calc.totalUSD;
     const blRec    = blMap[r.bl];
     const isInvoiced = blRec && (blRec.billedAt || blRec.paid);
+
+    // Compute per-container discount and after-discount total
+    let discountDisplay = '';
+    let finalUSD = rawUSD;
+
+    if (isInvoiced && blRec.discount && blRec.discount.value > 0) {
+      const d = blRec.discount;
+      if (d.mode === 'percent') {
+        // Same % applies to each container
+        finalUSD = rawUSD * (1 - d.value / 100);
+        discountDisplay = `${d.value}%`;
+      } else {
+        // Fixed BRL discount: distribute proportionally by USD share, then convert to USD
+        const blRawUSD = blRawUSDMap[r.bl] || rawUSD;
+        const share = rawUSD / blRawUSD;
+        const discountBRL = d.value * share;
+        const roe = (typeof effectiveROE === 'function') ? effectiveROE(blRec) : 1;
+        const discountUSD = roe > 0 ? discountBRL / roe : 0;
+        finalUSD = Math.max(0, rawUSD - discountUSD);
+        discountDisplay = `$ ${discountUSD.toFixed(2)}`;
+      }
+    }
+
+    const totalUSD = parseFloat(finalUSD.toFixed(2));
 
     const base = {
       'Container':    r.container || '—',
@@ -1081,13 +1119,7 @@ function exportCoscoReport() {
     };
 
     if (isInvoiced) {
-      let discount = '';
-      if (blRec.discount && blRec.discount.value) {
-        discount = blRec.discount.mode === 'percent'
-          ? `${blRec.discount.value}%`
-          : parseFloat(blRec.discount.value).toFixed(2);
-      }
-      receivedRows.push({ ...base, 'DISCOUNT': discount, 'TOTAL USD': totalUSD });
+      receivedRows.push({ ...base, 'DISCOUNT': discountDisplay, 'TOTAL USD': totalUSD });
     } else {
       pendingRows.push(base);
     }
