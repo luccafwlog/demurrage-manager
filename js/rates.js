@@ -83,16 +83,9 @@ function getRateForBL(bl, typeStr) {
   const base = getRate(typeStr);
   const blFreeTime = bl && bl.freeTime != null ? parseInt(bl.freeTime, 10) : NaN;
   if (!isNaN(blFreeTime) && blFreeTime >= 0 && blFreeTime !== base.freeUntil) {
-    // Ajusta os ranges das faixas para manter consistência com o novo freeUntil.
-    // Faixa P1 começa no dia seguinte ao fim do free time.
-    const p1Start = blFreeTime + 1;
-    const p1End   = blFreeTime + (base.p1.range[1] - base.p1.range[0] + 1);
-    const p2Start = p1End + 1;
-    return Object.assign({}, base, {
-      freeUntil: blFreeTime,
-      p1: { range: [p1Start, p1End], usd: base.p1.usd },
-      p2: { range: [p2Start, Infinity], usd: base.p2.usd }
-    });
+    // Apenas sobrescreve freeUntil; os thresholds originais das faixas (P1/P2)
+    // são mantidos para que a faixa de cobrança reflita os dias corridos reais.
+    return Object.assign({}, base, { freeUntil: blFreeTime });
   }
   return base;
 }
@@ -104,7 +97,9 @@ function calcUSD(dc, rate, ov1, ov2) {
   const usdP1 = ov1 != null ? ov1 : rate.p1.usd;
   const usdP2 = ov2 != null ? ov2 : rate.p2.usd;
   if (dc <= rate.freeUntil) return { dc, diasP1:0, diasP2:0, usdP1, usdP2, totalUSD:0 };
-  const diasP1 = dc <= rate.p1.range[1] ? dc - rate.p1.range[0] + 1 : rate.p1.range[1] - rate.p1.range[0] + 1;
+  // P1 só começa após o freetime concedido ao BL, mesmo que o threshold original seja menor.
+  const p1Start = Math.max(rate.p1.range[0], rate.freeUntil + 1);
+  const diasP1 = dc <= rate.p1.range[1] ? dc - p1Start + 1 : rate.p1.range[1] - p1Start + 1;
   const diasP2 = dc >= rate.p2.range[0] ? dc - rate.p2.range[0] + 1 : 0;
   const clampedP1 = Math.max(0, diasP1);
   const totalUSD = clampedP1 * usdP1 + diasP2 * usdP2;
