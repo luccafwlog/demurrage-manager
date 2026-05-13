@@ -97,10 +97,13 @@ function calcUSD(dc, rate, ov1, ov2) {
   const usdP1 = ov1 != null ? ov1 : rate.p1.usd;
   const usdP2 = ov2 != null ? ov2 : rate.p2.usd;
   if (dc <= rate.freeUntil) return { dc, diasP1:0, diasP2:0, usdP1, usdP2, totalUSD:0 };
-  // P1 só começa após o freetime concedido ao BL, mesmo que o threshold original seja menor.
-  const p1Start = Math.max(rate.p1.range[0], rate.freeUntil + 1);
-  const diasP1 = dc <= rate.p1.range[1] ? dc - p1Start + 1 : rate.p1.range[1] - p1Start + 1;
-  const diasP2 = dc >= rate.p2.range[0] ? dc - rate.p2.range[0] + 1 : 0;
+  // P1 começa imediatamente após o freetime concedido ao BL.
+  // Quando freeUntil < p1.range[0] (freetime negociado menor que o padrão), não há gap não cobrado.
+  const p1Start = rate.freeUntil + 1;
+  const p1End   = rate.p1.range[1];
+  const p2Start = Math.max(rate.p2.range[0], p1Start);
+  const diasP1 = dc <= p1End ? dc - p1Start + 1 : p1End - p1Start + 1;
+  const diasP2 = dc >= p2Start ? dc - p2Start + 1 : 0;
   const clampedP1 = Math.max(0, diasP1);
   const totalUSD = clampedP1 * usdP1 + diasP2 * usdP2;
   return { dc, diasP1: clampedP1, diasP2, usdP1, usdP2, totalUSD };
