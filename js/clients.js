@@ -172,6 +172,19 @@ function cliSave(d) {
   if (window._dmFireSave) window._dmFireSave('clients', d);
   else if (window._dmStore) window._dmStore.clients = d;
 }
+
+// Remove duplicatas de CNPJ mantendo o registro mais recente
+function deduplicateClients(list) {
+  const seen = new Map();
+  for (const c of list) {
+    const norm = normalizeCnpj(c.cnpj);
+    if (!seen.has(norm) || (c.createdAt || 0) > (seen.get(norm).createdAt || 0)) {
+      seen.set(norm, c);
+    }
+  }
+  return Array.from(seen.values());
+}
+
 let clients = cliLoad();
 let editingClientId = null;
 
@@ -303,9 +316,11 @@ function saveClient() {
     clients.unshift({ id: uid(), cnpj: norm, name, emails, createdAt: Date.now() });
     toast('Cliente criado!', 'success');
   } else {
+    const duplicate = clients.find(c => normalizeCnpj(c.cnpj) === norm && c.id !== editingClientId);
+    if (duplicate) { toast('CNPJ já pertence a outro cadastro.', 'error'); return; }
     const idx = clients.findIndex(x => x.id === editingClientId);
     if (idx >= 0) {
-      clients[idx] = { ...clients[idx], name, emails };
+      clients[idx] = { ...clients[idx], cnpj: norm, name, emails };
       toast('Cliente atualizado!', 'success');
     }
   }
