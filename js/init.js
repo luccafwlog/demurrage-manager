@@ -714,7 +714,7 @@ function buildAlertEmailBody(g) {
   const hasUrgent = sorted.some(a => a.category === 'over' || a.category === 'today');
   const lines = sorted.map(a => {
     const dl = trkFmtDate(a.row.deadline);
-    if (a.category === 'over')  return `  ${a.row.container}  |  BL: ${a.row.bl||'—'}  |  ⛔ FREE TIME ENCERRADO há ${a.daysOver} dia(s)  |  Deadline: ${dl}`;
+    if (a.category === 'over')  return `  ${a.row.container}  |  BL: ${a.row.bl||'—'}  |  ⛔ FREE TIME VENCIDO há ${a.daysOver} dia(s)  |  Deadline: ${dl}`;
     if (a.category === 'today') return `  ${a.row.container}  |  BL: ${a.row.bl||'—'}  |  🔴 FREE TIME VENCE HOJE  |  Deadline: ${dl}`;
     if (a.category === 'warn')  return `  ${a.row.container}  |  BL: ${a.row.bl||'—'}  |  ⚠️ Faltam ${a.daysLeft} dia(s) para o free time  |  Deadline: ${dl}`;
     return '';
