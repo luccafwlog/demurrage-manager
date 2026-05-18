@@ -3,6 +3,19 @@
 // Demurrage Manager — Transhipping Agenciamento Marítimo
 // ============================================================
 
+function deduplicateClientsList(list) {
+  const seen = new Map();
+  for (const c of list) {
+    const norm = String(c.cnpj || '').replace(/\D/g, '');
+    const key  = norm.length === 13 ? '0' + norm : norm;
+    if (!key) continue;
+    if (!seen.has(key) || (c.createdAt || 0) > (seen.get(key).createdAt || 0)) {
+      seen.set(key, c);
+    }
+  }
+  return Array.from(seen.values());
+}
+
 const SUPABASE_URL  = 'https://vcdivphwlspsymgibfri.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZjZGl2cGh3bHNwc3ltZ2liZnJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4Njg5MzEsImV4cCI6MjA5MDQ0NDkzMX0.0N-l_n323GievbiG5Nh2C6Wd3npTe4fbpxnzTYex0Jo';
 
@@ -111,10 +124,10 @@ const _CONFLICT = {
   }));
 
   // FIX: garante que todo cliente tem um `id` válido ao carregar do banco
-  window._dmStore.clients = cliAllRows.map(r => ({
+  window._dmStore.clients = deduplicateClientsList(cliAllRows.map(r => ({
     ...r.data,
     id: r.id || (r.data && r.data.id) || (r.data && r.data.cnpj) || ''
-  }));
+  })));
 
   if (settRes.data) window._dmStore.alertDays = settRes.data.alert_days ?? 5;
 
@@ -539,7 +552,7 @@ const _CONFLICT = {
       // Atualiza store em memória
       window._dmStore.bls     = JSON.parse(JSON.stringify(payload.bls     || []));
       window._dmStore.trk     = JSON.parse(JSON.stringify(payload.trk     || []));
-      window._dmStore.clients = JSON.parse(JSON.stringify(payload.clients || []));
+      window._dmStore.clients = deduplicateClientsList(JSON.parse(JSON.stringify(payload.clients || [])));
 
       return data.label || true;
     } catch(e) {

@@ -706,6 +706,10 @@ function updateAlertBadge() {
   if (panel && panel.classList.contains('open')) renderAlertPanel();
 }
 
+function extractRazaoSocial(name) {
+  return (name || '').replace(/\s*CNPJ[\s:].*/i, '').replace(/\s*CPF[\s:].*/i, '').trim();
+}
+
 function buildAlertEmailBody(g) {
   const firstName = (g.name||'').split(' ')[0] || 'Prezado(a)';
   const alertDays = getAlertDays();
@@ -714,7 +718,7 @@ function buildAlertEmailBody(g) {
   const hasUrgent = sorted.some(a => a.category === 'over' || a.category === 'today');
   const lines = sorted.map(a => {
     const dl = trkFmtDate(a.row.deadline);
-    if (a.category === 'over')  return `  ${a.row.container}  |  BL: ${a.row.bl||'—'}  |  ⛔ FREE TIME ENCERRADO há ${a.daysOver} dia(s)  |  Deadline: ${dl}`;
+    if (a.category === 'over')  return `  ${a.row.container}  |  BL: ${a.row.bl||'—'}  |  ⛔ FREE TIME VENCIDO há ${a.daysOver} dia(s)  |  Deadline: ${dl}`;
     if (a.category === 'today') return `  ${a.row.container}  |  BL: ${a.row.bl||'—'}  |  🔴 FREE TIME VENCE HOJE  |  Deadline: ${dl}`;
     if (a.category === 'warn')  return `  ${a.row.container}  |  BL: ${a.row.bl||'—'}  |  ⚠️ Faltam ${a.daysLeft} dia(s) para o free time  |  Deadline: ${dl}`;
     return '';
@@ -732,7 +736,7 @@ function openAlertEmailForKey(encodedKey) {
   const g      = groups[key];
   if (!g || !g.emails.length) { toast('Nenhum e-mail cadastrado para este cliente.', 'error'); return; }
   const body    = buildAlertEmailBody(g);
-  const subject = encodeURIComponent(`Alerta de Free Time — ${g.name} — ${g.items.length} container(s)`);
+  const subject = encodeURIComponent(`Alerta de Free Time — ${extractRazaoSocial(g.name)} — ${g.items.length} container(s)`);
   const to      = encodeURIComponent(g.emails.join(', '));
   window.location.href = `mailto:${to}?cc=eqp@fwlog.com.br&subject=${subject}&body=${encodeURIComponent(body)}`;
 }
@@ -794,7 +798,7 @@ function sendAlertEmailFor(idx) {
   const g = eligible[idx];
   if (!g) return;
   const body    = buildAlertEmailBody(g);
-  const subject = encodeURIComponent(`Alerta de Free Time — ${g.name} — ${g.items.length} container(s)`);
+  const subject = encodeURIComponent(`Alerta de Free Time — ${extractRazaoSocial(g.name)} — ${g.items.length} container(s)`);
   const to      = encodeURIComponent(g.emails.join(', '));
   window.open(`mailto:${to}?cc=eqp@fwlog.com.br&subject=${subject}&body=${encodeURIComponent(body)}`);
 }
@@ -804,7 +808,7 @@ function sendAllAlertEmails() {
   eligible.forEach((g, i) => {
     setTimeout(() => {
       const body    = buildAlertEmailBody(g);
-      const subject = encodeURIComponent(`Alerta de Free Time — ${g.name} — ${g.items.length} container(s)`);
+      const subject = encodeURIComponent(`Alerta de Free Time — ${extractRazaoSocial(g.name)} — ${g.items.length} container(s)`);
       const to      = encodeURIComponent(g.emails.join(', '));
       window.open(`mailto:${to}?cc=eqp@fwlog.com.br&subject=${subject}&body=${encodeURIComponent(body)}`);
     }, i * 600);
