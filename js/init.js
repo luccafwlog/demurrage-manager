@@ -725,7 +725,7 @@ function buildAlertEmailBody(g) {
   }).filter(Boolean).join('\n');
   const intro = hasUrgent
     ? `Comunicamos que os containers abaixo já ultrapassaram ou atingiram o limite do free time.\nPor favor, providencie a devolução imediata para evitar cobranças adicionais de sobreestadia.`
-    : `Informamos que os containers abaixo estão próximos do vencimento do free time (janela de ${alertDays} dias).\nRecomendamos providenciar a devolução antecipada para evitar cobranças de sobreestadia.`;
+    : `Informamos que os containers abaixo estão próximos do vencimento do free time.\nRecomendamos providenciar a devolução antecipada para evitar cobranças de sobreestadia.`;
   return `Prezado(a) ${firstName},\n\n${intro}\n\nCONTAINERS EM ALERTA:\n\n${lines}\n\nEm caso de dúvidas, entre em contato conosco.\n\nAtenciosamente,\nTRANSHIPPING AGENCIAMENTO MARÍTIMO Ltda.\nCNPJ: 06.352.972/0001-21`;
 }
 
