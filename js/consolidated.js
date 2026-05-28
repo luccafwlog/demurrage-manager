@@ -298,7 +298,6 @@ TOTAL GERAL: R$ ${grandFmt}
 ─────────────────────────────────────
 
 PIX — Chave CNPJ: 06.352.972/0001-21
-Banco: ITAÚ | Agência: 0870 - Praia do Canto | CC: 37293-5
 
 Atenciosamente,
 TRANSHIPPING AGENCIAMENTO MARÍTIMO Ltda.
@@ -426,16 +425,16 @@ body{margin:0;padding:20px;background:white;}
       <td style="padding:7px 10px;font-weight:700;text-align:right;">${vencFmt}</td>
     </tr>
   </table>
-  <div class="inv-bank-box" style="margin-top:10px;padding:10px 14px;background:#FFF8E1;border:1px solid #f59e0b;border-radius:4px;">
-    BANCO: ITAÚ &nbsp;|&nbsp; AG: 0870 - PRAIA DO CANTO &nbsp;|&nbsp; CC: 37293-5<br>
-    <strong style="font-size:15px;">R$&nbsp;${totalFmt}</strong>
-  </div>
   <div style="display:flex;gap:16px;align-items:flex-start;margin-top:16px;padding-top:14px;border-top:1px solid #e5e7eb;">
     <div id="qr-inv" style="width:100px;height:100px;flex-shrink:0;"></div>
-    <div style="font-size:12px;color:#333;line-height:1.6;">
+    <div style="flex:1;min-width:0;font-size:12px;color:#333;line-height:1.6;">
       <strong style="display:block;font-size:13px;font-weight:700;color:#0f2a4a;text-transform:uppercase;margin-bottom:4px;">Pagamento via PIX</strong>
-      Valor: <strong>R$&nbsp;${totalFmt}</strong><br>
-      <span class="inv-pix-key">🔑 Chave PIX (CNPJ): 06.352.972/0001-21</span>
+      Escaneie o QR Code ao lado ou utilize o código Pix Copia e Cola abaixo para realizar o pagamento.<br>
+      Valor da fatura: <strong>R$&nbsp;${totalFmt}</strong>
+      <div style="margin-top:8px;max-width:100%;">
+        <span style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;">Pix Copia e Cola</span>
+        <span style="display:block;font-family:monospace;font-size:8.5px;color:#374151;background:#f9fafb;border:1px solid #e5e7eb;border-radius:4px;padding:5px 8px;word-break:break-all;overflow-wrap:break-word;overflow:hidden;max-width:100%;line-height:1.6;user-select:all;">${pixPayload}</span>
+      </div>
     </div>
   </div>
   <div style="text-align:right;margin-top:16px;font-size:12px;color:#555;">Vitória, ${docDate}</div>

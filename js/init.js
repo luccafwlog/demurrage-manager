@@ -945,7 +945,7 @@ function sendMultipleEmails() {
       }).join('\n');
       const grandFmt = grand.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
       const subject  = encodeURIComponent(`Cobranças de Demurrage — ${nome} — ${unpaid.length} fatura${unpaid.length>1?'s':''}`);
-      const body     = encodeURIComponent(`Prezado(a) ${firstName},\n\nEncaminhamos o resumo das faturas de Sobreestadia em aberto para ${nome} (CNPJ: ${formatCnpj(cnpj)}):\n\n${linhas}\n\n─────────────────────────────────────\nTOTAL GERAL: R$ ${grandFmt}\n─────────────────────────────────────\n\nPIX — Chave CNPJ: 06.352.972/0001-21\nBanco: ITAÚ | Agência: 0870 - Praia do Canto | CC: 37293-5\n\nAtenciosamente,\nTRANSHIPPING AGENCIAMENTO MARÍTIMO Ltda.\nCNPJ: 06.352.972/0001-21`);
+      const body     = encodeURIComponent(`Prezado(a) ${firstName},\n\nEncaminhamos o resumo das faturas de Sobreestadia em aberto para ${nome} (CNPJ: ${formatCnpj(cnpj)}):\n\n${linhas}\n\n─────────────────────────────────────\nTOTAL GERAL: R$ ${grandFmt}\n─────────────────────────────────────\n\nPIX — Chave CNPJ: 06.352.972/0001-21\n\nAtenciosamente,\nTRANSHIPPING AGENCIAMENTO MARÍTIMO Ltda.\nCNPJ: 06.352.972/0001-21`);
       window.open(`mailto:${to}?cc=eqp@fwlog.com.br&subject=${subject}&body=${body}`);
     }, i * 700);
   });
@@ -987,7 +987,7 @@ function dispararTodasCobranças() {
       }).join('\n');
       const grandFmt = grand.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
       const subject  = encodeURIComponent(`Cobranças de Demurrage — ${nome} — ${unpaid.length} fatura${unpaid.length>1?'s':''}`);
-      const body     = encodeURIComponent(`Prezado(a) ${firstName},\n\nEncaminhamos o resumo das faturas de Sobreestadia em aberto para ${nome} (CNPJ: ${formatCnpj(cnpj)}):\n\n${linhas}\n\n─────────────────────────────────────\nTOTAL GERAL: R$ ${grandFmt}\n─────────────────────────────────────\n\nPIX — Chave CNPJ: 06.352.972/0001-21\nBanco: ITAÚ | Agência: 0870 - Praia do Canto | CC: 37293-5\n\nAtenciosamente,\nTRANSHIPPING AGENCIAMENTO MARÍTIMO Ltda.\nCNPJ: 06.352.972/0001-21`);
+      const body     = encodeURIComponent(`Prezado(a) ${firstName},\n\nEncaminhamos o resumo das faturas de Sobreestadia em aberto para ${nome} (CNPJ: ${formatCnpj(cnpj)}):\n\n${linhas}\n\n─────────────────────────────────────\nTOTAL GERAL: R$ ${grandFmt}\n─────────────────────────────────────\n\nPIX — Chave CNPJ: 06.352.972/0001-21\n\nAtenciosamente,\nTRANSHIPPING AGENCIAMENTO MARÍTIMO Ltda.\nCNPJ: 06.352.972/0001-21`);
       window.open(`mailto:${to}?cc=eqp@fwlog.com.br&subject=${subject}&body=${body}`);
     }, i * 700);
   });

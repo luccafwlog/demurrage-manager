@@ -51,10 +51,6 @@ div.invoice { border: 1px solid #ccc; padding: 36px 40px; font-size: 13px; color
 .inv-venc-highlight { background: var(--navy) !important; color: white !important; font-weight: 600; text-align: right !important; padding: 9px 12px !important; white-space: nowrap; }
 .roe-area { display: flex; justify-content: flex-end; margin-bottom: -1px; }
 .roe-box { background: var(--gold); padding: 6px 16px; font-weight: 700; font-size: 13px; display: flex; gap: 12px; min-width: 180px; justify-content: space-between; }
-.inv-bank { margin-top: 20px; font-size: 12.5px; }
-.inv-bank strong { display: block; font-size: 13px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-.inv-bank-detail { line-height: 1.7; color: #333; }
-.inv-total-box { display: inline-block; background: var(--gold); color: #000; font-weight: 700; font-size: 15px; padding: 6px 14px; border-radius: 4px; margin-top: 8px; }
 .inv-date { text-align: right; font-size: 12px; color: #555; margin-top: 16px; }
 .cons-dd-item:hover { background: #f0f9ff !important; }
 .inv-pix { display: flex; align-items: flex-start; gap: 18px; margin-top: 20px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
@@ -122,7 +118,6 @@ div.invoice { border: 1px solid #ccc; padding: 36px 40px; font-size: 13px; color
   .inv-total-row { background: #f59e0b !important; }
   .inv-venc-row td { background: #1a2744 !important; color: white !important; }
   .roe-box { background: #f59e0b !important; }
-  .inv-total-box { background: #f59e0b !important; }
   .inv-pix { display: flex !important; }
   .inv-pix-qr img { width: 90px !important; height: 90px !important; }
   .inv-pix-copiacola-code { background: #f9fafb !important; }
