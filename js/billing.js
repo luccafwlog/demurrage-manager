@@ -1655,7 +1655,6 @@ Encaminhamos em anexo a Fatura de Sobreestadia de Container referente ao BL abai
   Vencimento : ${vencFmt}
 
 Para pagamento via PIX, utilize a chave: 06.352.972/0001-21 (CNPJ)
-Banco: ITAÚ | Agência: 0870 - Praia do Canto | CC: 37293-5
 
 
 Atenciosamente,
@@ -1800,11 +1799,6 @@ function renderDoc(b, type) {
         ${vencRow}
       </tbody>
     </table>
-    <div class="inv-bank">
-      <strong>Detalhes Bancários</strong>
-      <div class="inv-bank-detail">TRANSHIPPING AGENCIAMENTO MARITIMO Ltda.<br>CNPJ 06.352.972/0001-21<br>BANCO: ITAU<br>AGÊNCIA: 0870 - PRAIA DO CANTO<br>CONTA CORRENTE 37293-5</div>
-      <div class="inv-total-box">${fmtBRL(totalBRL)}</div>
-    </div>
     ${isInv ? `<div class="inv-pix">
       <div class="inv-pix-qr" id="pix-qr-${docnum}"></div>
       <div class="inv-pix-info">
