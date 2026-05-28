@@ -149,8 +149,9 @@ function _buildConsolidatedInvoiceHTML(group, docnum) {
   const cnpjStr = first.cnpj || '';
 
   // Pré-calcula linhas da tabela (uma seção por BL, com divisor visual).
+  // Navio/POL/POD aparecem no divisor de cada seção da tabela — não precisam
+  // ser repetidos como inv-rows no cabeçalho.
   let grandTotal = 0;
-  const blInfoBlocks  = [];
   const tableSections = [];
 
   group.forEach((b, idx) => {
@@ -163,18 +164,6 @@ function _buildConsolidatedInvoiceHTML(group, docnum) {
 
     const subtotal = (b.frozenTotal != null) ? b.frozenTotal : billable.reduce((s, x) => s + x.brl, 0);
     grandTotal += subtotal;
-
-    // Bloco de informações do BL — mesmas inv-rows da fatura única, repetidas
-    // por BL para preservar a identidade visual ("BL", "Container(s)",
-    // "Navio/Voy", "From", "To").
-    const ctrsStr = billable.map(x => x.c.container).join(', ');
-    blInfoBlocks.push(`
-    ${idx > 0 ? '<hr class="inv-hr-light">' : ''}
-    <div class="inv-row"><span class="inv-lbl">BL ${idx + 1} de ${group.length}</span><span class="inv-val">${b.bl || '—'}</span></div>
-    <div class="inv-row"><span class="inv-lbl">Container(s)</span><span class="inv-val">${ctrsStr || '—'}</span></div>
-    <div class="inv-row"><span class="inv-lbl">Navio/Voy:</span><span class="inv-val">${b.vessel || '—'}</span></div>
-    <div class="inv-row"><span class="inv-lbl">From:</span><span class="inv-val">${b.pol || '—'}</span></div>
-    <div class="inv-row"><span class="inv-lbl">To:</span><span class="inv-val">${b.pod || '—'}</span></div>`);
 
     // Linhas da tabela: divisor por BL + uma linha por container cobrável.
     const divider = `
@@ -201,6 +190,9 @@ function _buildConsolidatedInvoiceHTML(group, docnum) {
       </tr>`).join('');
     tableSections.push(divider + rowsHTML);
   });
+
+  // Listagem compacta dos BLs cobertos (no lugar dos blocos repetidos).
+  const blsListStr = group.map(b => b.bl || '—').join(', ');
 
   // Vencimento: usa o do primeiro BL (todos do mesmo grupo costumam compartilhar).
   if (!first.venc) first.venc = nextBusinessDay(null);
@@ -229,8 +221,7 @@ function _buildConsolidatedInvoiceHTML(group, docnum) {
     <div class="inv-title">FATURA DE SOBREESTADIA DE CONTAINER</div>
     <hr class="inv-hr">
     <div class="inv-row"><span class="inv-lbl">Cliente:</span><span class="inv-val">${cliente}${cnpjStr ? '<br>CNPJ: ' + cnpjStr : ''}</span></div>
-    <hr class="inv-hr-light">
-    ${blInfoBlocks.join('\n')}
+    <div class="inv-row"><span class="inv-lbl">BLs (${group.length}):</span><span class="inv-val">${blsListStr}</span></div>
 
     <div style="display:flex;justify-content:flex-end;margin-bottom:0;">
       <div class="roe-box" style="min-width:160px;"><span>ROE</span><span>${roeFmt}</span></div>
