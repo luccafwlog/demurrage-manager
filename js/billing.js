@@ -1604,9 +1604,16 @@ function printDoc() {
   if (currentBL) {
     const docnum = currentDocnum || currentBL.docnum || ('DEM-' + new Date().getFullYear() + '-0000');
     const primeiroNome = (currentBL.client || '').trim().split(/\s+/)[0] || 'CLIENTE';
-    const bl = currentBL.bl || 'BL';
-    const tipo = currentType === 'invoice' ? 'FATURA DEMURRAGE' : 'RECIBO DEMURRAGE';
-    const nomeArquivo = `${docnum} ${tipo} ${primeiroNome} ${bl}`;
+    const isCons = (typeof isConsolidatedDocnum === 'function') && isConsolidatedDocnum(docnum);
+    const tipo = currentType === 'invoice'
+      ? (isCons ? 'FATURA CONSOLIDADA DEMURRAGE' : 'FATURA DEMURRAGE')
+      : 'RECIBO DEMURRAGE';
+    const tail = isCons
+      ? ((typeof getBLsByConsolidatedDocnum === 'function')
+          ? `${getBLsByConsolidatedDocnum(docnum).length} BLs`
+          : 'CONSOLIDADA')
+      : (currentBL.bl || 'BL');
+    const nomeArquivo = `${docnum} ${tipo} ${primeiroNome} ${tail}`;
     const oldTitle = document.title;
     document.title = nomeArquivo;
     window.print();
@@ -1666,6 +1673,16 @@ function sendInvoiceEmail() {
   if (!currentBL) return;
   const b = currentBL;
   const docnum = currentDocnum || b.docnum || genDocnum(b.bl);
+
+  // Fatura consolidada: redireciona para o e-mail consolidado (que descreve
+  // todos os BLs do grupo, total agregado e o txid único).
+  if (typeof isConsolidatedDocnum === 'function' && isConsolidatedDocnum(docnum)) {
+    if (typeof sendConsolidatedInvoiceEmail === 'function') {
+      sendConsolidatedInvoiceEmail(docnum);
+      return;
+    }
+  }
+
   const roe = (b.paid || b.billed) && b.frozenRoe != null ? b.frozenRoe : effectiveROE(b);
 
   // Calc total
