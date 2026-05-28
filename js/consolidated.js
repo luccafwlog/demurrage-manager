@@ -253,10 +253,13 @@ function _updateConsPreviewTotal() {
 // Habilita/desabilita botões de ação conforme seleção
 function _updateConsBLButtons() {
   const hasAny = _consSelectedBLs.size > 0;
-  const sendBtn = document.getElementById('cons-send-btn');
-  const pdfBtn  = document.getElementById('cons-pdf-btn');
-  if (sendBtn) sendBtn.disabled = !hasAny;
-  if (pdfBtn)  pdfBtn.disabled  = !hasAny;
+  const sendBtn  = document.getElementById('cons-send-btn');
+  const pdfBtn   = document.getElementById('cons-pdf-btn');
+  const issueBtn = document.getElementById('cons-issue-btn');
+  if (sendBtn)  sendBtn.disabled  = !hasAny;
+  if (pdfBtn)   pdfBtn.disabled   = !hasAny;
+  // Fatura consolidada exige no mínimo 2 BLs (1 BL = fatura normal).
+  if (issueBtn) issueBtn.disabled = _consSelectedBLs.size < 2;
 }
 
 // Send consolidated email

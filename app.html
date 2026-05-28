@@ -526,6 +526,7 @@ var MiniZip = (function() {
         <span id="cons-selected-count" style="font-size:12px;color:var(--muted);display:none;"></span>
         <button class="btn btn-outline" id="cons-pdf-btn" onclick="printAllInvoices()" disabled>🖨️ Abrir Faturas Selecionadas</button>
         <button class="btn btn-outline" id="cons-multi-send-btn" onclick="sendMultipleEmails()" disabled style="display:none;">🚀 Disparar Selecionados</button>
+        <button class="btn btn-outline" id="cons-issue-btn" onclick="issueConsolidatedInvoice()" disabled title="Emite UMA fatura única com txid PIX compartilhado que quita todos os BLs selecionados na conciliação">📄 Emitir Fatura Consolidada</button>
         <button class="btn btn-primary" id="cons-send-btn" onclick="sendConsolidatedEmail()" disabled>✉️ Abrir no E-mail</button>
       </div>
     </div>
@@ -1229,10 +1230,10 @@ function downloadTemplate() {
 <script src="js/rates.js?v=139"></script>
 
 <!-- Módulo de Faturamento (BLs, PTAX, Cálculo D&D) -->
-<script src="js/billing.js?v=139"></script>
+<script src="js/billing.js?v=140"></script>
 
 <!-- Conciliação Bancária via Planilha Excel PIX -->
-<script src="js/reconciliation.js?v=2"></script>
+<script src="js/reconciliation.js?v=3"></script>
 
 <!-- Módulo de Rastreamento de Containers -->
 <script src="js/tracking.js?v=141"></script>
@@ -1244,7 +1245,10 @@ function downloadTemplate() {
 <script src="js/users.js?v=139"></script>
 
 <!-- Módulo de Cobrança Consolidada por CNPJ -->
-<script src="js/consolidated.js?v=139"></script>
+<script src="js/consolidated.js?v=140"></script>
+
+<!-- Módulo de Fatura Consolidada (1 fatura ↔ N BLs, txid PIX compartilhado) -->
+<script src="js/consolidatedInvoice.js?v=1"></script>
 
 <!-- Inicialização: Dashboard, Configurações, window._dmOnReady -->
 <script src="js/init.js?v=139"></script>

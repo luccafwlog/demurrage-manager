@@ -570,7 +570,9 @@ function renderList() {
     const agingBadge = agingDays !== null
       ? `<span class="aging-badge ${agingDays>=30?'aging-late':agingDays>=15?'aging-warn':'aging-ok'}">${agingDays}d sem pagamento</span>`
       : '';
+    const isConsolidated = !!(b.consolidatedDocnum || (typeof isConsolidatedDocnum === 'function' && isConsolidatedDocnum(b.docnum)));
     const billedBadge = isBilled ? `<span class="paid-badge" style="background:#dbeafe;color:#1e40af;margin-left:4px;">📄 FATURADO</span>` : '';
+    const consolidatedBadge = isConsolidated ? `<span class="paid-badge" style="background:#ede9fe;color:#5b21b6;margin-left:4px;" title="Faz parte da fatura consolidada ${b.consolidatedDocnum || b.docnum}">🔗 CONSOLIDADA</span>` : '';
     const discountBadge = (b.discount && b.discount.value > 0) ? `<span class="badge-desc">DESC</span>` : '';
     const isDisputed = (b.dispute && b.dispute.open);
     const disputeBadge = isDisputed ? `<span class="badge-dispute">⚠️ DISPUTA</span>` : '';
@@ -590,7 +592,7 @@ function renderList() {
     return `<div class="bl-card${isPaid?' is-paid':''}${isBilled?' is-paid':''}${isDisputed?' is-disputed':''}">
       <span class="bl-badge">BL</span>
       <div class="bl-info">
-        <div class="bl-number">${b.bl}${paidBadge}${discountBadge}${disputeBadge}${billedBadge}${agingBadge}</div>
+        <div class="bl-number">${b.bl}${paidBadge}${discountBadge}${disputeBadge}${billedBadge}${consolidatedBadge}${agingBadge}</div>
         <div class="bl-client">${b.client||'—'}</div>
         <div class="bl-meta"><span>${billableCtrs.length} contêiner(es) c/ demurrage${ctrs.length > billableCtrs.length ? ` (${ctrs.length} total)` : ""}${totStr}</span>${tags}${more}${dateChip}</div>
       </div>
@@ -601,7 +603,7 @@ function renderList() {
         </div>
         <div class="bl-action-divider"></div>
         <div class="bl-action-group bl-action-docs">
-          <button class="act-btn invoice" onclick="viewDoc('${b.id}','invoice')" title="Visualizar Fatura">📄 Fatura</button>
+          <button class="act-btn invoice" onclick="${isConsolidated ? `openConsolidatedInvoiceForBL('${b.id}')` : `viewDoc('${b.id}','invoice')`}" title="${isConsolidated ? 'Visualizar Fatura Consolidada' : 'Visualizar Fatura'}">${isConsolidated ? '🔗 Fatura' : '📄 Fatura'}</button>
           <button class="act-btn receipt${isPaid ? '' : ' receipt-locked'}"
             onclick="viewDoc('${b.id}','receipt')"
             title="${isPaid ? 'Visualizar Recibo' : 'Recibo disponível apenas para faturas pagas'}"
@@ -1435,6 +1437,45 @@ function toggleBilled(id) {
   const b = bls.find(x => x.id === id);
   if (!b) return;
   if (b.billed) {
+    // Caso especial: BL pertence a uma fatura CONSOLIDADA (docnum DEMC- compartilhado).
+    // Desfazer apenas este BL deixaria o grupo inconsistente, então desfaz o grupo INTEIRO.
+    const consDocnum = b.consolidatedDocnum
+      || (typeof isConsolidatedDocnum === 'function' && isConsolidatedDocnum(b.docnum) ? b.docnum : null);
+    if (consDocnum) {
+      const group = bls.filter(x =>
+        x.consolidatedDocnum === consDocnum
+        || (x.docnum === consDocnum && (typeof isConsolidatedDocnum === 'function' && isConsolidatedDocnum(x.docnum)))
+      );
+      if (!confirm(
+        `Esta fatura é CONSOLIDADA (${consDocnum}) e cobre ${group.length} BLs.\n\n` +
+        `Desmarcar irá desfazer a fatura para TODOS os ${group.length} BLs do grupo.\n` +
+        `Deseja continuar?`
+      )) return;
+      const newVenc = nextBusinessDay(null);
+      group.forEach(g => {
+        if (!g.firstBilledAt && g.billedAt) g.firstBilledAt = g.billedAt;
+        g.billed = false;
+        g.billedAt = null;
+        g.frozenRoe = null;
+        g.frozenTotal = null;
+        g.venc = newVenc;
+        // Restaura docnum individual (gera novo a partir do BL).
+        g.docnum = genDocnum(g.bl);
+        // Limpa metadados do grupo consolidado.
+        delete g.consolidatedDocnum;
+        delete g.consolidatedGroupId;
+        delete g.consolidatedAt;
+        delete g.consolidatedTotal;
+        delete g.consolidatedBLIds;
+        saveOne(g);
+      });
+      logAuditAction('reversao_fatura_consolidada', {
+        docnum: consDocnum, qtd: group.length, blIds: group.map(g => g.id), newVenc
+      });
+      renderList();
+      toast(`Fatura consolidada ${consDocnum} desfeita (${group.length} BLs). 📅`, '');
+      return;
+    }
     if (!confirm('Desmarcar esta fatura como "Faturado"?\nAs informações serão descongeladas.')) return;
     // Backfill: garante que firstBilledAt existe ANTES de zerar billedAt.
     // Cobre BLs que foram faturados antes desta funcionalidade existir.

@@ -113,12 +113,16 @@ function _normTxid(str) {
  *   matchType: 'txid' | 'cnpj'
  */
 function matchTransactions(transactions, blsArray) {
-  // Mapa txid normalizado → BL faturado e não pago
+  // Mapa txid normalizado → LISTA de BLs faturados e não pagos.
+  // Uma fatura consolidada (DEMC-…) compartilha o mesmo docnum entre N BLs,
+  // então o mapa precisa armazenar todos para que o txid quite o grupo inteiro.
   const txidMap = {};
   blsArray.forEach(b => {
     if (!b.billed || b.paid || !b.docnum) return;
     const key = _normTxid(b.docnum);
-    if (key) txidMap[key] = b;
+    if (!key) return;
+    if (!txidMap[key]) txidMap[key] = [];
+    txidMap[key].push(b);
   });
 
   // Mapa CNPJ → BLs faturados e não pagos (fallback)
@@ -144,14 +148,18 @@ function matchTransactions(transactions, blsArray) {
     if (usedTxids.has(tx.txid)) return;
 
     // 1. Matching por txid (identificador == docnum normalizado)
+    //    Fatura consolidada: 1 txid quita N BLs — todos compartilham o docnum.
     const key = _normTxid(tx.txid);
-    if (key && txidMap[key]) {
+    if (key && txidMap[key] && txidMap[key].length) {
+      const group = txidMap[key];
+      const isConsolidated = group.length > 1;
       matches.push({
         transaction: tx,
-        bl:          txidMap[key],
-        candidates:  [txidMap[key]],
-        ambiguous:   false,
-        matchType:   'txid'
+        bl:          group[0],     // BL "âncora" para exibição
+        candidates:  group,         // grupo inteiro (1 ou N BLs)
+        ambiguous:   false,         // mesmo docnum → não é ambíguo, é consolidado
+        matchType:   isConsolidated ? 'txid-consolidada' : 'txid',
+        consolidatedGroup: isConsolidated ? group : null
       });
       return;
     }
@@ -267,19 +275,38 @@ function renderReconciliationPreview(matches, totalTransactions, blsRef) {
   const fmtDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
 
   const rows = matches.map((m, i) => {
-    const blCell = m.ambiguous
-      ? `<select class="recon-select" data-idx="${i}" style="font-size:12px;border:1px solid #d1d5db;border-radius:6px;padding:4px 6px;max-width:220px;">
+    let blCell;
+    if (m.consolidatedGroup && m.consolidatedGroup.length > 1) {
+      // Fatura consolidada: lista todos os BLs cobertos pelo mesmo txid.
+      const blsList = m.consolidatedGroup.map(c => c.bl || c.id).join(', ');
+      blCell = `<span style="font-weight:600;color:#166534;">${m.consolidatedGroup.length} BLs</span>
+                <span style="font-size:11px;color:#6b7280;display:block;">${m.bl.docnum || '—'}</span>
+                <span style="font-size:10px;color:#374151;display:block;margin-top:2px;">${blsList}</span>`;
+    } else if (m.ambiguous) {
+      blCell = `<select class="recon-select" data-idx="${i}" style="font-size:12px;border:1px solid #d1d5db;border-radius:6px;padding:4px 6px;max-width:220px;">
            ${m.candidates.map((c, ci) =>
              `<option value="${ci}">${c.bl} — ${c.docnum || '—'} — ${c.client || '—'}</option>`
            ).join('')}
          </select>
-         <span style="font-size:10px;color:#b45309;margin-left:4px;">⚠ ambíguo</span>`
-      : `<span style="font-weight:600;color:#166534;">${m.bl.bl || m.bl.id}</span>
-         <span style="font-size:11px;color:#6b7280;display:block;">${m.bl.docnum || '—'}</span>`;
+         <span style="font-size:10px;color:#b45309;margin-left:4px;">⚠ ambíguo</span>`;
+    } else {
+      blCell = `<span style="font-weight:600;color:#166534;">${m.bl.bl || m.bl.id}</span>
+                <span style="font-size:11px;color:#6b7280;display:block;">${m.bl.docnum || '—'}</span>`;
+    }
 
-    const matchBadge = m.matchType === 'txid'
-      ? '<span style="font-size:10px;background:#dcfce7;color:#166534;padding:1px 5px;border-radius:4px;margin-left:4px;">txid</span>'
-      : '<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;margin-left:4px;">cnpj</span>';
+    let matchBadge;
+    if (m.matchType === 'txid-consolidada') {
+      matchBadge = '<span style="font-size:10px;background:#dbeafe;color:#1e40af;padding:1px 5px;border-radius:4px;margin-left:4px;">consolidada</span>';
+    } else if (m.matchType === 'txid') {
+      matchBadge = '<span style="font-size:10px;background:#dcfce7;color:#166534;padding:1px 5px;border-radius:4px;margin-left:4px;">txid</span>';
+    } else {
+      matchBadge = '<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;margin-left:4px;">cnpj</span>';
+    }
+
+    // Valor da fatura: soma quando for consolidada (cada BL tem sua fatia)
+    const valorFatura = m.consolidatedGroup && m.consolidatedGroup.length > 1
+      ? m.consolidatedGroup.reduce((s, c) => s + (c.frozenTotal || 0), 0)
+      : (m.bl.frozenTotal != null ? m.bl.frozenTotal : null);
 
     return `
       <tr style="border-bottom:1px solid #f3f4f6;">
@@ -290,7 +317,7 @@ function renderReconciliationPreview(matches, totalTransactions, blsRef) {
         <td style="padding:8px 10px;font-size:12px;">${m.bl.client || '—'}</td>
         <td style="padding:8px 10px;font-size:11px;color:#6b7280;font-family:monospace;">${m.transaction.txid}</td>
         <td style="padding:8px 10px;font-size:12px;color:#1d4ed8;font-weight:600;">${fmtBRL(m.transaction.amount)}</td>
-        <td style="padding:8px 10px;font-size:12px;color:#374151;">${m.bl.frozenTotal != null ? fmtBRL(m.bl.frozenTotal) : '—'}</td>
+        <td style="padding:8px 10px;font-size:12px;color:#374151;">${valorFatura != null ? fmtBRL(valorFatura) : '—'}</td>
         <td style="padding:8px 10px;font-size:12px;">${fmtDate(m.transaction.date)}</td>
       </tr>`;
   }).join('');
@@ -341,13 +368,18 @@ function confirmConciliacao() {
     const match = _pendingMatches[idx];
     if (!match) return;
 
+    // Fatura consolidada: 1 txid quita TODOS os BLs do grupo.
+    if (match.consolidatedGroup && match.consolidatedGroup.length > 1) {
+      match.consolidatedGroup.forEach(b => selected.push({ match, bl: b }));
+      return;
+    }
+
     let bl = match.bl;
     if (match.ambiguous) {
       const sel = document.querySelector(`.recon-select[data-idx="${idx}"]`);
       const ci  = sel ? parseInt(sel.value, 10) : 0;
       bl = match.candidates[ci] || match.bl;
     }
-
     selected.push({ match, bl });
   });
 
@@ -356,6 +388,7 @@ function confirmConciliacao() {
     return;
   }
 
+  let consolidatedCount = 0;
   selected.forEach(({ match, bl }) => {
     const tx = match.transaction;
 
@@ -369,6 +402,9 @@ function confirmConciliacao() {
     bl.conciliadoPorExtrato = true;
     bl.pixTxid              = tx.txid;
 
+    const isCons = !!(match.consolidatedGroup && match.consolidatedGroup.length > 1);
+    if (isCons) consolidatedCount++;
+
     logAuditAction('conciliacao_automatica', {
       blId:      bl.id,
       bl:        bl.bl,
@@ -377,7 +413,9 @@ function confirmConciliacao() {
       paidAt:    tx.date,
       txid:      tx.txid,
       matchType: match.matchType,
-      cnpj:      bl.cnpj
+      cnpj:      bl.cnpj,
+      consolidatedDocnum: isCons ? bl.consolidatedDocnum : undefined,
+      consolidatedGroupSize: isCons ? match.consolidatedGroup.length : undefined
     });
 
     saveOne(bl);
@@ -385,5 +423,6 @@ function confirmConciliacao() {
 
   closeModal('modal-extrato-import');
   renderList();
-  toast(`${selected.length} fatura(s) conciliada(s) com sucesso! ✔`, 'success');
+  const extra = consolidatedCount > 0 ? ` (${consolidatedCount} via fatura consolidada)` : '';
+  toast(`${selected.length} BL(s) conciliado(s) com sucesso${extra}! ✔`, 'success');
 }
