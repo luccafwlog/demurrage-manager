@@ -49,6 +49,10 @@ div.invoice { border: 1px solid #ccc; padding: 36px 40px; font-size: 13px; color
 .inv-total-val { font-weight: 700; text-align: right !important; padding: 9px 12px !important; white-space: nowrap; }
 .inv-venc-row td { background: var(--navy) !important; color: white !important; font-weight: 600; padding: 9px 12px; border: none; }
 .inv-venc-highlight { background: var(--navy) !important; color: white !important; font-weight: 600; text-align: right !important; padding: 9px 12px !important; white-space: nowrap; }
+/* Divisor de BL dentro da tabela da fatura consolidada (estilo navy claro). */
+.inv-bl-divider td { background: #eef2f7 !important; color: var(--navy) !important; text-align: left !important; font-size: 11px; font-weight: 500; padding: 7px 10px !important; border-top: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; }
+.inv-bl-tag { display: inline-block; background: var(--navy); color: white; padding: 1px 7px; border-radius: 3px; font-size: 9px; font-weight: 700; letter-spacing: .4px; margin-right: 6px; vertical-align: middle; }
+.inv-bl-sub { float: right; font-weight: 700; color: var(--navy); }
 .roe-area { display: flex; justify-content: flex-end; margin-bottom: -1px; }
 .roe-box { background: var(--gold); padding: 6px 16px; font-weight: 700; font-size: 13px; display: flex; gap: 12px; min-width: 180px; justify-content: space-between; }
 .inv-date { text-align: right; font-size: 12px; color: #555; margin-top: 16px; }
@@ -117,6 +121,8 @@ div.invoice { border: 1px solid #ccc; padding: 36px 40px; font-size: 13px; color
   .inv-total-row { background: #f59e0b !important; }
   .inv-total-row { background: #f59e0b !important; }
   .inv-venc-row td { background: #1a2744 !important; color: white !important; }
+  .inv-bl-divider td { background: #eef2f7 !important; color: #1a2744 !important; }
+  .inv-bl-tag { background: #1a2744 !important; color: white !important; }
   .roe-box { background: #f59e0b !important; }
   .inv-pix { display: flex !important; }
   .inv-pix-qr img { width: 90px !important; height: 90px !important; }

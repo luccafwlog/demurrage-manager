@@ -2,20 +2,22 @@
 // consolidatedInvoice.js — Fatura Consolidada (1 fatura ↔ N BLs)
 // Demurrage Manager — Transhipping Agenciamento Marítimo
 // ============================================================
-// Permite emitir uma ÚNICA fatura que agrupa vários BLs do mesmo
-// consignatário (CNPJ). O número da fatura (docnum) é gravado em
-// TODOS os BLs do grupo, e usado como txid do PIX QR code. Quando
-// o extrato do banco for importado pela conciliação, o txid (igual
-// ao docnum da fatura consolidada) marcará TODOS os BLs do grupo
-// como pagos de uma só vez.
+// Visualmente IDÊNTICA à fatura única (mesma estrutura HTML, mesmas
+// classes CSS, mesmo logo, mesmo cabeçalho, mesma tabela navy, mesmo
+// total laranja, mesmo bloco PIX). A diferença está no conteúdo:
+//   • Nº começa com DEMC- (txid distinto para conciliação)
+//   • A tabela agrupa containers de N BLs com divisores por BL
+//   • TOTAL e PIX são GRAND total (somatório de todos os BLs)
+//   • Um único pagamento PIX quita todos os BLs do grupo
 //
 // Dependências (carregadas antes via <script src>):
-//   utils.js     — toast, fmtBRL, fmtDate, openModal, closeModal
-//   rates.js     — calcUSD, getRateForBL, daysBetween
-//   billing.js   — bls, blTotal, effectiveROE, saveOne, logAuditAction,
-//                  buildPixPayload, ptaxState
-//   clients.js   — getClientByCnpj, formatCnpj, getEmailsForBL
-//   consolidated.js — _consSelectedBLs (Set de BL ids selecionados)
+//   utils.js           — toast, fmtBRL, fmtDate, longDate, cap
+//   rates.js           — calcUSD, getRateForBL, daysBetween
+//   billing.js         — bls, blTotal, effectiveROE, saveOne, logAuditAction,
+//                        buildPixPayload, ptaxState, currentBL/Type/Docnum
+//   clients.js         — getClientByCnpj, formatCnpj, getEmailsForBL
+//   invoiceAssets.js   — window.INVOICE_LOGO_HTML
+//   consolidated.js    — _consSelectedBLs (Set de BL ids selecionados)
 // ============================================================
 
 'use strict';
@@ -49,9 +51,7 @@ function isConsolidatedDocnum(docnum) {
   return /^DEMC-\d{4}-/i.test(String(docnum || ''));
 }
 
-// Retorna a lista de BLs (objetos) que compõem uma fatura consolidada,
-// dado o docnum. Atravessa o array global `bls` procurando BLs com
-// docnum igual.
+// Retorna a lista de BLs (objetos) que compõem uma fatura consolidada.
 function getBLsByConsolidatedDocnum(docnum) {
   if (!docnum) return [];
   const norm = String(docnum).toUpperCase();
@@ -61,22 +61,8 @@ function getBLsByConsolidatedDocnum(docnum) {
 }
 
 // ────────────────────────────────────────────────────────────
-// Cálculo do total individual de um BL (em BRL, já com desconto)
-// Reaproveita a regra de billing.blTotal() respeitando frozen.
-// ────────────────────────────────────────────────────────────
-function _consolBLTotal(b, roe) {
-  if ((b.paid || b.billed) && b.frozenTotal != null) return b.frozenTotal;
-  return blTotal(b, roe);
-}
-
-// ────────────────────────────────────────────────────────────
 // Emissão da fatura consolidada
 // ────────────────────────────────────────────────────────────
-// 1. Valida seleção (mínimo 2 BLs do mesmo CNPJ, todos não pagos)
-// 2. Gera docnum único (DEMC-…)
-// 3. Para cada BL: grava docnum compartilhado, marca billed, congela
-//    ROE e total individual, registra metadados do grupo, salva.
-// 4. Abre a fatura consolidada em janela para impressão/PDF.
 function issueConsolidatedInvoice() {
   const cnpj = document.getElementById('cons-cnpj-hidden').value;
   if (!cnpj) {
@@ -94,19 +80,13 @@ function issueConsolidatedInvoice() {
     return;
   }
 
-  // ROE precisa estar disponível (igual à emissão de fatura individual)
   const roe = effectiveROE(selected[0]);
   if (!roe) {
     alert('⚠ PTAX não disponível.\n\nAguarde o carregamento da cotação para emitir a fatura consolidada.');
     return;
   }
 
-  // Calcula totais ANTES de gravar (cada BL recebe o seu fatiamento;
-  // congela ROE e total no momento da emissão)
-  const slices = selected.map(b => {
-    const total = blTotal(b, roe);
-    return { b, total };
-  });
+  const slices = selected.map(b => ({ b, total: blTotal(b, roe) }));
   const grandTotal = slices.reduce((s, x) => s + x.total, 0);
 
   if (grandTotal <= 0) {
@@ -145,96 +125,88 @@ function issueConsolidatedInvoice() {
   });
 
   logAuditAction('emissao_fatura_consolidada', {
-    docnum,
-    groupId,
-    cnpj,
+    docnum, groupId, cnpj,
     cliente: getClientByCnpj(cnpj)?.name || selected[0].client,
-    blIds,
-    total: grandTotal,
-    qtd: selected.length
+    blIds, total: grandTotal, qtd: selected.length
   });
 
   closeModal('modal-consolidated');
   if (typeof renderList === 'function') renderList();
   toast(`Fatura consolidada ${docnum} emitida (${selected.length} BLs). 📄`, 'success');
 
-  // Abre a fatura para visualização/impressão
-  openConsolidatedInvoiceView(docnum);
+  viewConsolidatedDoc(docnum);
 }
 
 // ────────────────────────────────────────────────────────────
-// Renderização do HTML da fatura consolidada
+// Renderização da fatura consolidada DENTRO de #doc-content
+// (mesmo container/CSS que a fatura única → visualmente idêntica)
 // ────────────────────────────────────────────────────────────
-function _renderConsolidatedInvoiceHTML(docnum) {
-  const group = getBLsByConsolidatedDocnum(docnum);
-  if (!group.length) return '<p>Fatura consolidada não encontrada.</p>';
-
-  const first = group[0];
+function _buildConsolidatedInvoiceHTML(group, docnum) {
+  const first   = group[0];
+  const roe     = first.frozenRoe || effectiveROE(first);
+  const roeFmt  = roe.toFixed(4).replace('.', ',');
   const cliente = (getClientByCnpj(first.cnpj)?.name) || first.client || '—';
-  const cnpjFmt = formatCnpj(first.cnpj || '');
-  const venc = first.venc
-    ? new Date(first.venc + 'T12:00:00').toLocaleDateString('pt-BR')
-    : '—';
-  const emissao = (first.consolidatedAt || first.billedAt || new Date().toISOString().slice(0, 10));
-  const emissaoFmt = new Date(emissao + 'T12:00:00').toLocaleDateString('pt-BR');
+  const cnpjStr = first.cnpj || '';
 
-  const roe = first.frozenRoe || effectiveROE(first);
-  const roeFmt = roe
-    ? roe.toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
-    : '—';
-
-  // Para cada BL → seção com containers e subtotal
+  // Pré-calcula linhas da tabela (uma seção por BL, com divisor visual).
   let grandTotal = 0;
-  const blSections = group.map(b => {
-    const subtotal = (b.frozenTotal != null) ? b.frozenTotal : blTotal(b, roe);
-    grandTotal += subtotal;
+  const blInfoBlocks  = [];
+  const tableSections = [];
 
-    const containerRows = (b.containers || []).filter(c => {
-      const dc = daysBetween(c.discharge, c.emptyReturn);
-      return dc !== null && calcUSD(dc, getRateForBL(b, c.type), b.ov1 || null, b.ov2 || null).totalUSD > 0;
-    }).map(c => {
+  group.forEach((b, idx) => {
+    const billable = (b.containers || []).map(c => {
       const dc   = daysBetween(c.discharge, c.emptyReturn);
       const rate = getRateForBL(b, c.type);
       const calc = calcUSD(dc, rate, b.ov1 || null, b.ov2 || null);
-      const brl  = calc.totalUSD * roe;
-      const dch  = c.discharge ? new Date(c.discharge + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
-      const ret  = c.emptyReturn ? new Date(c.emptyReturn + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
-      return `
-        <tr>
-          <td>${c.container || '—'}</td>
-          <td>${c.type || '—'}</td>
-          <td style="text-align:center">${calc.diasP1 || '—'}</td>
-          <td style="text-align:center">$${(calc.usdP1 || 0).toFixed(2)}</td>
-          <td style="text-align:center">${calc.diasP2 || '—'}</td>
-          <td style="text-align:center">${calc.diasP2 ? '$' + (calc.usdP2 || 0).toFixed(2) : '—'}</td>
-          <td style="text-align:center">${dch}</td>
-          <td style="text-align:center">${ret}</td>
-          <td style="text-align:right">R$&nbsp;${brl.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        </tr>`;
-    }).join('');
+      return { c, calc, brl: calc.totalUSD * roe };
+    }).filter(({ calc }) => calc.totalUSD > 0);
 
-    return `
-      <div class="ci-bl-block">
-        <div class="ci-bl-head">
-          <div><strong>BL:</strong> ${b.bl || '—'} &nbsp;·&nbsp; <strong>Navio:</strong> ${b.vessel || '—'} &nbsp;·&nbsp; <strong>POL/POD:</strong> ${(b.pol || '—')} → ${(b.pod || '—')}</div>
-          <div class="ci-bl-sub">Subtotal deste BL: <strong>R$&nbsp;${subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
-        </div>
-        <table class="ci-tbl">
-          <thead>
-            <tr>
-              <th>CONTAINER</th><th>TIPO</th>
-              <th>DIAS 1º PER.</th><th>USD/Dia</th>
-              <th>DIAS 2º PER.</th><th>USD/Dia</th>
-              <th>DESCARGA</th><th>RETORNO</th><th>SUBTOTAL</th>
-            </tr>
-          </thead>
-          <tbody>${containerRows || '<tr><td colspan="9" style="text-align:center;color:#888;">Sem containers com cobrança</td></tr>'}</tbody>
-        </table>
-      </div>`;
-  }).join('');
+    const subtotal = (b.frozenTotal != null) ? b.frozenTotal : billable.reduce((s, x) => s + x.brl, 0);
+    grandTotal += subtotal;
 
-  // PIX QR code: o txid é o próprio docnum consolidado.
-  // A conciliação faz _normTxid(docnum) e bate com o identificador da planilha.
+    // Bloco de informações do BL — mesmas inv-rows da fatura única, repetidas
+    // por BL para preservar a identidade visual ("BL", "Container(s)",
+    // "Navio/Voy", "From", "To").
+    const ctrsStr = billable.map(x => x.c.container).join(', ');
+    blInfoBlocks.push(`
+    ${idx > 0 ? '<hr class="inv-hr-light">' : ''}
+    <div class="inv-row"><span class="inv-lbl">BL ${idx + 1} de ${group.length}</span><span class="inv-val">${b.bl || '—'}</span></div>
+    <div class="inv-row"><span class="inv-lbl">Container(s)</span><span class="inv-val">${ctrsStr || '—'}</span></div>
+    <div class="inv-row"><span class="inv-lbl">Navio/Voy:</span><span class="inv-val">${b.vessel || '—'}</span></div>
+    <div class="inv-row"><span class="inv-lbl">From:</span><span class="inv-val">${b.pol || '—'}</span></div>
+    <div class="inv-row"><span class="inv-lbl">To:</span><span class="inv-val">${b.pod || '—'}</span></div>`);
+
+    // Linhas da tabela: divisor por BL + uma linha por container cobrável.
+    const divider = `
+      <tr class="inv-bl-divider">
+        <td colspan="9">
+          <span class="inv-bl-tag">BL ${idx + 1}</span>
+          <strong>${b.bl || '—'}</strong>
+          &nbsp;·&nbsp; ${b.vessel || '—'}
+          &nbsp;·&nbsp; ${b.pol || '—'} → ${b.pod || '—'}
+          <span class="inv-bl-sub">${fmtBRL(subtotal)}</span>
+        </td>
+      </tr>`;
+    const rowsHTML = billable.map(({ c, calc, brl }) => `
+      <tr>
+        <td>${c.container || '—'}</td>
+        <td>${c.type || '—'}</td>
+        <td>${calc.diasP1 || 0}</td>
+        <td>${calc.usdP1.toFixed(2)}</td>
+        <td>${calc.diasP2 || 0}</td>
+        <td>${calc.usdP2.toFixed(2)}</td>
+        <td>${fmtDate(c.discharge)}</td>
+        <td>${fmtDate(c.emptyReturn)}</td>
+        <td style="font-weight:600">${fmtBRL(brl)}</td>
+      </tr>`).join('');
+    tableSections.push(divider + rowsHTML);
+  });
+
+  // Vencimento: usa o do primeiro BL (todos do mesmo grupo costumam compartilhar).
+  if (!first.venc) first.venc = nextBusinessDay(null);
+  const vencFmt = fmtDate(first.venc) || '—';
+
+  // PIX: txid = docnum consolidado → conciliação bate em TODOS os BLs do grupo.
   const pixPayload = buildPixPayload(
     '06352972000121',
     'TRANSHIPPING AGENC MARITIMO',
@@ -243,181 +215,170 @@ function _renderConsolidatedInvoiceHTML(docnum) {
     docnum
   );
 
-  const grandFmt = grandTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const logoHTML = window.INVOICE_LOGO_HTML || '';
 
-  return `
-    <div class="ci-doc">
-      <div class="ci-header">
-        <div class="ci-left">
-          <div class="ci-title">FATURA DE SOBREESTADIA — CONSOLIDADA</div>
-          <div class="ci-emit">TRANSHIPPING AGENCIAMENTO MARÍTIMO LTDA.</div>
-          <div class="ci-emit-sub">CNPJ: 06.352.972/0001-21 · Vitória/ES</div>
-        </div>
-        <div class="ci-right">
-          <div class="ci-num">Nº ${docnum}</div>
-          <div class="ci-meta">Emissão: <strong>${emissaoFmt}</strong></div>
-          <div class="ci-meta">Vencimento: <strong>${venc}</strong></div>
-          <div class="ci-meta">BLs incluídos: <strong>${group.length}</strong></div>
-        </div>
+  return {
+    html: `
+  <div class="invoice">
+    <div class="inv-header">
+      <div class="inv-logo-area">
+        ${logoHTML}
       </div>
+      <div class="inv-num">Nº ${docnum}</div>
+    </div>
+    <div class="inv-title">FATURA DE SOBREESTADIA DE CONTAINER</div>
+    <hr class="inv-hr">
+    <div class="inv-row"><span class="inv-lbl">Cliente:</span><span class="inv-val">${cliente}${cnpjStr ? '<br>CNPJ: ' + cnpjStr : ''}</span></div>
+    <hr class="inv-hr-light">
+    ${blInfoBlocks.join('\n')}
 
-      <div class="ci-client">
-        <div><span class="ci-lbl">SACADO:</span> <strong>${cliente}</strong></div>
-        <div><span class="ci-lbl">CNPJ:</span> ${cnpjFmt}</div>
-      </div>
-
-      <div class="ci-note">
-        Esta fatura consolidada quita os <strong>${group.length} BLs</strong> listados abaixo
-        com um único pagamento via PIX. O identificador <code>${docnum}</code> é o
-        <em>txid</em> do QR code e será reconhecido pela conciliação bancária.
-      </div>
-
-      ${blSections}
-
-      <div class="ci-totals">
-        <div class="ci-totals-line">
-          <span>PTAX utilizada (R$/USD):</span><strong>${roeFmt}</strong>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:0;">
+      <div class="roe-box" style="min-width:160px;"><span>ROE</span><span>${roeFmt}</span></div>
+    </div>
+    <table class="inv-tbl">
+      <thead><tr>
+        <th>CONTAINER</th><th>TIPO</th>
+        <th>DIAS 1º PER.</th><th>USD/Dia</th>
+        <th>DIAS 2º PER.</th><th>USD/Dia</th>
+        <th>DESCARGA</th><th>RETORNO</th><th>LÍQUIDO</th>
+      </tr></thead>
+      <tbody>
+        ${tableSections.join('\n')}
+        <tr class="inv-total-row">
+          <td colspan="8" class="inv-total-lbl">TOTAL:</td>
+          <td class="inv-total-val">${fmtBRL(grandTotal)}</td>
+        </tr>
+        <tr class="inv-venc-row">
+          <td colspan="8" style="text-align:right;padding:7px 12px;font-weight:600">VENCIMENTO DIA</td>
+          <td class="inv-venc-highlight">${vencFmt}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="inv-pix">
+      <div class="inv-pix-qr" id="pix-qr-${docnum}"></div>
+      <div class="inv-pix-info">
+        <strong>Pagamento via PIX</strong>
+        Escaneie o QR Code ao lado ou utilize o código Pix Copia e Cola abaixo para realizar o pagamento.<br>
+        Valor da fatura: <strong>${fmtBRL(grandTotal)}</strong>
+        <div class="inv-pix-copiacola">
+          <span class="inv-pix-copiacola-label">Pix Copia e Cola</span>
+          <span class="inv-pix-copiacola-code">${pixPayload}</span>
         </div>
-        <div class="ci-totals-grand">
-          <span>TOTAL CONSOLIDADO:</span><strong>R$&nbsp;${grandFmt}</strong>
-        </div>
-      </div>
-
-      <div class="ci-pix">
-        <div class="ci-pix-info">
-          <div class="ci-pix-title">PIX — QR Code Cobrança</div>
-          <div class="ci-pix-row"><span>Chave (CNPJ):</span> <strong>06.352.972/0001-21</strong></div>
-          <div class="ci-pix-row"><span>Beneficiário:</span> <strong>TRANSHIPPING AGENCIAMENTO MARÍTIMO LTDA.</strong></div>
-          <div class="ci-pix-row"><span>Valor:</span> <strong>R$ ${grandFmt}</strong></div>
-          <div class="ci-pix-row"><span>Identificador (txid):</span> <code>${docnum}</code></div>
-          <div class="ci-pix-copia">
-            <div class="ci-pix-lbl">PIX Copia e Cola:</div>
-            <textarea readonly onclick="this.select();" rows="3">${pixPayload}</textarea>
-          </div>
-        </div>
-        <div class="ci-pix-qr">
-          <div id="pix-qr-${docnum}" class="ci-qr-box"></div>
-          <div class="ci-qr-cap">Escaneie para pagar</div>
-        </div>
-      </div>
-
-      <div class="ci-foot">
-        Dúvidas: eqp@fwlog.com.br · Após o pagamento, a conciliação automática
-        marcará todos os ${group.length} BLs desta fatura como quitados.
       </div>
     </div>
-  `;
+    <div class="inv-date">Vitória, ${cap(longDate())}</div>
+  </div>`,
+    pixPayload,
+    grandTotal
+  };
 }
 
 // ────────────────────────────────────────────────────────────
-// CSS embutido do documento (independente do app, para print)
+// Abre a fatura consolidada na mesma view (#doc-view) da fatura única.
+// Garante toolbar, CSS e fluxo de impressão idênticos.
 // ────────────────────────────────────────────────────────────
-function _consolidatedInvoiceCSS() {
-  return `
-    *{box-sizing:border-box;}
-    html,body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;color:#111;background:#f1f5f9;}
-    .top-bar{position:sticky;top:0;z-index:200;display:flex;align-items:center;gap:12px;padding:10px 20px;background:#0f2a4a;color:#fff;font-size:13px;}
-    .top-bar strong{flex:1;}
-    .top-bar button{padding:7px 20px;background:#f59e0b;color:#111;border:none;border-radius:6px;cursor:pointer;font-weight:700;}
-    .ci-doc{background:#fff;max-width:900px;margin:20px auto;padding:32px 36px;box-shadow:0 4px 14px rgba(0,0,0,.08);}
-    .ci-header{display:flex;justify-content:space-between;border-bottom:2px solid #0f2a4a;padding-bottom:14px;margin-bottom:18px;}
-    .ci-left .ci-title{font-size:18px;font-weight:800;color:#0f2a4a;letter-spacing:.5px;}
-    .ci-left .ci-emit{font-size:13px;margin-top:4px;}
-    .ci-left .ci-emit-sub{font-size:11px;color:#555;}
-    .ci-right{text-align:right;}
-    .ci-right .ci-num{font-family:monospace;font-size:15px;font-weight:700;color:#0f2a4a;}
-    .ci-right .ci-meta{font-size:12px;color:#333;margin-top:2px;}
-    .ci-client{display:flex;justify-content:space-between;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px;}
-    .ci-client .ci-lbl{color:#0369a1;font-weight:600;}
-    .ci-note{background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:10px 14px;font-size:12px;color:#713f12;margin-bottom:18px;}
-    .ci-note code{background:#fff;padding:1px 5px;border-radius:3px;border:1px solid #fde047;font-family:monospace;}
-    .ci-bl-block{margin-bottom:18px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;}
-    .ci-bl-head{background:#f8fafc;padding:8px 12px;font-size:12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;border-bottom:1px solid #e5e7eb;}
-    .ci-bl-sub{color:#0f2a4a;}
-    .ci-tbl{width:100%;border-collapse:collapse;font-size:11px;}
-    .ci-tbl thead th{background:#0f2a4a;color:#fff;padding:6px 4px;font-size:10px;font-weight:600;letter-spacing:.3px;text-align:left;}
-    .ci-tbl tbody td{padding:5px 6px;border-bottom:1px solid #f1f5f9;}
-    .ci-totals{margin-top:12px;text-align:right;}
-    .ci-totals-line{font-size:12px;color:#555;}
-    .ci-totals-grand{margin-top:6px;background:#0f2a4a;color:#fff;display:inline-block;padding:8px 18px;border-radius:6px;font-size:15px;font-weight:700;}
-    .ci-totals-grand span{margin-right:14px;font-weight:500;opacity:.85;}
-    .ci-pix{margin-top:20px;display:flex;gap:18px;border:1px solid #d1fae5;border-radius:8px;padding:14px;background:#f0fdf4;}
-    .ci-pix-info{flex:1;font-size:12px;}
-    .ci-pix-title{font-size:13px;font-weight:700;color:#166534;margin-bottom:6px;}
-    .ci-pix-row{margin:2px 0;}
-    .ci-pix-row code{font-family:monospace;background:#fff;padding:1px 5px;border-radius:3px;border:1px solid #d1fae5;}
-    .ci-pix-copia{margin-top:10px;}
-    .ci-pix-lbl{font-size:11px;color:#166534;margin-bottom:2px;}
-    .ci-pix-copia textarea{width:100%;font-family:monospace;font-size:10px;padding:6px;border:1px solid #d1fae5;border-radius:4px;background:#fff;resize:none;}
-    .ci-pix-qr{display:flex;flex-direction:column;align-items:center;justify-content:center;}
-    .ci-qr-box{width:130px;height:130px;background:#fff;border:1px solid #d1fae5;border-radius:6px;padding:6px;display:flex;align-items:center;justify-content:center;}
-    .ci-qr-cap{font-size:10px;color:#166534;margin-top:4px;}
-    .ci-foot{margin-top:18px;padding-top:10px;border-top:1px dashed #cbd5e1;font-size:11px;color:#666;text-align:center;}
-    @page{margin:14mm;}
-    @media print{
-      .top-bar{display:none!important;}
-      html,body{background:#fff;}
-      .ci-doc{box-shadow:none;margin:0;max-width:100%;padding:0;}
-    }
-  `;
-}
-
-// ────────────────────────────────────────────────────────────
-// Abre a fatura consolidada em uma nova janela para print/PDF.
-// Espera o QRCode.js carregar antes de gerar o QR.
-// ────────────────────────────────────────────────────────────
-function openConsolidatedInvoiceView(docnum) {
+function viewConsolidatedDoc(docnum) {
   const group = getBLsByConsolidatedDocnum(docnum);
   if (!group.length) {
     toast('Fatura consolidada não encontrada.', 'error');
     return;
   }
-  const html = _renderConsolidatedInvoiceHTML(docnum);
-  const css  = _consolidatedInvoiceCSS();
-  const title = `Fatura Consolidada ${docnum} (${group.length} BLs)`;
 
-  const doc = `<!DOCTYPE html>
-<html lang="pt-BR"><head>
-<meta charset="UTF-8">
-<title>${title}</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
-<style>${css}</style>
-</head><body>
-<div class="top-bar">
-  <strong>📄 ${title}</strong>
-  <span style="opacity:.75;font-size:12px;">Ctrl+P para PDF</span>
-  <button onclick="window.print()">🖨️ Imprimir / PDF</button>
-</div>
-${html}
-<script>
-(function(){
-  function gen(){
-    var el = document.getElementById('pix-qr-${docnum}');
-    if (!el) return;
-    if (typeof QRCode === 'undefined') { setTimeout(gen, 100); return; }
-    el.innerHTML = '';
-    var ta = document.querySelector('.ci-pix-copia textarea');
-    var payload = ta ? ta.value : '';
-    new QRCode(el, { text: payload, width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M });
-  }
-  gen();
-})();
-<\/script>
-</body></html>`;
+  // Sincroniza o estado global da view com o grupo, para que a toolbar
+  // (printDoc, sendInvoiceEmail, editar valor) opere de forma coerente.
+  currentBL     = group[0];                  // BL "âncora" da view
+  currentType   = 'invoice';
+  currentDocnum = docnum;
+  ovTotal = null; ovRoe = null;
 
-  const w = window.open('', '_blank');
-  if (!w) {
-    toast('Permita pop-ups para visualizar a fatura.', 'error');
-    return;
+  const { html, pixPayload } = _buildConsolidatedInvoiceHTML(group, docnum);
+  document.getElementById('doc-content').innerHTML = html;
+
+  // Toolbar: ajusta botões (mesma lógica de viewDoc, mas adaptada à
+  // natureza consolidada — valores SEMPRE congelados).
+  const emailBtn = document.getElementById('email-btn');
+  if (emailBtn) emailBtn.style.display = getEmailsForBL(currentBL).length > 0 ? '' : 'none';
+  const editBtn = document.getElementById('edit-val-btn');
+  if (editBtn) {
+    editBtn.textContent  = '🔒 Valores Congelados';
+    editBtn.style.color  = 'var(--navy)';
+    editBtn.style.borderColor = '#93c5fd';
+    editBtn.style.cursor = 'default';
   }
-  w.document.write(doc);
-  w.document.close();
+
+  // QR Code PIX (mesma chamada usada em renderDoc)
+  setTimeout(() => {
+    const qrEl = document.getElementById('pix-qr-' + docnum);
+    if (qrEl && typeof QRCode !== 'undefined') {
+      qrEl.innerHTML = '';
+      new QRCode(qrEl, {
+        text: pixPayload,
+        width: 100,
+        height: 100,
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    }
+  }, 100);
+
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('doc-view').classList.add('active');
+  window.scrollTo(0, 0);
 }
 
 // ────────────────────────────────────────────────────────────
-// Reabertura: localiza o docnum a partir de qualquer BL do grupo
-// (útil para botão de re-abrir a partir da lista de BLs).
+// E-mail da fatura consolidada (mailto:) — usado pelo botão
+// "Enviar por E-mail" da toolbar quando a view atual é consolidada.
 // ────────────────────────────────────────────────────────────
+function sendConsolidatedInvoiceEmail(docnum) {
+  const group = getBLsByConsolidatedDocnum(docnum);
+  if (!group.length) { toast('Fatura consolidada não encontrada.', 'error'); return; }
+  const first = group[0];
+  const grandTotal = group.reduce((s, b) =>
+    s + (b.frozenTotal != null ? b.frozenTotal : blTotal(b, b.frozenRoe || effectiveROE(b))), 0);
+  const totalFmt = grandTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const vencFmt  = first.venc ? new Date(first.venc + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
+  const emails   = getEmailsForBL(first);
+  const to       = encodeURIComponent((emails && emails.join(', ')) || first.email || '');
+  const cliente  = (getClientByCnpj(first.cnpj)?.name) || first.client || 'Cliente';
+  const subject  = encodeURIComponent(`${docnum} - Fatura de Demurrage Consolidada (${group.length} BLs)`);
+  const blsBlock = group.map(b => {
+    const sub = (b.frozenTotal != null ? b.frozenTotal : blTotal(b, b.frozenRoe || effectiveROE(b)));
+    const subFmt = sub.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const ctrs = (b.containers || []).map(c => c.container).join(', ');
+    return `  • BL ${b.bl || '—'}  ·  Navio: ${b.vessel || '—'}  ·  R$ ${subFmt}\n    Containers: ${ctrs || '—'}`;
+  }).join('\n');
+
+  const body = encodeURIComponent(
+`Prezado(a) ${cliente.split(' ')[0] || 'Cliente'},
+
+Encaminhamos em anexo a Fatura CONSOLIDADA de Sobreestadia de Container,
+que reúne ${group.length} BLs e é quitada com um único pagamento PIX:
+
+  Nº Fatura  : ${docnum}
+  Total      : R$ ${totalFmt}
+  Vencimento : ${vencFmt}
+
+BLs incluídos:
+${blsBlock}
+
+Para pagamento via PIX, utilize a chave: 06.352.972/0001-21 (CNPJ).
+O identificador (txid) do QR Code é o próprio número desta fatura
+(${docnum}), e quitará automaticamente todos os ${group.length} BLs
+listados acima na conciliação bancária.
+
+
+Atenciosamente,
+TRANSHIPPING AGENCIAMENTO MARÍTIMO Ltda.
+CNPJ: 06.352.972/0001-21`
+  );
+
+  logAuditAction('envio_email_consolidada', {
+    docnum, qtd: group.length, blIds: group.map(b => b.id), total: grandTotal
+  });
+  window.location.href = `mailto:${to}?cc=eqp@fwlog.com.br&subject=${subject}&body=${body}`;
+}
+
+// Reabre a fatura consolidada a partir de qualquer BL do grupo
 function openConsolidatedInvoiceForBL(blId) {
   const b = (typeof bls !== 'undefined' ? bls : []).find(x => x.id === blId);
   if (!b) { toast('BL não encontrado.', 'error'); return; }
@@ -426,13 +387,19 @@ function openConsolidatedInvoiceForBL(blId) {
     toast('Este BL não pertence a uma fatura consolidada.', 'error');
     return;
   }
-  openConsolidatedInvoiceView(docnum);
+  viewConsolidatedDoc(docnum);
 }
 
-// Exporta no escopo global (carregado via <script src>, sem módulos)
-window.genConsolidatedDocnum       = genConsolidatedDocnum;
-window.isConsolidatedDocnum        = isConsolidatedDocnum;
-window.getBLsByConsolidatedDocnum  = getBLsByConsolidatedDocnum;
-window.issueConsolidatedInvoice    = issueConsolidatedInvoice;
-window.openConsolidatedInvoiceView = openConsolidatedInvoiceView;
+// Alias retrocompat. — versão anterior abria janela nova; agora redireciona
+// para a view padrão (#doc-view) para preservar identidade visual.
+function openConsolidatedInvoiceView(docnum) { viewConsolidatedDoc(docnum); }
+
+// Exporta no escopo global
+window.genConsolidatedDocnum        = genConsolidatedDocnum;
+window.isConsolidatedDocnum         = isConsolidatedDocnum;
+window.getBLsByConsolidatedDocnum   = getBLsByConsolidatedDocnum;
+window.issueConsolidatedInvoice     = issueConsolidatedInvoice;
+window.viewConsolidatedDoc          = viewConsolidatedDoc;
+window.sendConsolidatedInvoiceEmail = sendConsolidatedInvoiceEmail;
+window.openConsolidatedInvoiceView  = openConsolidatedInvoiceView;
 window.openConsolidatedInvoiceForBL = openConsolidatedInvoiceForBL;
