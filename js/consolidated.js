@@ -300,8 +300,6 @@ ${linhas}
 TOTAL GERAL: R$ ${grandFmt}
 ─────────────────────────────────────
 
-PIX — Chave CNPJ: 06.352.972/0001-21
-
 Atenciosamente,
 TRANSHIPPING AGENCIAMENTO MARÍTIMO Ltda.
 CNPJ: 06.352.972/0001-21`);
