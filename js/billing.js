@@ -1712,8 +1712,6 @@ Encaminhamos em anexo a Fatura de Sobreestadia de Container referente ao BL abai
   Total      : R$ ${totalFmt}
   Vencimento : ${vencFmt}
 
-Para pagamento via PIX, utilize a chave: 06.352.972/0001-21 (CNPJ)
-
 
 Atenciosamente,
 TRANSHIPPING AGENCIAMENTO MARÍTIMO Ltda.

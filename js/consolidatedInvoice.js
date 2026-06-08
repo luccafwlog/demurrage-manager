@@ -352,7 +352,6 @@ que reúne ${group.length} BLs e é quitada com um único pagamento PIX:
 BLs incluídos:
 ${blsBlock}
 
-Para pagamento via PIX, utilize a chave: 06.352.972/0001-21 (CNPJ).
 O identificador (txid) do QR Code é o próprio número desta fatura
 (${docnum}), e quitará automaticamente todos os ${group.length} BLs
 listados acima na conciliação bancária.
