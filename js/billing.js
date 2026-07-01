@@ -881,6 +881,7 @@ function exportReport() {
 
   // ── Build rows ──────────────────────────────────────────────
   const rows = [];
+  const discountModes = []; // parallel to rows: 'percent' | 'fixed' | null
   bls.forEach(b => {
     const roe = (b.paid || b.billed) && b.frozenRoe != null ? b.frozenRoe : effectiveROE(b);
     const frozenTotal = (b.paid || b.billed) && b.frozenTotal != null ? b.frozenTotal : null;
@@ -928,8 +929,8 @@ function exportReport() {
         'CNPJ':           b.cnpj || '—',
         'CONTAINER':      c.container,
         'TIPO':           c.type || '—',
-        'DESCARGA':       c.discharge ? new Date(c.discharge+'T12:00:00').toLocaleDateString('pt-BR') : '—',
-        'DEVOLUÇÃO':      c.emptyReturn ? new Date(c.emptyReturn+'T12:00:00').toLocaleDateString('pt-BR') : '—',
+        'DESCARGA':       c.discharge ? new Date(c.discharge+'T12:00:00') : '—',
+        'DEVOLUÇÃO':      c.emptyReturn ? new Date(c.emptyReturn+'T12:00:00') : '—',
         'DIAS CORRIDOS':  dc,
         'FREE TIME':      b.freeTime ?? 21,
         'DIAS COBRÁVEIS': Math.max(0, dc - (b.freeTime ?? 21)),
@@ -940,17 +941,20 @@ function exportReport() {
         'TOTAL USD':      parseFloat(calc.totalUSD.toFixed(2)),
         'ROE':            parseFloat(roe.toFixed(4)),
         'TOTAL BRL':      totalBRL,
-        'DESCONTO':       b.discount && b.discount.value > 0 ? `${b.discount.value}${b.discount.mode === 'percent' ? '%' : 'R$'}` : '—',
+        'DESCONTO':       b.discount && b.discount.value > 0
+                            ? (b.discount.mode === 'percent' ? b.discount.value / 100 : parseFloat(b.discount.value.toFixed(2)))
+                            : '—',
         'VALOR DESCONTO': parseFloat(discountAmt.toFixed(2)),
         'TOTAL FINAL':    parseFloat(totalBRLWithDiscount.toFixed(2)),
-        'VENCIMENTO':       b.venc ? new Date(b.venc+'T12:00:00').toLocaleDateString('pt-BR') : '—',
+        'VENCIMENTO':       b.venc ? new Date(b.venc+'T12:00:00') : '—',
         'STATUS':           b.paid ? 'PAGO' : b.billed ? 'FATURADO' : 'PENDENTE',
         'DISPUTA':          b.dispute && b.dispute.open ? b.dispute.status.toUpperCase() : '—',
-        '1º FATURAMENTO':   (b.firstBilledAt || b.billedAt) ? new Date((b.firstBilledAt || b.billedAt)+'T12:00:00').toLocaleDateString('pt-BR') : '—',
-        'ÚLT. FATURAMENTO': b.billedAt ? new Date(b.billedAt+'T12:00:00').toLocaleDateString('pt-BR') : '—',
-        'DATA PAGAMENTO':   b.paid && b.paidAt ? new Date(b.paidAt+'T12:00:00').toLocaleDateString('pt-BR') : '—',
+        '1º FATURAMENTO':   (b.firstBilledAt || b.billedAt) ? new Date((b.firstBilledAt || b.billedAt)+'T12:00:00') : '—',
+        'ÚLT. FATURAMENTO': b.billedAt ? new Date(b.billedAt+'T12:00:00') : '—',
+        'DATA PAGAMENTO':   b.paid && b.paidAt ? new Date(b.paidAt+'T12:00:00') : '—',
         'VALOR PAGO (BRL)': b.paid ? parseFloat(totalBRLWithDiscount.toFixed(2)) : '—',
       });
+      discountModes.push(b.discount && b.discount.value > 0 ? b.discount.mode : null);
     });
   });
 
@@ -990,11 +994,15 @@ function exportReport() {
   const styleCellEven = { font:{sz:10}, fill:{fgColor:{rgb:'F0F4FF'}}, alignment:{horizontal:'center',vertical:'center'} };
   const styleCellOdd  = { font:{sz:10}, fill:{fgColor:{rgb:WHITE}},    alignment:{horizontal:'center',vertical:'center'} };
   const styleCellBRL  = (even) => ({ font:{bold:true,sz:10,color:{rgb:'15803D'}}, fill:{fgColor:{rgb: even ? 'F0FFF4' : WHITE}}, alignment:{horizontal:'right',vertical:'center'},
-    numFmt: '#,##0.00' });
+    numFmt: '"R$" #,##0.00' });
   const styleCellUSD  = (even) => ({ font:{sz:10,color:{rgb:'1E40AF'}}, fill:{fgColor:{rgb: even ? 'EFF6FF' : WHITE}}, alignment:{horizontal:'right',vertical:'center'},
-    numFmt: '#,##0.00' });
+    numFmt: '"US$" #,##0.00' });
   const styleCellROE  = (even) => ({ font:{sz:10,color:{rgb:'92400E'}}, fill:{fgColor:{rgb: even ? 'FFFBEB' : WHITE}}, alignment:{horizontal:'center',vertical:'center'},
     numFmt: '#,##0.0000' });
+  const styleCellDate = (even) => ({ font:{sz:10}, fill:{fgColor:{rgb: even ? 'F0F4FF' : WHITE}}, alignment:{horizontal:'center',vertical:'center'},
+    numFmt: 'dd/mm/yyyy' });
+  const styleCellPercent = (even) => ({ font:{bold:true,sz:10,color:{rgb:'92400E'}}, fill:{fgColor:{rgb: even ? 'FFFBEB' : WHITE}}, alignment:{horizontal:'right',vertical:'center'},
+    numFmt: '0.00%' });
 
   // Title row (A1 merged)
   const lastColLetter = XLSX.utils.encode_col(ncols - 1);
@@ -1016,37 +1024,46 @@ function exportReport() {
   });
 
   // Style data rows
-  const brlCols = new Set(['TOTAL BRL']);
-  const usdCols = new Set(['TOTAL USD','USD/DIA P1','USD/DIA P2']);
-  const roeCols = new Set(['ROE']);
+  const brlCols  = new Set(['TOTAL BRL','VALOR DESCONTO','TOTAL FINAL','VALOR PAGO (BRL)']);
+  const usdCols  = new Set(['TOTAL USD','USD/DIA P1','USD/DIA P2']);
+  const roeCols  = new Set(['ROE']);
+  const dateCols = new Set(['DESCARGA','DEVOLUÇÃO','VENCIMENTO','1º FATURAMENTO','ÚLT. FATURAMENTO','DATA PAGAMENTO']);
   rows.forEach((row, ri) => {
     const even = ri % 2 === 0;
     headers.forEach((h, ci) => {
       const addr = XLSX.utils.encode_cell({r: ri+3, c: ci});
       if (!ws[addr]) return;
-      if (brlCols.has(h)) ws[addr].s = styleCellBRL(even);
-      else if (usdCols.has(h)) ws[addr].s = styleCellUSD(even);
-      else if (roeCols.has(h)) ws[addr].s = styleCellROE(even);
-      else ws[addr].s = even ? styleCellEven : styleCellOdd;
+      let style;
+      if (h === 'DESCONTO' && discountModes[ri] === 'percent') style = styleCellPercent(even);
+      else if (h === 'DESCONTO' && discountModes[ri] === 'fixed') style = styleCellBRL(even);
+      else if (brlCols.has(h)) style = styleCellBRL(even);
+      else if (usdCols.has(h)) style = styleCellUSD(even);
+      else if (roeCols.has(h)) style = styleCellROE(even);
+      else if (dateCols.has(h)) style = styleCellDate(even);
+      else style = even ? styleCellEven : styleCellOdd;
+      ws[addr].s = style;
+      // SheetJS (community build) only honors the number format via the cell's
+      // own `z` property, not `s.numFmt` — set both so it renders in Excel.
+      if (style.numFmt) ws[addr].z = style.numFmt;
     });
   });
 
   // Totals row
   const totRow = nrows + 3;
   const totStyle = { font:{bold:true,sz:10,color:{rgb:WHITE}}, fill:{fgColor:{rgb:NAVY}}, alignment:{horizontal:'center'} };
-  const totBRLStyle = { font:{bold:true,sz:11,color:{rgb:'000000'}}, fill:{fgColor:{rgb:GOLD}}, alignment:{horizontal:'right'}, numFmt:'#,##0.00' };
-  const totUSDStyle = { font:{bold:true,sz:11,color:{rgb:'FFFFFF'}}, fill:{fgColor:{rgb:'1E40AF'}}, alignment:{horizontal:'right'}, numFmt:'#,##0.00' };
+  const totBRLStyle = { font:{bold:true,sz:11,color:{rgb:'000000'}}, fill:{fgColor:{rgb:GOLD}}, alignment:{horizontal:'right'}, numFmt:'"R$" #,##0.00' };
+  const totUSDStyle = { font:{bold:true,sz:11,color:{rgb:'FFFFFF'}}, fill:{fgColor:{rgb:'1E40AF'}}, alignment:{horizontal:'right'}, numFmt:'"US$" #,##0.00' };
 
   headers.forEach((h, ci) => {
     const addr = XLSX.utils.encode_cell({r: totRow, c: ci});
     if (h === 'CNEE') { ws[addr] = {v:'TOTAL GERAL', t:'s', s:totStyle}; }
     else if (h === 'TOTAL USD') {
       const totalUSD = rows.reduce((a,r) => a + (r['TOTAL USD']||0), 0);
-      ws[addr] = {v: parseFloat(totalUSD.toFixed(2)), t:'n', s:totUSDStyle};
+      ws[addr] = {v: parseFloat(totalUSD.toFixed(2)), t:'n', s:totUSDStyle, z:totUSDStyle.numFmt};
     }
     else if (h === 'TOTAL BRL') {
       const totalBRL = rows.reduce((a,r) => a + (r['TOTAL BRL']||0), 0);
-      ws[addr] = {v: parseFloat(totalBRL.toFixed(2)), t:'n', s:totBRLStyle};
+      ws[addr] = {v: parseFloat(totalBRL.toFixed(2)), t:'n', s:totBRLStyle, z:totBRLStyle.numFmt};
     }
     else { ws[addr] = {v:'', t:'s', s:totStyle}; }
   });
