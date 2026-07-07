@@ -1690,6 +1690,39 @@ window._dmOnReady = async function() {
       }
     });
 
+    // 4) dedupe containers repetidos no mesmo BL (mesmo container aparecendo
+    //    mais de uma vez) — causa raiz de cobrança de demurrage em dobro para
+    //    o cliente, já que blTotal()/blTotalUSD() somam todos os containers do array.
+    //    BLs já Faturados/Pagos têm o valor CONGELADO (frozenTotal) — não alteramos
+    //    os containers automaticamente nesses casos para não divergir do que já foi
+    //    comunicado/cobrado do cliente; apenas sinalizamos para revisão manual.
+    const blsComDuplicatasCongeladas = [];
+    bls.forEach(b => {
+      if (!Array.isArray(b.containers) || b.containers.length < 2) return;
+      const seen = new Set();
+      const deduped = [];
+      let hadDupe = false;
+      b.containers.forEach(c => {
+        const key = String((c && c.container) || '').trim().toUpperCase();
+        if (key && seen.has(key)) { hadDupe = true; return; }
+        if (key) seen.add(key);
+        deduped.push(c);
+      });
+      if (!hadDupe) return;
+      if (b.billed || b.paid) {
+        blsComDuplicatasCongeladas.push(b.bl);
+      } else {
+        b.containers = deduped;
+        changed = true;
+      }
+    });
+    if (blsComDuplicatasCongeladas.length) {
+      console.warn('[DEMURRAGE] BL(s) faturado(s)/pago(s) com containers duplicados — revisão manual necessária:', blsComDuplicatasCongeladas);
+      if (typeof logAuditAction === 'function') {
+        logAuditAction('alerta_containers_duplicados_congelados', { bls: blsComDuplicatasCongeladas });
+      }
+    }
+
     // Um único save para todas as migrações (0 writes se nada precisar de backfill)
     if (changed) save(bls);
   })();

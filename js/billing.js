@@ -796,6 +796,20 @@ function saveBL() {
   if (cnpjVal && !validarCNPJ(cnpjVal)) {
     if (!confirm('O CNPJ informado parece inválido. Deseja salvar mesmo assim?')) return;
   }
+
+  // Bloqueia containers duplicados no mesmo BL — cada container só pode aparecer
+  // uma vez por BL, senão o demurrage dele é cobrado em dobro no total.
+  const containersList = readContainers();
+  const seenContainers = new Set();
+  const dupeContainers = new Set();
+  containersList.forEach(c => {
+    if (seenContainers.has(c.container)) dupeContainers.add(c.container);
+    seenContainers.add(c.container);
+  });
+  if (dupeContainers.size > 0) {
+    toast(`Container(s) duplicado(s) neste BL: ${[...dupeContainers].join(', ')}. Remova a(s) linha(s) repetida(s) antes de salvar.`, 'error');
+    return;
+  }
   // Collect discount fields
   const discountType = document.getElementById('f-discount-type').value;
   const discountValue = parseFloat(document.getElementById('f-discount-value').value)||0;
@@ -853,7 +867,7 @@ function saveBL() {
       // new BL: generate from BL number
       return genDocnum(bl);
     })(),
-    containers: readContainers(),
+    containers: containersList,
     discount: discount,
     dispute: dispute,
     createdAt: editingId?(bls.find(x=>x.id===editingId)?.createdAt||Date.now()):Date.now(),
@@ -1564,6 +1578,7 @@ function processFile(file) {
 function doImport() {
   if(!importData) return;
   const grouped = {};
+  let duplicatesConsolidated = 0;
   importData.forEach(row => {
     const n = {}; Object.entries(row).forEach(([k,v])=>{ n[nk(k)]=v; });
     const blNum = String(n['BL']||n['B_L']||'').trim(); if(!blNum) return;
@@ -1571,7 +1586,13 @@ function doImport() {
       grouped[blNum] = { id:uid(), bl:blNum, vessel:String(n['VESSEL']||n['NAVIO']||'').trim(), pol:String(n['POL']||'').trim(), pod:String(n['POD']||'').trim(), client:String(n['CNEE']||n['CLIENTE']||'').trim(), cnpj:(s => s.length === 13 ? '0'+s : s)(String(n['CNPJ']||'').replace(/\D/g,'').trim()), phone:String(n['PHONE']||n['TELEFONE']||'').trim(), email:String(n['EMAIL']||n['E_MAIL']||'').trim(), freeTime:parseInt(n['FREE_TIME']||n['FREETIME']||21)||21, roe:parseFloat(n['ROE'])||null, ov1:null, ov2:null, venc:parseDs(n['VENCIMENTO']||n['VENC']||'')||nextBusinessDay(null), docnum:String(n['DOCNUM']||'').trim()||genDocnum(blNum), containers:[], createdAt:Date.now() };
     }
     const container = String(n['CONTAINER']||n['CTR']||'').trim().toUpperCase();
-    if (container) grouped[blNum].containers.push({ container, type:String(n['TYPE']||n['TIPO']||'40G1').trim(), discharge:parseDs(n['DISCHARGE']||n['DESCARGA']||''), emptyReturn:parseDs(n['EMPTY_RETURN']||n['EMPTY RETURN']||n['RETORNO']||'') });
+    if (!container) return;
+    const newRow = { container, type:String(n['TYPE']||n['TIPO']||'40G1').trim(), discharge:parseDs(n['DISCHARGE']||n['DESCARGA']||''), emptyReturn:parseDs(n['EMPTY_RETURN']||n['EMPTY RETURN']||n['RETORNO']||'') };
+    // Evita container duplicado no mesmo BL (mesma linha repetida na planilha) —
+    // sem essa checagem, o demurrage do container era somado em dobro no total do BL.
+    const existingIdx = grouped[blNum].containers.findIndex(c => c.container === container);
+    if (existingIdx >= 0) { grouped[blNum].containers[existingIdx] = newRow; duplicatesConsolidated++; }
+    else grouped[blNum].containers.push(newRow);
   });
   let added=0, updated=0;
   Object.values(grouped).forEach(imp => {
@@ -1580,8 +1601,10 @@ function doImport() {
     if(i>=0){bls[i]={...bls[i],...imp};updated++;}else{bls.unshift(imp);added++;}
   });
   save(bls); closeModal('modal-import'); renderList();
-  toast(`Importado: ${added} novo(s), ${updated} atualizado(s).`,'success');
-  logAuditAction('importacao_planilha', { adicionados: added, atualizados: updated });
+  let msg = `Importado: ${added} novo(s), ${updated} atualizado(s).`;
+  if (duplicatesConsolidated > 0) msg += ` ${duplicatesConsolidated} linha(s) duplicada(s) (mesmo container no mesmo BL) consolidada(s).`;
+  toast(msg,'success');
+  logAuditAction('importacao_planilha', { adicionados: added, atualizados: updated, duplicatasConsolidadas: duplicatesConsolidated });
 }
 
 // ============================================================
