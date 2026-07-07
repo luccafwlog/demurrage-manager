@@ -282,10 +282,9 @@ function sendConsolidatedEmail() {
   const linhas = eligible.map(b => {
     const tot  = blTotalBRL(b); grand += tot;
     const doc  = b.docnum || genDocnum(b.bl);
-    const venc = b.venc ? new Date(b.venc+'T12:00:00').toLocaleDateString('pt-BR') : '—';
     const ctrs = (b.containers||[]).map(c=>c.container).join(', ');
     const fmt  = tot.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-    return `  ${doc}  |  BL: ${b.bl}  |  ${ctrs}  |  R$ ${fmt}  |  Venc: ${venc}  |  ${b.billed?'FATURADO':'PENDENTE'}`;
+    return `  ${doc}  |  BL: ${b.bl}  |  ${ctrs}  |  R$ ${fmt}  |  ${b.billed?'FATURADO':'PENDENTE'}`;
   }).join('\n');
   const grandFmt = grand.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const subject  = encodeURIComponent(`Cobranças de Demurrage — ${nome} — ${eligible.length} fatura${eligible.length>1?'s':''}`);

@@ -939,9 +939,8 @@ function sendMultipleEmails() {
         if ((b.paid||b.billed)&&b.frozenTotal!=null) total = b.frozenTotal;
         grand += total;
         const docnum = b.docnum || genDocnum(b.bl);
-        const venc   = b.venc ? new Date(b.venc+'T12:00:00').toLocaleDateString('pt-BR') : '—';
         const fmt    = total.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-        return `  ${docnum}  |  BL: ${b.bl}  |  R$ ${fmt}  |  Venc: ${venc}`;
+        return `  ${docnum}  |  BL: ${b.bl}  |  R$ ${fmt}`;
       }).join('\n');
       const grandFmt = grand.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
       const subject  = encodeURIComponent(`Cobranças de Demurrage — ${nome} — ${unpaid.length} fatura${unpaid.length>1?'s':''}`);
@@ -980,10 +979,9 @@ function dispararTodasCobranças() {
         if ((b.paid || b.billed) && b.frozenTotal != null) total = b.frozenTotal;
         grand += total;
         const docnum = b.docnum || genDocnum(b.bl);
-        const venc   = b.venc ? new Date(b.venc+'T12:00:00').toLocaleDateString('pt-BR') : '—';
         const ctrs   = (b.containers||[]).map(c=>c.container).join(', ');
         const fmt    = total.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-        return `  ${docnum}  |  BL: ${b.bl}  |  ${ctrs}  |  R$ ${fmt}  |  Venc: ${venc}`;
+        return `  ${docnum}  |  BL: ${b.bl}  |  ${ctrs}  |  R$ ${fmt}`;
       }).join('\n');
       const grandFmt = grand.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
       const subject  = encodeURIComponent(`Cobranças de Demurrage — ${nome} — ${unpaid.length} fatura${unpaid.length>1?'s':''}`);
