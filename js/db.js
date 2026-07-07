@@ -9,7 +9,9 @@ function deduplicateClientsList(list) {
     const norm = String(c.cnpj || '').replace(/\D/g, '');
     const key  = norm.length === 13 ? '0' + norm : norm;
     if (!key) continue;
-    if (!seen.has(key) || (c.createdAt || 0) > (seen.get(key).createdAt || 0)) {
+    const score = c._updatedAt || c.updatedAt || c.createdAt || 0;
+    const prev = seen.get(key);
+    if (!prev || score > (prev._updatedAt || prev.updatedAt || prev.createdAt || 0)) {
       seen.set(key, c);
     }
   }
@@ -103,7 +105,7 @@ const _CONFLICT = {
 
   const [blsAllRows, cliAllRows, trkAllRows, settRes, profRes] = await Promise.all([
     fetchAllPages('bls',    'id, data'),
-    fetchAllPages('clients','id, data'),
+    fetchAllPages('clients','id, data, updated_at'),
     fetchAllPages('containers', 'container, bl, data, updated_at'),
     sb.from('settings').select('alert_days').eq('user_id', uid).maybeSingle(),
     sb.from('usuarios').select('*').eq('id', uid).maybeSingle()
@@ -126,9 +128,10 @@ const _CONFLICT = {
   // FIX: garante que todo cliente tem um `id` válido ao carregar do banco
   const _rawClients = cliAllRows.map(r => ({
     ...r.data,
-    id: r.id || (r.data && r.data.id) || (r.data && r.data.cnpj) || ''
+    id: r.id || (r.data && r.data.id) || (r.data && r.data.cnpj) || '',
+    _updatedAt: r.updated_at || r.data.updatedAt || null
   }));
-  console.log('[DB] clients raw:', _rawClients.length, _rawClients.map(c => ({ id: c.id, cnpj: c.cnpj, emailCount: (c.emails||[]).length, emails: c.emails })));
+  console.log('[DB] clients raw:', _rawClients.length, _rawClients.map(c => ({ id: c.id, cnpj: c.cnpj, emailCount: (c.emails||[]).length, updatedAt: c._updatedAt })));
   window._dmStore.clients = deduplicateClientsList(_rawClients);
   console.log('[DB] clients deduped:', window._dmStore.clients.length);
 

@@ -181,7 +181,10 @@ function deduplicateClients(list) {
   const seen = new Map();
   for (const c of list) {
     const norm = normalizeCnpj(c.cnpj);
-    if (!seen.has(norm) || (c.createdAt || 0) > (seen.get(norm).createdAt || 0)) {
+    if (!norm) continue;
+    const score = c._updatedAt || c.updatedAt || c.createdAt || 0;
+    const prev = seen.get(norm);
+    if (!prev || score > (prev._updatedAt || prev.updatedAt || prev.createdAt || 0)) {
       seen.set(norm, c);
     }
   }
