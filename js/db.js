@@ -124,10 +124,13 @@ const _CONFLICT = {
   }));
 
   // FIX: garante que todo cliente tem um `id` válido ao carregar do banco
-  window._dmStore.clients = deduplicateClientsList(cliAllRows.map(r => ({
+  const _rawClients = cliAllRows.map(r => ({
     ...r.data,
     id: r.id || (r.data && r.data.id) || (r.data && r.data.cnpj) || ''
-  })));
+  }));
+  console.log('[DB] clients raw:', _rawClients.length, _rawClients.map(c => ({ id: c.id, cnpj: c.cnpj, emailCount: (c.emails||[]).length, emails: c.emails })));
+  window._dmStore.clients = deduplicateClientsList(_rawClients);
+  console.log('[DB] clients deduped:', window._dmStore.clients.length);
 
   if (settRes.data) window._dmStore.alertDays = settRes.data.alert_days ?? 5;
 
@@ -231,6 +234,11 @@ const _CONFLICT = {
         return !oldMap.has(key) || oldMap.get(key) !== JSON.stringify(sanitize(r));
       });
 
+      if (toDeleteKeys.length > 0 || toUpsert.length > 0) {
+        console.log('[DB-SAVE] ' + type + ' — deletes:', toDeleteKeys.length, 'upserts:', toUpsert.length,
+          toUpsert.map(r => keyFn(r)));
+      }
+
       // DELETE — usa filtros específicos por tipo para garantir user_id
       if (toDeleteKeys.length > 0) {
         if (type === 'trk') {
@@ -243,7 +251,7 @@ const _CONFLICT = {
               .eq('bl', bl);
             if (delErr) {
               console.error('[DB-SAVE] delete container error:', delErr);
-              if (typeof toast === 'function') toast('Erro ao excluir: ' + delErr.message, 'error');
+              if (typeof window.toast === 'function') window.toast('Erro ao excluir: ' + delErr.message, 'error');
             }
           }
         } else {
@@ -255,7 +263,7 @@ const _CONFLICT = {
             .in(idCol, ids);
           if (delErr) {
             console.error('[DB-SAVE] delete error:', delErr);
-            if (typeof toast === 'function') toast('Erro ao salvar: ' + delErr.message, 'error');
+            if (typeof window.toast === 'function') window.toast('Erro ao salvar: ' + delErr.message, 'error');
           }
         }
       }
@@ -280,7 +288,7 @@ const _CONFLICT = {
           const { error: upsErr } = await sb.from(table).upsert(chunk, { onConflict: conflict });
           if (upsErr) {
             console.error('[DB-SAVE] upsert error (chunk ' + i + '):', upsErr);
-            if (typeof toast === 'function') toast('Erro ao salvar no servidor: ' + upsErr.message, 'error');
+            if (typeof window.toast === 'function') window.toast('Erro ao salvar no servidor: ' + upsErr.message, 'error');
             break;
           }
         }
@@ -290,7 +298,7 @@ const _CONFLICT = {
       window._dmStore[sKey] = JSON.parse(JSON.stringify(newData));
     } catch(e) {
       console.error('[DB-SAVE]', e);
-      if (typeof toast === 'function') toast('Erro interno ao salvar dados: ' + e.message, 'error');
+      if (typeof window.toast === 'function') window.toast('Erro interno ao salvar dados: ' + e.message, 'error');
     }
 
     // Se novos dados chegaram enquanto este save rodava, executa novamente
