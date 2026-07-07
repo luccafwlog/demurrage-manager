@@ -17,7 +17,10 @@
 function trkLoad() { return JSON.parse(JSON.stringify((window._dmStore && window._dmStore.trk) || [])); }
 function trkSave(d) {
   if (window._dmFireSave) window._dmFireSave('trk', d);
-  else if (window._dmStore) window._dmStore.trk = d;
+  else {
+    console.warn('[TRK] _dmFireSave indisponível — salvando apenas localmente');
+    if (window._dmStore) window._dmStore.trk = d;
+  }
 }
 // FIX-QUOTA #I: removido trkSave do IIFE de inicialização — era perigoso pois
 // rodava no parse do módulo (antes da auth). O filtro de containers devolvidos

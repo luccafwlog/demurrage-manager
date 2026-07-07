@@ -151,7 +151,10 @@ function load() {
 function save(b) {
   // NÃO atualiza _dmStore aqui — _dmFireSave faz o diff correto e atualiza o store
   if (window._dmFireSave) window._dmFireSave('bls', b);
-  else if (window._dmStore) window._dmStore.bls = b; // fallback se Firebase não inicializou
+  else {
+    console.warn('[BLS] _dmFireSave indisponível — salvando apenas localmente');
+    if (window._dmStore) window._dmStore.bls = b;
+  }
 }
 // FIX-QUOTA #G: salva apenas 1 BL (1 write, sem diff de toda a coleção)
 function saveOne(bl) {

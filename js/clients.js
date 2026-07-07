@@ -170,7 +170,10 @@ function processClientRows(rows) {
 function cliLoad() { return JSON.parse(JSON.stringify((window._dmStore && window._dmStore.clients) || [])); }
 function cliSave(d) {
   if (window._dmFireSave) window._dmFireSave('clients', d);
-  else if (window._dmStore) window._dmStore.clients = d;
+  else {
+    console.warn('[CLIENTS] _dmFireSave indisponível — salvando apenas localmente');
+    if (window._dmStore) window._dmStore.clients = d;
+  }
 }
 
 // Remove duplicatas de CNPJ mantendo o registro mais recente

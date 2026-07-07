@@ -241,7 +241,10 @@ const _CONFLICT = {
               .eq('user_id', uid)
               .eq('container', container)
               .eq('bl', bl);
-            if (delErr) console.error('[DB-SAVE] delete container error:', delErr);
+            if (delErr) {
+              console.error('[DB-SAVE] delete container error:', delErr);
+              if (typeof toast === 'function') toast('Erro ao excluir: ' + delErr.message, 'error');
+            }
           }
         } else {
           // bls e clients têm id simples — delete em batch
@@ -250,7 +253,10 @@ const _CONFLICT = {
           const { error: delErr } = await sb.from(table).delete()
             .eq('user_id', uid)
             .in(idCol, ids);
-          if (delErr) console.error('[DB-SAVE] delete error:', delErr);
+          if (delErr) {
+            console.error('[DB-SAVE] delete error:', delErr);
+            if (typeof toast === 'function') toast('Erro ao salvar: ' + delErr.message, 'error');
+          }
         }
       }
 
@@ -272,7 +278,11 @@ const _CONFLICT = {
         for (let i = 0; i < rows.length; i += CHUNK) {
           const chunk = rows.slice(i, i + CHUNK);
           const { error: upsErr } = await sb.from(table).upsert(chunk, { onConflict: conflict });
-          if (upsErr) { console.error('[DB-SAVE] upsert error (chunk ' + i + '):', upsErr); break; }
+          if (upsErr) {
+            console.error('[DB-SAVE] upsert error (chunk ' + i + '):', upsErr);
+            if (typeof toast === 'function') toast('Erro ao salvar no servidor: ' + upsErr.message, 'error');
+            break;
+          }
         }
       }
 
@@ -280,6 +290,7 @@ const _CONFLICT = {
       window._dmStore[sKey] = JSON.parse(JSON.stringify(newData));
     } catch(e) {
       console.error('[DB-SAVE]', e);
+      if (typeof toast === 'function') toast('Erro interno ao salvar dados: ' + e.message, 'error');
     }
 
     // Se novos dados chegaram enquanto este save rodava, executa novamente
