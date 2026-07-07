@@ -556,7 +556,7 @@ function renderList() {
       const dc = daysBetween(c.discharge, c.emptyReturn);
       return calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD > 0;
     });
-    const tot = blTotal(b, null);
+    const tot = (b.billed && b.frozenTotal != null) ? b.frozenTotal : blTotal(b, null);
     const totStr = tot > 0 ? ` · Total: ${fmtBRL(tot)}` : '';
     const tags = billableCtrs.slice(0,3).map(c=>`<span class="container-tag">${c.container}${c.type?' ('+c.type+')':''}</span>`).join('');
     const more = billableCtrs.length>3?`<span style="font-size:11px;color:var(--muted)">+${billableCtrs.length-3}</span>`:'';

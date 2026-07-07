@@ -178,17 +178,17 @@ function _renderConsPreview(cnpj) {
       : '<span style="color:#d97706;font-size:11px;">⏳ Pendente</span>';
     const ctrs = (b.containers||[]).map(c=>c.container).join(', ');
     return `<tr id="cons-bl-row-${b.id}" style="border-bottom:1px solid #f1f5f9;transition:background 0.12s;">
-      <td style="padding:5px 8px;text-align:center;width:32px;">
+      <td style="padding:5px 6px;text-align:center;">
         <input type="checkbox" class="cons-bl-cb" data-id="${b.id}" data-total="${blTotalBRL(b)}" checked
           style="width:15px;height:15px;cursor:pointer;accent-color:var(--blue-btn);"
           onchange="_toggleConsBL('${b.id}', this.checked)">
       </td>
-      <td style="padding:5px 8px;font-family:monospace;font-size:11px;white-space:nowrap;">${docnum}</td>
-      <td style="padding:5px 8px;font-size:12px;">${b.bl}</td>
-      <td style="padding:5px 8px;font-size:11px;color:var(--muted);">${ctrs}</td>
-      <td style="padding:5px 8px;text-align:right;font-weight:600;font-size:12px;white-space:nowrap;">${fmtBRL(total)}</td>
-      <td style="padding:5px 8px;font-size:12px;white-space:nowrap;">${venc}</td>
-      <td style="padding:5px 8px;">${status}</td>
+      <td style="padding:5px 6px;font-family:monospace;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${docnum}</td>
+      <td style="padding:5px 6px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${b.bl}</td>
+      <td style="padding:5px 6px;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${ctrs.replace(/"/g,'&quot;')}">${ctrs}</td>
+      <td style="padding:5px 6px;text-align:right;font-weight:600;font-size:12px;white-space:nowrap;">${fmtBRL(total)}</td>
+      <td style="padding:5px 6px;font-size:12px;white-space:nowrap;">${venc}</td>
+      <td style="padding:5px 6px;">${status}</td>
     </tr>`;
   }).join('');
 

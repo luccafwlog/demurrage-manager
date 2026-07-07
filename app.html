@@ -454,7 +454,7 @@ var MiniZip = (function() {
 
 <!-- MODAL: CONSOLIDATED EMAIL -->
 <div class="overlay" id="modal-consolidated" role="dialog" aria-modal="true" aria-label="Cobrança Consolidada por CNPJ">
-  <div class="modal" style="width:700px;height:82vh;min-height:500px;display:flex;flex-direction:column;overflow:hidden;">
+    <div class="modal" style="width:960px;height:85vh;min-height:520px;display:flex;flex-direction:column;overflow:hidden;">
     <div class="modal-header" style="flex-shrink:0;">
       <div class="modal-title">📧 Cobrança Consolidada por CNPJ</div>
       <button class="modal-close" onclick="closeModal('modal-consolidated')">✕</button>
@@ -486,10 +486,19 @@ var MiniZip = (function() {
           <button class="btn btn-sm btn-outline" onclick="_toggleAllConsBLs(true)" style="font-size:11px;padding:3px 9px;">Selecionar todas</button>
           <button class="btn btn-sm btn-outline" onclick="_toggleAllConsBLs(false)" style="font-size:11px;padding:3px 9px;">Limpar</button>
         </div>
-        <table style="width:100%;border-collapse:collapse;">
+        <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+          <colgroup>
+            <col style="width:36px;">
+            <col style="width:120px;">
+            <col style="width:105px;">
+            <col>
+            <col style="width:110px;">
+            <col style="width:85px;">
+            <col style="width:95px;">
+          </colgroup>
           <thead>
             <tr style="background:var(--navy);color:white;font-size:11px;">
-              <th style="padding:7px 8px;text-align:center;width:32px;">
+              <th style="padding:7px 8px;text-align:center;">
                 <input type="checkbox" checked title="Selecionar/desselecionar todas"
                   style="width:14px;height:14px;cursor:pointer;accent-color:#f59e0b;"
                   onchange="_toggleAllConsBLs(this.checked)">
