@@ -18,6 +18,26 @@ function deduplicateClientsList(list) {
   return Array.from(seen.values());
 }
 
+// A PK da tabela containers é (user_id, container, bl) — em um modelo colaborativo
+// (RLS não isola por usuário), dois usuários diferentes importando os mesmos dados
+// criam duas linhas distintas para o mesmo container+BL. O app carrega containers de
+// TODOS os usuários, então sem essa deduplicação essas linhas aparecem como
+// containers duplicados no rastreamento e, se migradas para faturamento juntas,
+// dobrariam o cálculo de demurrage do BL. Mesmo padrão de deduplicateClientsList.
+function deduplicateTrkList(list) {
+  const seen = new Map();
+  for (const r of list) {
+    const key = String(r.container || '').trim().toUpperCase() + '\x00' + String(r.bl || '').trim().toUpperCase();
+    if (!key) continue;
+    const score = r._updatedAt || 0;
+    const prev = seen.get(key);
+    if (!prev || score > (prev._updatedAt || 0)) {
+      seen.set(key, r);
+    }
+  }
+  return Array.from(seen.values());
+}
+
 const SUPABASE_URL  = 'https://vcdivphwlspsymgibfri.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZjZGl2cGh3bHNwc3ltZ2liZnJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4Njg5MzEsImV4cCI6MjA5MDQ0NDkzMX0.0N-l_n323GievbiG5Nh2C6Wd3npTe4fbpxnzTYex0Jo';
 
@@ -119,11 +139,13 @@ const _CONFLICT = {
 
   // FIX: mescla as colunas de primeira classe (container, bl) com o jsonb data,
   // garantindo que container e bl SEMPRE existem no objeto local.
-  window._dmStore.trk = trkAllRows.map(r => ({
+  const _rawTrk = trkAllRows.map(r => ({
     ...r.data,
     container: r.container,
-    bl: r.bl !== undefined ? r.bl : (r.data && r.data.bl) || ''
+    bl: r.bl !== undefined ? r.bl : (r.data && r.data.bl) || '',
+    _updatedAt: r.updated_at || null
   }));
+  window._dmStore.trk = deduplicateTrkList(_rawTrk);
 
   // FIX: garante que todo cliente tem um `id` válido ao carregar do banco
   const _rawClients = cliAllRows.map(r => ({
