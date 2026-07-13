@@ -423,8 +423,13 @@ function updateTrkKPIs(filtered) {
 }
 
 function renderTracking() {
-  // Ensure table header always matches current view (handles page-reload edge cases)
-  if (typeof _updateTrkTableHeader === 'function') _updateTrkTableHeader();
+  // Ensure table header matches current view, but only rebuild it when the view
+  // actually changed — rebuilding on every keystroke wiped the filter inputs
+  // (including the value just typed) before it could be read below.
+  if (typeof _updateTrkTableHeader === 'function' && window._trkHeaderView !== window._trkView) {
+    _updateTrkTableHeader();
+    window._trkHeaderView = window._trkView;
+  }
   const q = (document.getElementById('trk-search')?.value || '').toLowerCase();
   const sf = document.getElementById('trk-filter-status')?.value || 'all';
   const today = new Date(); today.setHours(12,0,0,0);
@@ -447,6 +452,7 @@ function renderTracking() {
     freetime:  tfVal('tf-freetime'),
     dias:      tfVal('tf-dias'),
     status:    tfVal('tf-status'),
+    migratedat: tfVal('tf-migratedat'),
   };
 
   const filtered = trkData.filter(r => {
