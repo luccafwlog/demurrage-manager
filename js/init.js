@@ -1437,6 +1437,7 @@ function toggleTrkView() {
   }
   window._trkExpanded.clear();
   _updateTrkTableHeader();
+  window._trkHeaderView = window._trkView;
   renderTracking();
 }
 
