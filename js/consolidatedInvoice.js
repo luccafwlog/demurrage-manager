@@ -257,6 +257,8 @@ function _buildConsolidatedInvoiceHTML(group, docnum) {
         </div>
       </div>
     </div>
+    <hr class="inv-hr-light">
+    <div class="inv-row"><span class="inv-lbl">Recebedor:</span><span class="inv-val">TRANSHIPPING AGENCIAMENTO MARITIMO LTDA<br>CNPJ: 06.352.972/0001-21</span></div>
     <div class="inv-date">Vitória, ${cap(longDate())}</div>
   </div>`,
     pixPayload,

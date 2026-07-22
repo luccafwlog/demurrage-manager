@@ -1910,6 +1910,8 @@ function renderDoc(b, type) {
         </div>
       </div>
     </div>` : ''}
+    <hr class="inv-hr-light">
+    <div class="inv-row"><span class="inv-lbl">Recebedor:</span><span class="inv-val">TRANSHIPPING AGENCIAMENTO MARITIMO LTDA<br>CNPJ: 06.352.972/0001-21</span></div>
     <div class="inv-date">Vitória, ${cap(b.docDate ? new Date(b.docDate+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',year:'numeric',month:'long',day:'numeric'}) : longDate())}</div>
   </div>`;
 
