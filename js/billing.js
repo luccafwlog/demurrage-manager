@@ -1745,9 +1745,13 @@ function copyPixPayload(docnum) {
     ta.style.opacity = '0';
     document.body.appendChild(ta);
     ta.select();
-    try { document.execCommand('copy'); done(); }
-    catch (e) { toast('Não foi possível copiar o código.', 'error'); }
+    // execCommand pode devolver false sem lançar — nesse caso a área de
+    // transferência ainda tem o conteúdo antigo e não podemos dizer que copiou.
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
     document.body.removeChild(ta);
+    if (ok) done();
+    else toast('Não foi possível copiar — selecione o código manualmente.', 'error');
   };
 
   if (navigator.clipboard && navigator.clipboard.writeText) {
