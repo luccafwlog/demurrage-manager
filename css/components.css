@@ -63,8 +63,12 @@ div.invoice { border: 1px solid #ccc; padding: 36px 40px; font-size: 13px; color
 .inv-pix-info { flex: 1; min-width: 0; font-size: 12px; color: #333; line-height: 1.6; }
 .inv-pix-info strong { display: block; font-size: 13px; font-weight: 700; margin-bottom: 4px; color: var(--navy); text-transform: uppercase; letter-spacing: 0.5px; }
 .inv-pix-copiacola { margin-top: 8px; max-width: 100%; }
-.inv-pix-copiacola-label { display: block; font-size: 10px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
-.inv-pix-copiacola-code { display: block; font-family: monospace; font-size: 8.5px; color: #374151; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 5px 8px; word-break: break-all; overflow-wrap: break-word; overflow: hidden; max-width: 100%; line-height: 1.6; user-select: all; }
+.inv-pix-copiacola-label { display: flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
+/* Sem overflow:hidden — o código não pode ser cortado visualmente, senão o
+   cliente copia/digita um payload incompleto a partir do PDF. */
+.inv-pix-copiacola-code { display: block; font-family: monospace; font-size: 8.5px; color: #374151; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 5px 8px; word-break: break-all; overflow-wrap: break-word; max-width: 100%; line-height: 1.6; user-select: all; }
+.inv-pix-copy-btn { font-family: inherit; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--navy); background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 4px; padding: 2px 8px; cursor: pointer; }
+.inv-pix-copy-btn:hover { background: #dbeafe; }
 
 .toast { position: fixed; bottom: 24px; right: 24px; background: var(--navy); color: white; padding: 12px 20px; border-radius: 10px; font-size: 14px; font-weight: 500; z-index: 1000; transform: translateY(80px); opacity: 0; transition: all 0.3s; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
 .toast.show { transform: translateY(0); opacity: 1; }
@@ -126,7 +130,8 @@ div.invoice { border: 1px solid #ccc; padding: 36px 40px; font-size: 13px; color
   .roe-box { background: #f59e0b !important; }
   .inv-pix { display: flex !important; }
   .inv-pix-qr img { width: 90px !important; height: 90px !important; }
-  .inv-pix-copiacola-code { background: #f9fafb !important; }
+  .inv-pix-copiacola-code { background: #f9fafb !important; overflow: visible !important; }
+  .inv-pix-copy-btn { display: none !important; }
 }
 
 /* ── Dashboard ─────────────────────────────────────────────────────────── */
