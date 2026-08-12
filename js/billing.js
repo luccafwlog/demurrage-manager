@@ -1689,11 +1689,14 @@ function buildPixPayload(chavePix, nomeBeneficiario, cidade, valor, txid) {
   const chave = chavePix.replace(/[^0-9]/g, ''); // only digits for CNPJ
   const tid = (txid || '').replace(/[^A-Za-z0-9]/g, '').substring(0, 35) || '***';
 
-  // GUI = br.gov.bcb.pix, KEY = chave, TXID = tid
+  // GUI = br.gov.bcb.pix, KEY = chave.
+  // O txid vai APENAS no campo 62-05 (Additional Data Field Template), como
+  // manda o BR Code. Subcampos não previstos dentro do 26 fazem alguns apps
+  // de banco recusarem o código quando colado manualmente (o leitor de QR de
+  // outros é mais tolerante) — daí "o QR funciona mas o copia e cola não".
   const merchantAccountInfo =
     pixTLV('00', 'br.gov.bcb.pix') +
-    pixTLV('01', chave) +
-    pixTLV('05', tid);  // txid
+    pixTLV('01', chave);
 
   const valorStr = valor > 0 ? valor.toFixed(2) : '';
 
@@ -1710,6 +1713,48 @@ function buildPixPayload(chavePix, nomeBeneficiario, cidade, valor, txid) {
     '6304';                                         // CRC placeholder
 
   return payload + pixCRC16(payload);
+}
+
+// ── Registro dos payloads PIX por docnum ──────────────────────────────────
+// O QR Code e o texto "Pix Copia e Cola" TÊM que ser byte a byte a mesma
+// string. Guardar o payload gerado na renderização evita que uma exportação
+// recalcule o código (com outro txid ou outro total) e gere um QR diferente
+// do texto impresso ao lado dele.
+window.__pixPayloads = window.__pixPayloads || Object.create(null);
+
+function registerPixPayload(docnum, payload) {
+  if (docnum && payload) window.__pixPayloads[docnum] = payload;
+  return payload;
+}
+
+function getPixPayload(docnum) {
+  return (docnum && window.__pixPayloads[docnum]) || '';
+}
+
+// Copia o payload exato (sem espaços/quebras que o navegador insere ao
+// selecionar o texto renderizado) para a área de transferência.
+function copyPixPayload(docnum) {
+  const code = getPixPayload(docnum);
+  if (!code) { toast('Código PIX não disponível.', 'error'); return; }
+
+  const done = () => toast('Código Pix Copia e Cola copiado.', 'success');
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = code;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); }
+    catch (e) { toast('Não foi possível copiar o código.', 'error'); }
+    document.body.removeChild(ta);
+  };
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(code).then(done).catch(fallback);
+  } else {
+    fallback();
+  }
 }
 
 function sendInvoiceEmail() {
@@ -1830,6 +1875,9 @@ function renderDoc(b, type) {
   const pixPayload = isInv
     ? buildPixPayload('06352972000121', 'TRANSHIPPING AGENC MARITIMO', 'VIT', parseFloat(totalBRL.toFixed(2)), docnum)
     : '';
+  // Registra o payload EXATO desta fatura para que qualquer exportação
+  // (impressão em lote, e-mail) reaproveite a mesma string no QR e no texto.
+  if (isInv) registerPixPayload(docnum, pixPayload);
 
   const colspan = isInv ? 8 : 7;
   const colsI = `<th>CONTAINER</th><th>TIPO</th><th>DIAS 1º PER.</th><th>USD/Dia</th><th>DIAS 2º PER.</th><th>USD/Dia</th><th>DESCARGA</th><th>RETORNO</th><th>LÍQUIDO</th>`;
@@ -1905,7 +1953,7 @@ function renderDoc(b, type) {
         Escaneie o QR Code ao lado ou utilize o código Pix Copia e Cola abaixo para realizar o pagamento.<br>
         Valor da fatura: <strong>${fmtBRL(totalBRL)}</strong>
         <div class="inv-pix-copiacola">
-          <span class="inv-pix-copiacola-label">Pix Copia e Cola</span>
+          <span class="inv-pix-copiacola-label">Pix Copia e Cola<button type="button" class="inv-pix-copy-btn" onclick="copyPixPayload('${docnum}')">Copiar</button></span>
           <span class="inv-pix-copiacola-code">${pixPayload}</span>
         </div>
       </div>

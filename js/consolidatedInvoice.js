@@ -206,6 +206,7 @@ function _buildConsolidatedInvoiceHTML(group, docnum) {
     parseFloat(grandTotal.toFixed(2)),
     docnum
   );
+  if (typeof registerPixPayload === 'function') registerPixPayload(docnum, pixPayload);
 
   const logoHTML = window.INVOICE_LOGO_HTML || '';
 
@@ -252,7 +253,7 @@ function _buildConsolidatedInvoiceHTML(group, docnum) {
         Escaneie o QR Code ao lado ou utilize o código Pix Copia e Cola abaixo para realizar o pagamento.<br>
         Valor da fatura: <strong>${fmtBRL(grandTotal)}</strong>
         <div class="inv-pix-copiacola">
-          <span class="inv-pix-copiacola-label">Pix Copia e Cola</span>
+          <span class="inv-pix-copiacola-label">Pix Copia e Cola<button type="button" class="inv-pix-copy-btn" onclick="copyPixPayload('${docnum}')">Copiar</button></span>
           <span class="inv-pix-copiacola-code">${pixPayload}</span>
         </div>
       </div>
