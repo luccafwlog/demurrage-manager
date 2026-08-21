@@ -1746,11 +1746,18 @@ function invoiceTotalBRL(b) {
 // pela view (envio em lote, por exemplo), gera e registra usando o mesmo total.
 // Sem docnum persistido nao ha payload: o txid seria descartavel e a
 // conciliacao bancaria nao acharia a fatura.
-function getOrBuildPixPayload(b, docnum) {
+// totalOverride: quando o chamador sabe o total correto (fatura consolidada,
+// cujo codigo cobre o grupo inteiro), o payload e construido a partir dele e o
+// cache nao e consultado — um payload guardado por uma renderizacao anterior
+// pode estar defasado se a fatura foi editada depois, e ai o e-mail mostraria
+// o total atual ao lado de um codigo cobrando o valor antigo.
+function getOrBuildPixPayload(b, docnum, totalOverride) {
   if (!docnum) return '';
-  const cached = getPixPayload(docnum);
-  if (cached) return cached;
-  const total = parseFloat(invoiceTotalBRL(b).toFixed(2));
+  if (totalOverride == null) {
+    const cached = getPixPayload(docnum);
+    if (cached) return cached;
+  }
+  const total = parseFloat((totalOverride != null ? totalOverride : invoiceTotalBRL(b)).toFixed(2));
   return registerPixPayload(docnum, buildPixPayload(
     '06352972000121', 'TRANSHIPPING AGENC MARITIMO', 'VIT', total, docnum
   ));

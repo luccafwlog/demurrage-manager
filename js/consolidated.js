@@ -282,15 +282,37 @@ function sendConsolidatedEmail() {
     const fmt  = tot.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
     return `  ${doc}  |  BL: ${b.bl}  |  ${ctrs}  |  R$ ${fmt}  |  ${b.billed?'FATURADO':'PENDENTE'}`;
   }).join('\n');
-  // Um codigo por fatura: cada uma tem txid proprio e e paga separadamente.
-  // So entram as que ja tem docnum persistido — sem ele o txid seria
-  // descartavel e a conciliacao bancaria nao acharia a fatura.
+  // Um codigo por FATURA, nao por BL. BLs emitidos como fatura consolidada
+  // compartilham o mesmo docnum (= txid) e cada frozenTotal e so a fatia
+  // daquele BL: emitir um bloco por BL repetiria o mesmo codigo varias vezes
+  // cobrando apenas a fatia do primeiro, enquanto a conciliacao trataria esse
+  // pagamento como quitacao do grupo inteiro.
+  // So entram faturas com docnum persistido — sem ele o txid seria descartavel
+  // e a conciliacao bancaria nao acharia a fatura.
+  const vistos = new Set();
   const pixBlocks = eligible.map(b => {
-    if (!b.docnum) return '';
-    const payload = getOrBuildPixPayload(b, b.docnum);
+    const doc = b.docnum;
+    if (!doc || vistos.has(doc)) return '';
+    vistos.add(doc);
+    const consolidada = typeof isConsolidatedDocnum === 'function' && isConsolidatedDocnum(doc);
+    // Na consolidada o codigo cobre o grupo TODO, mesmo que o preview tenha
+    // selecionado so parte dele: o txid e unico e quita todos de uma vez.
+    const membros = consolidada ? bls.filter(x => x.docnum === doc) : [b];
+    if (membros.some(x => x.paid)) return '';
+    const total = consolidada
+      ? (b.consolidatedTotal != null
+          ? b.consolidatedTotal
+          : membros.reduce((acc, x) => acc + blTotalBRL(x), 0))
+      : blTotalBRL(b);
+    // Total explicito: o payload nao pode vir de um cache de renderizacao
+    // anterior, que estaria defasado se a fatura foi editada depois.
+    const payload = getOrBuildPixPayload(b, doc, total);
     if (!payload) return '';
-    const fmt = blTotalBRL(b).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-    return `${b.docnum}  ·  BL ${b.bl}  ·  R$ ${fmt}\n${payload}`;
+    const fmt = total.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const rotulo = consolidada
+      ? `${doc}  ·  fatura consolidada (${membros.length} BLs)  ·  R$ ${fmt}`
+      : `${doc}  ·  BL ${b.bl}  ·  R$ ${fmt}`;
+    return `${rotulo}\n${payload}`;
   }).filter(Boolean).join('\n\n');
   const grandFmt = grand.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const subject  = encodeURIComponent(`Cobranças de Demurrage — ${nome} — ${eligible.length} fatura${eligible.length>1?'s':''}`);

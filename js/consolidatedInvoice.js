@@ -335,11 +335,16 @@ function sendConsolidatedInvoiceEmail(docnum) {
   const to       = encodeURIComponent((emails && emails.join(', ')) || first.email || '');
   const cliente  = (getClientByCnpj(first.cnpj)?.name) || first.client || 'Cliente';
   const subject  = encodeURIComponent(`${docnum} - Fatura de Demurrage Consolidada (${group.length} BLs)`);
-  // Mesmo payload que a view acabou de renderizar (mesmo txid, mesmo valor).
-  const pixPayload = (typeof getPixPayload === 'function' && getPixPayload(docnum))
-    || buildPixPayload('06352972000121', 'TRANSHIPPING AGENC MARITIMO', 'VIT',
-                       parseFloat(grandTotal.toFixed(2)), docnum);
-  const pixBlock = (typeof pixEmailBlock === 'function') ? pixEmailBlock(pixPayload) : '';
+  // A fatura consolidada e quitada em bloco por um unico txid: se QUALQUER BL do
+  // grupo ja consta como pago, o grupo ja recebeu o pagamento e reenviar o
+  // codigo do total pediria pagamento em duplicidade. Nesse caso o e-mail vai
+  // sem codigo, como ja acontece na fatura unica paga.
+  const grupoPago = group.some(b => b.paid);
+  const pixPayload = grupoPago ? '' :
+    ((typeof getPixPayload === 'function' && getPixPayload(docnum))
+      || buildPixPayload('06352972000121', 'TRANSHIPPING AGENC MARITIMO', 'VIT',
+                         parseFloat(grandTotal.toFixed(2)), docnum));
+  const pixBlock = (pixPayload && typeof pixEmailBlock === 'function') ? pixEmailBlock(pixPayload) : '';
   const blsBlock = group.map(b => {
     const sub = (b.frozenTotal != null ? b.frozenTotal : blTotal(b, b.frozenRoe || effectiveROE(b)));
     const subFmt = sub.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
