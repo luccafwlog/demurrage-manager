@@ -1731,6 +1731,52 @@ function getPixPayload(docnum) {
   return (docnum && window.__pixPayloads[docnum]) || '';
 }
 
+// Total da fatura seguindo EXATAMENTE as regras do renderDoc: valor congelado
+// manda em fatura paga/faturada (e ja embute o desconto), senao aplica o
+// desconto sobre o calculado. Usado fora da view (e-mails), onde o total nao
+// pode divergir do impresso na fatura nem do valor dentro do payload PIX.
+function invoiceTotalBRL(b) {
+  if (!b) return 0;
+  const isFrozen = (b.paid || b.billed) && b.frozenTotal != null;
+  if (isFrozen) return b.frozenTotal;
+  return blTotal(b, (b.paid || b.billed) && b.frozenRoe != null ? b.frozenRoe : undefined);
+}
+
+// Devolve o payload PIX ja renderizado para este docnum; se a fatura nao passou
+// pela view (envio em lote, por exemplo), gera e registra usando o mesmo total.
+// Sem docnum persistido nao ha payload: o txid seria descartavel e a
+// conciliacao bancaria nao acharia a fatura.
+// totalOverride: quando o chamador sabe o total correto (fatura consolidada,
+// cujo codigo cobre o grupo inteiro), o payload e construido a partir dele e o
+// cache nao e consultado — um payload guardado por uma renderizacao anterior
+// pode estar defasado se a fatura foi editada depois, e ai o e-mail mostraria
+// o total atual ao lado de um codigo cobrando o valor antigo.
+function getOrBuildPixPayload(b, docnum, totalOverride) {
+  if (!docnum) return '';
+  if (totalOverride == null) {
+    const cached = getPixPayload(docnum);
+    if (cached) return cached;
+  }
+  const total = parseFloat((totalOverride != null ? totalOverride : invoiceTotalBRL(b)).toFixed(2));
+  return registerPixPayload(docnum, buildPixPayload(
+    '06352972000121', 'TRANSHIPPING AGENC MARITIMO', 'VIT', total, docnum
+  ));
+}
+
+// Bloco de pagamento para o corpo dos e-mails. O codigo vai em UMA linha,
+// isolado, para o cliente conseguir copiar direto do e-mail em vez de copiar
+// do PDF — no PDF a quebra de linha visual vira \n ao copiar e invalida o
+// Pix Copia e Cola no app do banco.
+function pixEmailBlock(payload) {
+  if (!payload) return '';
+  return `
+PAGAMENTO VIA PIX (Copia e Cola)
+Copie a linha abaixo inteira, sem espacos ou quebras, e cole no seu aplicativo:
+
+${payload}
+`;
+}
+
 // Copia o payload exato (sem espaços/quebras que o navegador insere ao
 // selecionar o texto renderizado) para a área de transferência.
 function copyPixPayload(docnum) {
@@ -1775,16 +1821,12 @@ function sendInvoiceEmail() {
     }
   }
 
-  const roe = (b.paid || b.billed) && b.frozenRoe != null ? b.frozenRoe : effectiveROE(b);
+  // Mesmo total do renderDoc (congelado / com desconto) — o valor citado no
+  // e-mail tem que bater com o da fatura anexa e com o do payload PIX.
+  const totalBRL = invoiceTotalBRL(b);
 
-  // Calc total
-  let totalBRL = 0;
-  (b.containers || []).forEach(c => {
-    const dc = daysBetween(c.discharge, c.emptyReturn);
-    const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null);
-    totalBRL += calc.totalUSD * roe;
-  });
-  if ((b.paid || b.billed) && b.frozenTotal != null) totalBRL = b.frozenTotal;
+  // Fatura ja paga nao leva codigo de pagamento.
+  const pixBlock = b.paid ? '' : pixEmailBlock(getOrBuildPixPayload(b, b.docnum ? docnum : null));
 
   const to = encodeURIComponent(getEmailsForBL(b).join(', ') || b.email || '');
   const subject = encodeURIComponent(`${docnum} - Fatura de Demurrage - BL ${b.bl}`);
@@ -1804,6 +1846,7 @@ Encaminhamos em anexo a Fatura de Sobreestadia de Container referente ao BL abai
   Total      : R$ ${totalFmt}
   Vencimento : ${vencFmt}
 
+${pixBlock}
 
 Atenciosamente,
 TRANSHIPPING AGENCIAMENTO MARÍTIMO Ltda.
@@ -1956,11 +1999,11 @@ function renderDoc(b, type) {
         <strong>Pagamento via PIX</strong>
         Escaneie o QR Code ao lado ou utilize o código Pix Copia e Cola abaixo para realizar o pagamento.<br>
         Valor da fatura: <strong>${fmtBRL(totalBRL)}</strong>
-        <div class="inv-pix-copiacola">
-          <span class="inv-pix-copiacola-label">Pix Copia e Cola<button type="button" class="inv-pix-copy-btn" onclick="copyPixPayload('${docnum}')">Copiar</button></span>
-          <span class="inv-pix-copiacola-code">${pixPayload}</span>
-        </div>
       </div>
+    </div>
+    <div class="inv-pix-copiacola">
+      <span class="inv-pix-copiacola-label">Pix Copia e Cola<button type="button" class="inv-pix-copy-btn" onclick="copyPixPayload('${docnum}')">Copiar</button></span>
+      <span class="inv-pix-copiacola-code">${pixPayload}</span>
     </div>` : ''}
     <hr class="inv-hr-light">
     <div class="inv-row"><span class="inv-lbl">Recebedor:</span><span class="inv-val">TRANSHIPPING AGENCIAMENTO MARITIMO LTDA<br>CNPJ: 06.352.972/0001-21</span></div>

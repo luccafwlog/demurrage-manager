@@ -62,11 +62,17 @@ div.invoice { border: 1px solid #ccc; padding: 36px 40px; font-size: 13px; color
 .inv-pix-qr canvas, .inv-pix-qr img { width: 100px !important; height: 100px !important; display: block; }
 .inv-pix-info { flex: 1; min-width: 0; font-size: 12px; color: #333; line-height: 1.6; }
 .inv-pix-info strong { display: block; font-size: 13px; font-weight: 700; margin-bottom: 4px; color: var(--navy); text-transform: uppercase; letter-spacing: 0.5px; }
-.inv-pix-copiacola { margin-top: 8px; max-width: 100%; }
+/* Fica FORA do flex .inv-pix (irmão, não filho) para ocupar a largura toda da
+   fatura. Quanto mais largo o bloco, maior a fonte que ainda cabe em UMA linha
+   na impressão — e uma linha só é o que garante que o copia e cola saia do PDF
+   sem quebra no meio do código. */
+.inv-pix-copiacola { margin-top: 10px; width: 100%; max-width: 100%; }
 .inv-pix-copiacola-label { display: flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
 /* Sem overflow:hidden — o código não pode ser cortado visualmente, senão o
    cliente copia/digita um payload incompleto a partir do PDF. */
-.inv-pix-copiacola-code { display: block; font-family: monospace; font-size: 8.5px; color: #374151; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 5px 8px; word-break: break-all; overflow-wrap: break-word; max-width: 100%; line-height: 1.6; user-select: all; }
+/* Courier New tem avanço fixo de 0.6em por caractere — a conta de quantos
+   caracteres cabem por linha na impressão depende disso ser previsível. */
+.inv-pix-copiacola-code { display: block; font-family: 'Courier New', Courier, monospace; font-size: 8.5px; letter-spacing: 0; color: #374151; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 5px 8px; word-break: break-all; overflow-wrap: break-word; max-width: 100%; line-height: 1.6; user-select: all; }
 .inv-pix-copy-btn { font-family: inherit; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--navy); background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 4px; padding: 2px 8px; cursor: pointer; }
 .inv-pix-copy-btn:hover { background: #dbeafe; }
 
@@ -130,7 +136,14 @@ div.invoice { border: 1px solid #ccc; padding: 36px 40px; font-size: 13px; color
   .roe-box { background: #f59e0b !important; }
   .inv-pix { display: flex !important; }
   .inv-pix-qr img { width: 90px !important; height: 90px !important; }
-  .inv-pix-copiacola-code { background: #f9fafb !important; overflow: visible !important; }
+  /* UMA LINHA SÓ. Ao copiar de um PDF, cada linha visual vira um \n no
+     texto extraido; um \n no meio do BR Code faz o app do banco recusar o
+     Pix Copia e Cola ("QR Code invalido"). Com @page margin 0 a fatura ocupa
+     os 21cm da folha (~794px); descontando o padding de 40px da .invoice e o
+     do proprio bloco sobram ~694px, e 150 caracteres a 7px em Courier
+     (0.6em de avanco) ocupam ~630px — cabe com folga. */
+  .inv-pix-copiacola { margin-top: 8px !important; }
+  .inv-pix-copiacola-code { background: #f9fafb !important; overflow: visible !important; white-space: nowrap !important; word-break: normal !important; overflow-wrap: normal !important; font-size: 7px !important; line-height: 1.5 !important; }
   .inv-pix-copy-btn { display: none !important; }
 }
 
