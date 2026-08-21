@@ -34,16 +34,12 @@ function _rebuildConsMap() {
 }
 
 // Total BRL for a BL (all containers with demurrage)
+// Delega para invoiceTotalBRL (billing.js) para nao existir uma segunda regra
+// de total no sistema: o valor exibido aqui tem que ser o mesmo da fatura
+// impressa e o mesmo que vai dentro do payload PIX — inclusive o desconto,
+// que esta versao ignorava.
 function blTotalBRL(b) {
-  if ((b.paid || b.billed) && b.frozenTotal != null) return b.frozenTotal;
-  const roe = (b.paid || b.billed) && b.frozenRoe != null ? b.frozenRoe : effectiveROE(b);
-  let total = 0;
-  (b.containers || []).forEach(c => {
-    const dc = daysBetween(c.discharge, c.emptyReturn);
-    if (dc === null) return;
-    total += calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
-  });
-  return total;
+  return typeof invoiceTotalBRL === 'function' ? invoiceTotalBRL(b) : 0;
 }
 
 // Open modal
@@ -286,6 +282,16 @@ function sendConsolidatedEmail() {
     const fmt  = tot.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
     return `  ${doc}  |  BL: ${b.bl}  |  ${ctrs}  |  R$ ${fmt}  |  ${b.billed?'FATURADO':'PENDENTE'}`;
   }).join('\n');
+  // Um codigo por fatura: cada uma tem txid proprio e e paga separadamente.
+  // So entram as que ja tem docnum persistido — sem ele o txid seria
+  // descartavel e a conciliacao bancaria nao acharia a fatura.
+  const pixBlocks = eligible.map(b => {
+    if (!b.docnum) return '';
+    const payload = getOrBuildPixPayload(b, b.docnum);
+    if (!payload) return '';
+    const fmt = blTotalBRL(b).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+    return `${b.docnum}  ·  BL ${b.bl}  ·  R$ ${fmt}\n${payload}`;
+  }).filter(Boolean).join('\n\n');
   const grandFmt = grand.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const subject  = encodeURIComponent(`Cobranças de Demurrage — ${nome} — ${eligible.length} fatura${eligible.length>1?'s':''}`);
   const body     = encodeURIComponent(
@@ -298,6 +304,13 @@ ${linhas}
 ─────────────────────────────────────
 TOTAL GERAL: R$ ${grandFmt}
 ─────────────────────────────────────
+${pixBlocks ? `
+PAGAMENTO VIA PIX (Copia e Cola)
+Cada fatura tem seu proprio codigo. Copie a linha inteira, sem espacos ou
+quebras, e cole no seu aplicativo:
+
+${pixBlocks}
+` : ''}
 
 Atenciosamente,
 TRANSHIPPING AGENCIAMENTO MARÍTIMO Ltda.

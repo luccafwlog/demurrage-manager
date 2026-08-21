@@ -252,11 +252,11 @@ function _buildConsolidatedInvoiceHTML(group, docnum) {
         <strong>Pagamento via PIX</strong>
         Escaneie o QR Code ao lado ou utilize o código Pix Copia e Cola abaixo para realizar o pagamento.<br>
         Valor da fatura: <strong>${fmtBRL(grandTotal)}</strong>
-        <div class="inv-pix-copiacola">
-          <span class="inv-pix-copiacola-label">Pix Copia e Cola<button type="button" class="inv-pix-copy-btn" onclick="copyPixPayload('${docnum}')">Copiar</button></span>
-          <span class="inv-pix-copiacola-code">${pixPayload}</span>
-        </div>
       </div>
+    </div>
+    <div class="inv-pix-copiacola">
+      <span class="inv-pix-copiacola-label">Pix Copia e Cola<button type="button" class="inv-pix-copy-btn" onclick="copyPixPayload('${docnum}')">Copiar</button></span>
+      <span class="inv-pix-copiacola-code">${pixPayload}</span>
     </div>
     <hr class="inv-hr-light">
     <div class="inv-row"><span class="inv-lbl">Recebedor:</span><span class="inv-val">TRANSHIPPING AGENCIAMENTO MARITIMO LTDA<br>CNPJ: 06.352.972/0001-21</span></div>
@@ -335,6 +335,11 @@ function sendConsolidatedInvoiceEmail(docnum) {
   const to       = encodeURIComponent((emails && emails.join(', ')) || first.email || '');
   const cliente  = (getClientByCnpj(first.cnpj)?.name) || first.client || 'Cliente';
   const subject  = encodeURIComponent(`${docnum} - Fatura de Demurrage Consolidada (${group.length} BLs)`);
+  // Mesmo payload que a view acabou de renderizar (mesmo txid, mesmo valor).
+  const pixPayload = (typeof getPixPayload === 'function' && getPixPayload(docnum))
+    || buildPixPayload('06352972000121', 'TRANSHIPPING AGENC MARITIMO', 'VIT',
+                       parseFloat(grandTotal.toFixed(2)), docnum);
+  const pixBlock = (typeof pixEmailBlock === 'function') ? pixEmailBlock(pixPayload) : '';
   const blsBlock = group.map(b => {
     const sub = (b.frozenTotal != null ? b.frozenTotal : blTotal(b, b.frozenRoe || effectiveROE(b)));
     const subFmt = sub.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -359,6 +364,7 @@ O identificador (txid) do QR Code é o próprio número desta fatura
 (${docnum}), e quitará automaticamente todos os ${group.length} BLs
 listados acima na conciliação bancária.
 
+${pixBlock}
 
 Atenciosamente,
 TRANSHIPPING AGENCIAMENTO MARÍTIMO Ltda.
