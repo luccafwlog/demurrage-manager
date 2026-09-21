@@ -60,6 +60,27 @@ create table if not exists logs (
   criado_em    timestamptz default now()
 );
 
+-- Checkpoints (snapshots de backup)
+create table if not exists checkpoints (
+  id         uuid        primary key default gen_random_uuid(),
+  user_id    uuid        references auth.users(id),
+  label      text        not null default '',
+  tipo       text        not null default 'manual',
+  criado_por text,
+  criado_em  timestamptz default now(),
+  payload    jsonb       not null default '{}'
+);
+
+-- Taxas D&D (compartilhadas entre todos os usuários — ver js/init.js)
+create table if not exists rates (
+  type       text        primary key,
+  free_until integer,
+  p1_usd     numeric,
+  p2_usd     numeric,
+  updated_at timestamptz default now(),
+  updated_by text
+);
+
 -- Perfis de usuário (admin, ativo, cargo)
 create table if not exists usuarios (
   id           uuid    primary key references auth.users(id) on delete cascade,
@@ -73,7 +94,7 @@ create table if not exists usuarios (
 
 -- ──────────────────────────────────────────
 -- 2. FUNÇÃO AUXILIAR: verifica se usuário é admin
---    (security definer evita recursão nas policies)
+--    (mantida para uso futuro; as policies atuais não dependem dela)
 -- ──────────────────────────────────────────
 create or replace function auth_is_admin()
 returns boolean
@@ -86,17 +107,25 @@ as $$
 $$;
 
 -- ──────────────────────────────────────────
--- 3. ROW LEVEL SECURITY (RLS)
+-- 3. ROW LEVEL SECURITY (RLS) — MODELO COLABORATIVO
 -- ──────────────────────────────────────────
+-- Todas as tabelas operacionais são compartilhadas: qualquer usuário
+-- autenticado lê e escreve todos os dados. O user_id nos registros serve
+-- apenas para rastreabilidade. NÃO aplicar policies restritas por user_id
+-- em produção — isso quebra a colaboração (ver histórico: UNIQUE(id) e
+-- policies *_own causaram HTTP 409 e saves silenciosamente perdidos).
 alter table bls        enable row level security;
 alter table containers enable row level security;
 alter table clients    enable row level security;
 alter table settings   enable row level security;
 alter table logs       enable row level security;
 alter table usuarios   enable row level security;
+alter table checkpoints enable row level security;
+alter table rates      enable row level security;
 
 -- BLs: COMPARTILHADO — qualquer autenticado lê e escreve todos os processos
 drop policy if exists "bls_own" on bls;
+drop policy if exists "bls_authenticated" on bls;
 drop policy if exists "authenticated_rw" on bls;
 create policy "authenticated_rw" on bls
   for all to authenticated
@@ -105,61 +134,65 @@ create policy "authenticated_rw" on bls
 
 -- Containers: idem
 drop policy if exists "containers_own" on containers;
-create policy "containers_own" on containers
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+drop policy if exists "containers_authenticated" on containers;
+create policy "containers_authenticated" on containers
+  for all to public
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
 
 -- Clients: idem
 drop policy if exists "clients_own" on clients;
-create policy "clients_own" on clients
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+drop policy if exists "clients_authenticated" on clients;
+create policy "clients_authenticated" on clients
+  for all to public
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
 
 -- Settings: idem
 drop policy if exists "settings_own" on settings;
-create policy "settings_own" on settings
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+drop policy if exists "settings_authenticated" on settings;
+create policy "settings_authenticated" on settings
+  for all to public
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
 
--- Logs: qualquer usuário pode inserir seus próprios logs;
---       admins podem ler todos; usuário lê os próprios
+-- Logs: idem (leitura/escrita abertas a autenticados)
 drop policy if exists "logs_insert" on logs;
-create policy "logs_insert" on logs
-  for insert with check (auth.uid() = user_id);
-
 drop policy if exists "logs_select" on logs;
-create policy "logs_select" on logs
-  for select using (
-    auth.uid() = user_id
-    or auth_is_admin()
-  );
-
 drop policy if exists "logs_delete_admin" on logs;
-create policy "logs_delete_admin" on logs
-  for delete using (auth_is_admin());
+drop policy if exists "logs_authenticated" on logs;
+create policy "logs_authenticated" on logs
+  for all to public
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
 
--- Usuarios: cada um lê e edita o próprio perfil;
---           admins lêem e editam todos
+-- Usuarios: idem (controle de admin feito na camada de app via _dmIsAdmin)
 drop policy if exists "usuarios_select" on usuarios;
-create policy "usuarios_select" on usuarios
-  for select using (
-    auth.uid() = id
-    or auth_is_admin()
-  );
-
 drop policy if exists "usuarios_insert" on usuarios;
-create policy "usuarios_insert" on usuarios
-  for insert with check (
-    auth.uid() = id
-    or auth_is_admin()
-  );
-
 drop policy if exists "usuarios_update" on usuarios;
-create policy "usuarios_update" on usuarios
-  for update using (
-    auth.uid() = id
-    or auth_is_admin()
-  );
+drop policy if exists "usuarios_authenticated" on usuarios;
+create policy "usuarios_authenticated" on usuarios
+  for all to public
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
+
+-- Checkpoints: idem
+drop policy if exists "authenticated_rw_checkpoints" on checkpoints;
+create policy "authenticated_rw_checkpoints" on checkpoints
+  for all to public
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
+
+-- Rates: leitura/escrita abertas; sem delete (conforme produção)
+drop policy if exists "rates_insert" on rates;
+drop policy if exists "rates_select" on rates;
+drop policy if exists "rates_update" on rates;
+create policy "rates_insert" on rates
+  for insert to authenticated with check (true);
+create policy "rates_select" on rates
+  for select to authenticated using (true);
+create policy "rates_update" on rates
+  for update to authenticated using (true) with check (true);
 
 -- ──────────────────────────────────────────
 -- 4. REALTIME (habilita para as 3 coleções)
