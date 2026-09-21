@@ -12,13 +12,15 @@
 -- 1. TABELAS
 -- ──────────────────────────────────────────
 
--- BLs (faturamento)
+-- BLs (faturamento) — TABELA COMPARTILHADA: uma linha por processo (PK só id).
+-- Qualquer usuário autenticado pode ler/editar qualquer BL, independente de
+-- quem criou. user_id registra o último escritor (rastreabilidade), sem
+-- efeito sobre identidade ou acesso.
 create table if not exists bls (
-  id           text    not null,
+  id           text    not null primary key,
   user_id      uuid    not null references auth.users(id) on delete cascade,
   data         jsonb   not null default '{}'::jsonb,
-  updated_at   timestamptz default now(),
-  primary key (user_id, id)
+  updated_at   timestamptz default now()
 );
 
 -- Containers (tracking)
@@ -93,11 +95,13 @@ alter table settings   enable row level security;
 alter table logs       enable row level security;
 alter table usuarios   enable row level security;
 
--- BLs: cada usuário acessa apenas seus próprios dados
+-- BLs: COMPARTILHADO — qualquer autenticado lê e escreve todos os processos
 drop policy if exists "bls_own" on bls;
-create policy "bls_own" on bls
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+drop policy if exists "authenticated_rw" on bls;
+create policy "authenticated_rw" on bls
+  for all to authenticated
+  using (true)
+  with check (true);
 
 -- Containers: idem
 drop policy if exists "containers_own" on containers;

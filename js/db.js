@@ -80,8 +80,10 @@ const _COLS_FN = {
 };
 
 // onConflict alinhado com a nova PK de containers: (user_id, container, bl)
+// bls é COMPARTILHADO (PK só id): qualquer usuário edita qualquer processo,
+// independente de quem criou. Por isso o conflito é só por id, sem user_id.
 const _CONFLICT = {
-  bls:     'user_id,id',
+  bls:     'id',
   trk:     'user_id,container,bl',
   clients: 'user_id,id'
 };
@@ -264,7 +266,7 @@ const _CONFLICT = {
           toUpsert.map(r => keyFn(r)));
       }
 
-      // DELETE — usa filtros específicos por tipo para garantir user_id
+      // DELETE — filtros específicos por tipo (bls é compartilhado: sem filtro de dono)
       if (toDeleteKeys.length > 0) {
         if (type === 'trk') {
           // FIX: containers precisam de delete por (container, bl) — chave composta
@@ -279,8 +281,17 @@ const _CONFLICT = {
               if (typeof window.toast === 'function') window.toast('Erro ao excluir: ' + delErr.message, 'error');
             }
           }
+        } else if (type === 'bls') {
+          // Modelo compartilhado (PK só id): delete sem filtro de user_id —
+          // qualquer usuário pode excluir qualquer BL.
+          const { error: delErr } = await sb.from(table).delete()
+            .in('id', toDeleteKeys);
+          if (delErr) {
+            console.error('[DB-SAVE] delete error:', delErr);
+            if (typeof window.toast === 'function') window.toast('Erro ao salvar: ' + delErr.message, 'error');
+          }
         } else {
-          // bls e clients têm id simples — delete em batch
+          // clients têm id simples — delete em batch do próprio usuário
           const idCol = 'id';
           const ids = toDeleteKeys;
           const { error: delErr } = await sb.from(table).delete()
@@ -355,7 +366,11 @@ const _CONFLICT = {
           updated_at: new Date().toISOString()
         };
         const { error } = await sb.from(table).upsert(row, { onConflict: conflict });
-        if (error) { console.error('[DB-SAVE-ONE]', error); return; }
+        if (error) {
+          console.error('[DB-SAVE-ONE]', error);
+          if (typeof window.toast === 'function') window.toast('Erro ao salvar no servidor: ' + error.message, 'error');
+          return;
+        }
 
         // Atualiza store local com cópia profunda (evita referência compartilhada)
         const store   = JSON.parse(JSON.stringify(window._dmStore[sKey] || []));
@@ -367,6 +382,7 @@ const _CONFLICT = {
         window._dmStore[sKey] = store;
       } catch(e) {
         console.error('[DB-SAVE-ONE]', e);
+        if (typeof window.toast === 'function') window.toast('Erro interno ao salvar dados: ' + e.message, 'error');
       }
     })();
   };
@@ -395,6 +411,14 @@ const _CONFLICT = {
             window._dmStore[sKey] = window._dmStore[sKey].filter(r =>
               !(String(r.container) === container && String(r.bl || '') === (bl || ''))
             );
+          }
+        } else if (type === 'bls') {
+          // Modelo compartilhado (PK só id): qualquer usuário deleta qualquer BL.
+          const { error } = await sb.from(table).delete()
+            .eq('id', String(id));
+          if (error) { console.error('[DB-DELETE]', error); return; }
+          if (sKey && window._dmStore[sKey]) {
+            window._dmStore[sKey] = window._dmStore[sKey].filter(r => String(r.id) !== String(id));
           }
         } else {
           const idKey = IDKEY[type];
@@ -559,9 +583,9 @@ const _CONFLICT = {
       if (error || !data) { console.error('[DB] restoreCheckpoint fetch:', error); return false; }
 
       const payload = data.payload || {};
-      // Limpa tabelas existentes
+      // Limpa tabelas existentes (bls é compartilhado: limpa tudo, sem filtro de dono)
       await Promise.all([
-        sb.from('bls').delete().eq('user_id', uid),
+        sb.from('bls').delete().neq('id', ''),
         sb.from('containers').delete().eq('user_id', uid),
         sb.from('clients').delete().eq('user_id', uid)
       ]);
@@ -570,7 +594,7 @@ const _CONFLICT = {
       if (payload.bls?.length) {
         const rows = payload.bls.map(r => ({ id: String(r.id||''), user_id: uid, data: sanitize(r), updated_at: new Date().toISOString() }));
         for (let i = 0; i < rows.length; i += 50) {
-          const { error: e } = await sb.from('bls').upsert(rows.slice(i, i+50), { onConflict: 'user_id,id' });
+          const { error: e } = await sb.from('bls').upsert(rows.slice(i, i+50), { onConflict: 'id' });
           if (e) { console.error('[DB] restore bls chunk:', e); return false; }
         }
       }
