@@ -144,6 +144,7 @@ function matchTransactions(transactions, blsArray) {
   });
 
   const matches = [];
+  const usedBLIds = new Set();
   transactions.forEach(tx => {
     if (usedTxids.has(tx.txid)) return;
 
@@ -153,13 +154,17 @@ function matchTransactions(transactions, blsArray) {
     if (key && txidMap[key] && txidMap[key].length) {
       const group = txidMap[key];
       const isConsolidated = group.length > 1;
+      // txid certo não basta: o valor recebido tem que bater com o faturado.
+      const expected = group.reduce((s, b) => s + (b.frozenTotal != null ? b.frozenTotal : (invoiceTotalBRL(b) || 0)), 0);
       matches.push({
         transaction: tx,
         bl:          group[0],     // BL "âncora" para exibição
         candidates:  group,         // grupo inteiro (1 ou N BLs)
         ambiguous:   false,         // mesmo docnum → não é ambíguo, é consolidado
         matchType:   isConsolidated ? 'txid-consolidada' : 'txid',
-        consolidatedGroup: isConsolidated ? group : null
+        consolidatedGroup: isConsolidated ? group : null,
+        expected,
+        divergent:   Math.abs(expected - tx.amount) >= 0.02
       });
       return;
     }
@@ -168,8 +173,9 @@ function matchTransactions(transactions, blsArray) {
     const cnpj = _normCnpj(tx.cnpj);
     if (!cnpj || cnpj.length !== 14) return;
 
+    // Uma fatura só pode ser casada com UMA transação por importação.
     const candidates = (cnpjMap[cnpj] || []).filter(b =>
-      b.frozenTotal != null && Math.abs(b.frozenTotal - tx.amount) < 0.02
+      b.frozenTotal != null && Math.abs(b.frozenTotal - tx.amount) < 0.02 && !usedBLIds.has(b.id)
     );
     if (candidates.length === 0) return;
 
@@ -178,8 +184,11 @@ function matchTransactions(transactions, blsArray) {
       bl:          candidates[0],
       candidates,
       ambiguous:   candidates.length > 1,
-      matchType:   'cnpj'
+      matchType:   'cnpj',
+      expected:    candidates[0].frozenTotal,
+      divergent:   false
     });
+    if (candidates.length === 1) usedBLIds.add(candidates[0].id);
   });
 
   return matches;
@@ -233,7 +242,7 @@ function processExtratoFile(file) {
         return;
       }
 
-      dropZone.innerHTML = `<div class="drop-icon">✅</div><p><strong>${file.name}</strong></p><p>${transactions.length} transação(ões) lida(s)</p>`;
+      dropZone.innerHTML = `<div class="drop-icon">✅</div><p><strong>${esc(file.name)}</strong></p><p>${transactions.length} transação(ões) lida(s)</p>`;
 
       const blsRef = typeof bls !== 'undefined' ? bls : [];
       const matches = matchTransactions(transactions, blsRef);
@@ -280,18 +289,18 @@ function renderReconciliationPreview(matches, totalTransactions, blsRef) {
       // Fatura consolidada: lista todos os BLs cobertos pelo mesmo txid.
       const blsList = m.consolidatedGroup.map(c => c.bl || c.id).join(', ');
       blCell = `<span style="font-weight:600;color:#166534;">${m.consolidatedGroup.length} BLs</span>
-                <span style="font-size:11px;color:#6b7280;display:block;">${m.bl.docnum || '—'}</span>
-                <span style="font-size:10px;color:#374151;display:block;margin-top:2px;">${blsList}</span>`;
+                <span style="font-size:11px;color:#6b7280;display:block;">${esc(m.bl.docnum || '—')}</span>
+                <span style="font-size:10px;color:#374151;display:block;margin-top:2px;">${esc(blsList)}</span>`;
     } else if (m.ambiguous) {
       blCell = `<select class="recon-select" data-idx="${i}" style="font-size:12px;border:1px solid #d1d5db;border-radius:6px;padding:4px 6px;max-width:220px;">
            ${m.candidates.map((c, ci) =>
-             `<option value="${ci}">${c.bl} — ${c.docnum || '—'} — ${c.client || '—'}</option>`
+             `<option value="${ci}">${esc(c.bl)} — ${esc(c.docnum || '—')} — ${esc(c.client || '—')}</option>`
            ).join('')}
          </select>
          <span style="font-size:10px;color:#b45309;margin-left:4px;">⚠ ambíguo</span>`;
     } else {
-      blCell = `<span style="font-weight:600;color:#166534;">${m.bl.bl || m.bl.id}</span>
-                <span style="font-size:11px;color:#6b7280;display:block;">${m.bl.docnum || '—'}</span>`;
+      blCell = `<span style="font-weight:600;color:#166534;">${esc(m.bl.bl || m.bl.id)}</span>
+                <span style="font-size:11px;color:#6b7280;display:block;">${esc(m.bl.docnum || '—')}</span>`;
     }
 
     let matchBadge;
@@ -311,13 +320,13 @@ function renderReconciliationPreview(matches, totalTransactions, blsRef) {
     return `
       <tr style="border-bottom:1px solid #f3f4f6;">
         <td style="padding:8px 10px;">
-          <input type="checkbox" class="recon-check" data-idx="${i}" checked style="cursor:pointer;">
+          <input type="checkbox" class="recon-check" data-idx="${i}" ${m.divergent ? '' : 'checked'} style="cursor:pointer;" aria-label="Conciliar">
         </td>
         <td style="padding:8px 10px;">${blCell}${matchBadge}</td>
-        <td style="padding:8px 10px;font-size:12px;">${m.bl.client || '—'}</td>
-        <td style="padding:8px 10px;font-size:11px;color:#6b7280;font-family:monospace;">${m.transaction.txid}</td>
+        <td style="padding:8px 10px;font-size:12px;">${esc(m.bl.client || '—')}</td>
+        <td style="padding:8px 10px;font-size:11px;color:#6b7280;font-family:monospace;">${esc(m.transaction.txid)}</td>
         <td style="padding:8px 10px;font-size:12px;color:#1d4ed8;font-weight:600;">${fmtBRL(m.transaction.amount)}</td>
-        <td style="padding:8px 10px;font-size:12px;color:#374151;">${valorFatura != null ? fmtBRL(valorFatura) : '—'}</td>
+        <td style="padding:8px 10px;font-size:12px;color:${m.divergent ? '#b91c1c;font-weight:700' : '#374151'};">${valorFatura != null ? fmtBRL(valorFatura) : '—'}${m.divergent ? '<br><span style="font-size:10px;">⚠ valor diverge — desmarcado</span>' : ''}</td>
         <td style="padding:8px 10px;font-size:12px;">${fmtDate(m.transaction.date)}</td>
       </tr>`;
   }).join('');
@@ -367,6 +376,7 @@ function confirmConciliacao() {
     const idx = parseInt(chk.dataset.idx, 10);
     const match = _pendingMatches[idx];
     if (!match) return;
+    if (match.divergent && !confirm(`O PIX ${match.transaction.txid} (${fmtBRL(match.transaction.amount)}) não bate com o valor faturado (${fmtBRL(match.expected)}).\n\nRegistrar como pago mesmo assim? A divergência fica gravada.`)) return;
 
     // Fatura consolidada: 1 txid quita TODOS os BLs do grupo.
     if (match.consolidatedGroup && match.consolidatedGroup.length > 1) {
@@ -388,12 +398,23 @@ function confirmConciliacao() {
     return;
   }
 
+  // A mesma fatura não pode ser quitada por duas transações (CNPJ ambíguo:
+  // o usuário pode escolher o mesmo BL em duas linhas).
+  const seen = new Set();
+  const dup = selected.filter(({ bl }) => { if (seen.has(bl.id)) return true; seen.add(bl.id); return false; });
+  if (dup.length) { toast(`O BL ${dup[0].bl.bl} foi escolhido para mais de uma transação. Ajuste a seleção.`, 'error'); return; }
+
   let consolidatedCount = 0;
+  const semValor = [];
   selected.forEach(({ match, bl }) => {
     const tx = match.transaction;
 
-    const roe   = (bl.billed && bl.frozenRoe   != null) ? bl.frozenRoe   : effectiveROE(bl);
-    const total = (bl.billed && bl.frozenTotal != null) ? bl.frozenTotal : blTotal(bl, null);
+    // BL faturado antes do congelamento existir não tem frozenTotal: congela
+    // agora (senão ficaria pago com valor flutuando com a PTAX).
+    const fv    = bl.frozenTotal != null ? { roe: bl.frozenRoe, total: bl.frozenTotal } : freezeValues(bl);
+    if (!fv) { semValor.push(bl.bl); return; }
+    const roe   = fv.roe;
+    const total = fv.total;
 
     bl.paid                 = true;
     bl.paidAt               = tx.date;
@@ -401,6 +422,9 @@ function confirmConciliacao() {
     bl.frozenTotal          = total;
     bl.conciliadoPorExtrato = true;
     bl.pixTxid              = tx.txid;
+    // Recebido: o valor do PIX (consolidada: rateado proporcionalmente).
+    const share = match.expected > 0 ? (total / match.expected) : 1;
+    bl.paidAmount           = parseFloat((tx.amount * share).toFixed(2));
 
     const isCons = !!(match.consolidatedGroup && match.consolidatedGroup.length > 1);
     if (isCons) consolidatedCount++;
@@ -424,5 +448,6 @@ function confirmConciliacao() {
   closeModal('modal-extrato-import');
   renderList();
   const extra = consolidatedCount > 0 ? ` (${consolidatedCount} via fatura consolidada)` : '';
-  toast(`${selected.length} BL(s) conciliado(s) com sucesso${extra}! ✔`, 'success');
+  if (semValor.length) toast(`PTAX indisponível — ${semValor.length} BL(s) sem valor congelado não foram conciliados: ${semValor.join(', ')}.`, 'error');
+  else toast(`${selected.length} BL(s) conciliado(s) com sucesso${extra}! ✔`, 'success');
 }

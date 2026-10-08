@@ -28,6 +28,15 @@ Você edita um arquivo → Salva → Git push → GitHub Actions → Firebase Ho
 - `firestore.rules` — Regras do Firestore
 - `.github/workflows/firebase-deploy.yml` — Pipeline de deploy automático
 
+## 🗄️ Banco de dados (Supabase)
+
+Mudanças de banco ficam em `supabase/migrations/` e **não** são aplicadas pelo deploy automático.
+Para aplicar: Supabase Dashboard → SQL Editor → colar o arquivo → Run. Os arquivos são idempotentes.
+
+O deploy publica só os arquivos do app: `.md`, `.sql`, `supabase/` e arquivos ocultos ficam fora do Hosting (`firebase.json`).
+JS/CSS/HTML são servidos com `Cache-Control: no-cache` (revalidam a cada acesso) — não é mais preciso subir `?v=` a cada alteração.
+(As versões `?v=200` desta mudança são necessárias uma única vez: a configuração anterior mandava o navegador guardar JS/CSS por 1 ano.)
+
 ## ⚠️ Segurança
 
 As credenciais ficam nos **GitHub Actions Secrets** e nunca no código. O workflow usa a service account (`FIREBASE_SERVICE_ACCOUNT`) quando o secret existe e, se não existir, o token legado (`FIREBASE_TOKEN`, autenticação descontinuada pelo Firebase).

@@ -70,10 +70,18 @@ function issueConsolidatedInvoice() {
     return;
   }
 
-  const allUnpaid = bls.filter(b => b.cnpj === cnpj && !b.paid && !b.complementOf);
-  const selected = (typeof _consSelectedBLs !== 'undefined' && _consSelectedBLs.size > 0)
+  const allUnpaid = bls.filter(b => normalizeCnpj(b.cnpj) === normalizeCnpj(cnpj) && !b.paid && !b.complementOf);
+  const chosen = (typeof _consSelectedBLs !== 'undefined' && _consSelectedBLs.size > 0)
     ? allUnpaid.filter(b => _consSelectedBLs.has(b.id))
     : [];
+  // BL já faturado individualmente tem fatura (e PIX/txid) nas mãos do
+  // cliente: reconsolidar trocaria o nº e a ROE e o pagamento não conciliaria.
+  const jaFaturados = chosen.filter(b => b.billed);
+  if (jaFaturados.length) {
+    toast(`Desmarque os BLs já faturados (${jaFaturados.map(b => b.bl).join(', ')}): só BLs pendentes entram numa fatura consolidada. Para reagrupar, desfaça o faturamento deles antes.`, 'error');
+    return;
+  }
+  const selected = chosen;
 
   if (selected.length < 2) {
     toast('Selecione pelo menos 2 BLs para emitir uma fatura consolidada.', 'error');
@@ -86,7 +94,7 @@ function issueConsolidatedInvoice() {
     return;
   }
 
-  const slices = selected.map(b => ({ b, total: blTotal(b, roe) }));
+  const slices = selected.map(b => ({ b, total: Math.round((hasManual(b) ? b.manualTotal : blTotal(b, roe)) * 100) / 100 }));
   const grandTotal = slices.reduce((s, x) => s + x.total, 0);
 
   if (grandTotal <= 0) {
@@ -97,7 +105,7 @@ function issueConsolidatedInvoice() {
   const blIds   = selected.map(b => b.id);
   const docnum  = genConsolidatedDocnum(blIds);
   const groupId = 'cgrp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-  const today   = new Date().toISOString().slice(0, 10);
+  const today   = todayISO();
 
   const confirmMsg =
     `Emitir fatura consolidada para ${selected.length} BLs?\n\n` +
@@ -169,16 +177,16 @@ function _buildConsolidatedInvoiceHTML(group, docnum) {
       <tr class="inv-bl-divider">
         <td colspan="9">
           <span class="inv-bl-tag">BL ${idx + 1}</span>
-          <strong>${b.bl || '—'}</strong>
-          &nbsp;·&nbsp; ${b.vessel || '—'}
-          &nbsp;·&nbsp; ${b.pol || '—'} → ${b.pod || '—'}
+          <strong>${esc(b.bl || '—')}</strong>
+          &nbsp;·&nbsp; ${esc(b.vessel || '—')}
+          &nbsp;·&nbsp; ${esc(b.pol || '—')} → ${esc(b.pod || '—')}
           <span class="inv-bl-sub">${fmtBRL(subtotal)}</span>
         </td>
       </tr>`;
     const rowsHTML = billable.map(({ c, calc, brl }) => `
       <tr>
-        <td>${c.container || '—'}</td>
-        <td>${c.type || '—'}</td>
+        <td>${esc(c.container || '—')}</td>
+        <td>${esc(c.type || '—')}</td>
         <td>${calc.diasP1 || 0}</td>
         <td>${calc.usdP1.toFixed(2)}</td>
         <td>${calc.diasP2 || 0}</td>
@@ -191,7 +199,7 @@ function _buildConsolidatedInvoiceHTML(group, docnum) {
   });
 
   // Listagem compacta dos BLs cobertos (no lugar dos blocos repetidos).
-  const blsListStr = group.map(b => b.bl || '—').join(', ');
+  const blsListStr = esc(group.map(b => b.bl || '—').join(', '));
 
   // Vencimento: usa o do primeiro BL (todos do mesmo grupo costumam compartilhar).
   if (!first.venc) first.venc = nextBusinessDay(null);
@@ -216,11 +224,11 @@ function _buildConsolidatedInvoiceHTML(group, docnum) {
       <div class="inv-logo-area">
         ${logoHTML}
       </div>
-      <div class="inv-num">Nº ${docnum}</div>
+      <div class="inv-num">Nº ${esc(docnum)}</div>
     </div>
     <div class="inv-title">FATURA DE SOBREESTADIA DE CONTAINER</div>
     <hr class="inv-hr">
-    <div class="inv-row"><span class="inv-lbl">Cliente:</span><span class="inv-val">${cliente}${cnpjStr ? '<br>CNPJ: ' + cnpjStr : ''}</span></div>
+    <div class="inv-row"><span class="inv-lbl">Cliente:</span><span class="inv-val">${esc(cliente)}${cnpjStr ? '<br>CNPJ: ' + esc(formatCnpj(cnpjStr)) : ''}</span></div>
     <div class="inv-row"><span class="inv-lbl">BLs (${group.length}):</span><span class="inv-val">${blsListStr}</span></div>
 
     <div style="display:flex;justify-content:flex-end;margin-bottom:0;">
@@ -246,7 +254,7 @@ function _buildConsolidatedInvoiceHTML(group, docnum) {
       </tbody>
     </table>
     <div class="inv-pix">
-      <div class="inv-pix-qr" id="pix-qr-${docnum}"></div>
+      <div class="inv-pix-qr" id="pix-qr-${esc(docnum)}"></div>
       <div class="inv-pix-info">
         <strong>Pagamento via PIX</strong>
         Escaneie o QR Code ao lado ou utilize o código Pix Copia e Cola abaixo para realizar o pagamento.<br>
@@ -254,7 +262,7 @@ function _buildConsolidatedInvoiceHTML(group, docnum) {
       </div>
     </div>
     <div class="inv-pix-copiacola">
-      <span class="inv-pix-copiacola-label">Pix Copia e Cola<button type="button" class="inv-pix-copy-btn" onclick="copyPixPayload('${docnum}')">Copiar</button></span>
+      <span class="inv-pix-copiacola-label">Pix Copia e Cola<button type="button" class="inv-pix-copy-btn" onclick="copyPixPayload('${escJs(docnum)}')">Copiar</button></span>
       <span class="inv-pix-copiacola-code">${pixPayload}</span>
     </div>
     <hr class="inv-hr-light">

@@ -46,11 +46,11 @@ async function renderUsers() {
 }
 
 function _updateUsrKPIs() {
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const activeUsers = _usrList.filter(u => u.ativo !== false).length;
   const sessionsToday = _logList.filter(l => {
     const d = l.criado_em?.toDate ? l.criado_em.toDate() : new Date(l.criado_em || 0);
-    return d.toISOString().slice(0,10) === today && l.acao === 'login';
+    return isoLocal(d) === today && l.acao === 'login';
   }).length;
   const el1 = document.getElementById('usr-kpi-total');
   const el2 = document.getElementById('usr-kpi-sessions');
@@ -72,14 +72,14 @@ function _renderUserTable() {
     const adminBadge = u.admin ? '<span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;">ADMIN</span>' : '—';
     const ativoBadge = u.ativo !== false ? '<span style="color:#10b981;font-weight:700;">✔ Ativo</span>' : '<span style="color:#ef4444;font-weight:700;">✗ Inativo</span>';
     return `<tr>
-      <td style="font-weight:600">${u.nome||'—'}</td>
-      <td style="font-size:12px;color:var(--muted)">${u.email||'—'}</td>
-      <td>${u.cargo||'—'}</td>
+      <td style="font-weight:600">${esc(u.nome||'—')}</td>
+      <td style="font-size:12px;color:var(--muted)">${esc(u.email||'—')}</td>
+      <td>${esc(u.cargo||'—')}</td>
       <td style="text-align:center">${adminBadge}</td>
       <td style="text-align:center">${ativoBadge}</td>
       <td style="font-size:12px">${criadoEm}</td>
       <td style="text-align:center">
-        <button class="act-btn edit" onclick="openEditUser('${u.uid||u.id}')" style="padding:4px 10px;font-size:12px;">Editar</button>
+        <button class="act-btn edit" onclick="openEditUser('${escJs(u.uid||u.id)}')" style="padding:4px 10px;font-size:12px;">Editar</button>
       </td>
     </tr>`;
   }).join('');
@@ -92,7 +92,7 @@ function _getFilteredLogs() {
   const qTo     = document.getElementById('log-filter-to')?.value     || '';
   return _logList.filter(l => {
     const d = l.criado_em?.toDate ? l.criado_em.toDate() : new Date(l.criado_em || 0);
-    const dStr = d.toISOString().slice(0,10);
+    const dStr = isoLocal(d);
     if (qUser   && !(l.usuario_nome||'').toLowerCase().includes(qUser)) return false;
     if (qAction && l.acao !== qAction) return false;
     if (qFrom   && dStr < qFrom) return false;
@@ -179,7 +179,7 @@ function _renderLogTable() {
     const dateStr = d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
     const style = actionColors[l.acao] || '#f9fafb;color:#374151';
     const label = actionLabels[l.acao] || (l.acao || '?');
-    const actionBadge = `<span style="background:${style};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;">${label}</span>`;
+    const actionBadge = `<span style="background:${style};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;">${esc(label)}</span>`;
     let detalhe = '';
     try {
       const d2 = l.detalhe || {};
@@ -209,9 +209,9 @@ function _renderLogTable() {
     } catch(e) { detalhe = '—'; }
     return `<tr>
       <td style="font-size:12px;white-space:nowrap">${dateStr}</td>
-      <td style="font-size:12px;font-weight:500">${l.usuario_nome||'—'}</td>
+      <td style="font-size:12px;font-weight:500">${esc(l.usuario_nome||'—')}</td>
       <td>${actionBadge}</td>
-      <td style="font-size:11px;color:var(--muted);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${detalhe}</td>
+      <td style="font-size:11px;color:var(--muted);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(detalhe)}">${esc(detalhe)}</td>
     </tr>`;
   }).join('');
 }
@@ -264,7 +264,7 @@ function openEditUser(uid2) {
 
 async function saveUser() {
   const nome  = document.getElementById('fu-nome').value.trim();
-  const email = document.getElementById('fu-email').value.trim();
+  const email = document.getElementById('fu-email').value.trim().toLowerCase();
   const cargo = document.getElementById('fu-cargo').value.trim();
   const admin = document.getElementById('fu-admin').checked;
   const ativo = document.getElementById('fu-ativo').checked;
@@ -272,21 +272,29 @@ async function saveUser() {
   if (!nome)  { toast('Nome é obrigatório.', 'error'); return; }
   if (!email) { toast('E-mail é obrigatório.', 'error'); return; }
 
-  const data = { nome, email, cargo, admin, ativo };
-  if (_editingUserId) data.uid = _editingUserId;
-
-  if (window._dmFireSaveUsuario) {
-    const ok = await window._dmFireSaveUsuario(data);
-    if (ok) {
-      toast(_editingUserId ? 'Usuário atualizado!' : 'Usuário salvo!', 'success');
-      logAuditAction('edicao_usuario', { uid: _editingUserId, nome, email });
-      closeModal('modal-user');
-      await renderUsers();
-    } else {
-      toast('Erro ao salvar usuário.', 'error');
+  let id = _editingUserId;
+  if (!id) {
+    // O perfil precisa do id da conta de acesso (Supabase Auth). Contas são
+    // criadas no painel do Supabase (Authentication → Users → Invite); aqui
+    // vinculamos o perfil a uma conta existente pelo e-mail já cadastrado.
+    const existing = _usrList.find(u => (u.email || '').toLowerCase() === email);
+    if (existing) { id = existing.uid || existing.id; }
+    else {
+      alert('Para criar um usuário:\n\n1. No painel do Supabase, vá em Authentication → Users → "Invite user" e convide ' + email + '.\n2. O perfil é criado automaticamente no convite (ativo, sem admin) e aparece nesta lista — recarregue a página e ajuste nome, cargo e permissões.\n\nO perfil não pode ser criado antes da conta de acesso existir.');
+      return;
     }
+  }
+  if (id === window._dmUid && (!admin || !ativo)) {
+    toast('Você não pode remover o próprio acesso de admin ou se desativar.', 'error'); return;
+  }
+  const res = await window._dmFireSaveUsuario({ uid: id, nome, email, cargo, admin, ativo });
+  if (res && res.ok) {
+    toast(_editingUserId ? 'Usuário atualizado!' : 'Perfil vinculado!', 'success');
+    logAuditAction('edicao_usuario', { uid: id, nome, email, admin, ativo });
+    closeModal('modal-user');
+    await renderUsers();
   } else {
-    toast('Supabase não inicializado. Aguarde e tente novamente.', 'error');
+    toast('Erro ao salvar usuário: ' + ((res && res.error) || 'desconhecido') + ' (a permissão é verificada no servidor — só administradores alteram perfis).', 'error');
   }
 }
 
@@ -305,50 +313,14 @@ function exportLogsCSV() {
   const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `auditoria_${new Date().toISOString().slice(0,10)}.csv`;
+  a.href = url; a.download = `auditoria_${todayISO()}.csv`;
   a.click(); URL.revokeObjectURL(url);
   toast('CSV exportado!', 'success');
   logAuditAction('exportacao_relatorio', {tipo:'logs_auditoria', registros: filtered.length});
 }
 
 function confirmClearOldLogs() {
-  const cutoff = prompt('Limpar logs mais antigos que quantos dias? (ex: 90)');
-  if (!cutoff || isNaN(Number(cutoff))) return;
-  const dias = parseInt(cutoff);
-
-  const cutDate = new Date(Date.now() - dias * 86400000);
-  const toDelete = _logList.filter(l => {
-    const d = l.criado_em?.toDate ? l.criado_em.toDate() : new Date(l.criado_em || 0);
-    return d < cutDate;
-  });
-
-  if (!toDelete.length) {
-    toast('Nenhum log encontrado para o período informado.');
-    return;
-  }
-
-  showDoubleConfirmation(
-    'Excluir Logs Antigos?',
-    `Você está prestes a excluir permanentemente todos os logs anteriores a ${dias} dias. Estes registros de auditoria não poderão ser recuperados.`,
-    toDelete.length,
-    () => {
-      if (window._dmFireDeleteLogs) {
-        (async () => {
-          try {
-            const ids = toDelete.filter(l => l._docId).map(l => l._docId);
-            const deleted = await window._dmFireDeleteLogs(ids);
-            toast(`✓ ${deleted} log(s) excluído(s) permanentemente.`, 'success');
-            logAuditAction('limpeza_logs', { diasCutoff: dias, deletados: deleted });
-            await renderUsers();
-          } catch(e) {
-            console.error('[LOGS-DELETE]', e);
-            toast('Erro ao excluir logs: ' + (e.message || e), 'error');
-          }
-        })();
-      } else {
-        toast('Função de exclusão não disponível.', 'error');
-      }
-    }
-  );
+  // A auditoria é somente-inclusão (garantido por política no banco): os
+  // registros não podem ser apagados pelo app, nem por administradores.
+  alert('Os logs de auditoria são imutáveis e não podem ser excluídos pelo sistema.\n\nSe precisar de retenção (ex.: apagar após 5 anos), ela deve ser feita por rotina no banco de dados.');
 }
-

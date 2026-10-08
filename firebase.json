@@ -7,7 +7,11 @@
     "ignore": [
       "firebase.json",
       "**/.*",
-      "**/node_modules/**"
+      "**/node_modules/**",
+      "**/*.md",
+      "**/*.sql",
+      "supabase/**",
+      "firestore.rules"
     ],
     "rewrites": [
       {
@@ -17,21 +21,23 @@
     ],
     "headers": [
       {
-        "source": "**/*.@(js|css|png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|eot)",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "max-age=31536000"
-          }
-        ]
+        "source": "**/*.@(png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|eot)",
+        "headers": [{ "key": "Cache-Control", "value": "max-age=31536000" }]
+      },
+      {
+        "source": "**/*.@(js|css)",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
       },
       {
         "source": "**/*.html",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      },
+      {
+        "source": "**",
         "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "max-age=3600"
-          }
+          { "key": "X-Content-Type-Options", "value": "nosniff" },
+          { "key": "X-Frame-Options", "value": "DENY" },
+          { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
         ]
       }
     ]

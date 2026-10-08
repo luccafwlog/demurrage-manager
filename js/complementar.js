@@ -92,9 +92,9 @@ function openComplementModal(id) {
   };
   const rows = cands.map((x, i) => `
     <tr data-i="${i}">
-      <td style="padding:5px 6px;font-family:monospace;">${x.c.container}</td>
+      <td style="padding:5px 6px;font-family:monospace;">${esc(x.c.container)}</td>
       <td style="padding:5px 6px;text-align:center;">${daysBetween(x.c.discharge, x.c.emptyReturn)}</td>
-      <td style="padding:5px 6px;">${x.billedType || '—'}</td>
+      <td style="padding:5px 6px;">${esc(x.billedType || '—')}</td>
       <td style="padding:5px 6px;"><select class="comp-type" onchange="_compRecalc()" style="width:110px">${typeOpts(x.suggested)}</select></td>
       <td style="padding:5px 6px;text-align:right;">${x.creditUSD.toFixed(2)}</td>
       <td style="padding:5px 6px;text-align:right;" data-correct>—</td>
@@ -108,7 +108,7 @@ function openComplementModal(id) {
 
   const html = `
     <div style="font-size:13px;margin-bottom:10px;">
-      Fatura original <strong>${b.docnum || '—'}</strong> · BL <strong>${b.bl}</strong> · ${_compEsc(b.client || '—')}<br>
+      Fatura original <strong>${esc(b.docnum || '—')}</strong> · BL <strong>${esc(b.bl)}</strong> · ${_compEsc(b.client || '—')}<br>
       <span style="color:var(--muted);font-size:12px;">A original não é alterada. Cada linha cobra o valor no tipo correto menos o que já foi cobrado. Tipo sugerido a partir do Controle de Containers.</span>
     </div>
     ${ovWarn}
@@ -237,11 +237,11 @@ function createComplement() {
       mode: document.getElementById('comp-disc-mode').value,
       approver,
       justification,
-      appliedAt: new Date().toISOString().slice(0, 10),
+      appliedAt: todayISO(),
     };
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
   const comp = {
     id: uid(),
     bl: b.bl,

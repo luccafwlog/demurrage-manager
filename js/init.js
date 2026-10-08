@@ -18,7 +18,14 @@ document.addEventListener('click', e => {
   if (dd && inp && !dd.contains(e.target) && e.target !== inp) dd.style.display = 'none';
 });
 document.addEventListener('keydown', e => {
-  if (e.key==='Escape') ['modal-bl','modal-import','modal-editval','modal-rates','modal-trk-import','modal-consolidated','modal-client','modal-alert-email','modal-alert-panel','modal-trk-clear','modal-bil-clear'].forEach(id=>closeModal(id));
+  if (e.key==='Escape') {
+    document.querySelectorAll('.overlay.open').forEach(ov => ov.classList.remove('open'));
+    ['generic-modal-overlay','payment-modal-overlay','double-confirm-modal'].forEach(id => { const el = document.getElementById(id); if (el) el.remove(); });
+  }
+  // Elementos clicáveis não-botão (abas, cards) respondem a Enter/Espaço.
+  if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.getAttribute && e.target.getAttribute('role') === 'button') {
+    e.preventDefault(); e.target.click();
+  }
 });
 document.querySelectorAll('.overlay').forEach(ov => {
   ov.addEventListener('click', e => { if(e.target===ov) ov.classList.remove('open'); });
@@ -73,7 +80,7 @@ function applyContainerAlerts() {
     const existing = rowEl.querySelector('.badge-overdue');
     if (existing) existing.remove();
 
-    const ft = r.freeTime || 21;
+    const ft = trkFreeTime(r);
     const elapsed = trkDaysElapsed(r.discharge);
     if (elapsed === null || r.emptyReturn) return;
 
@@ -118,7 +125,7 @@ async function showModificationHistory(collection, docId, label) {
     });
     const sorted = relevant.slice(0, 20);
 
-    let html = `<div style="padding:4px 0 16px;font-size:13px;font-weight:600;color:var(--muted);">Histórico de alterações em <strong style="color:var(--text);">${label}</strong></div>`;
+    let html = `<div style="padding:4px 0 16px;font-size:13px;font-weight:600;color:var(--muted);">Histórico de alterações em <strong style="color:var(--text);">${esc(label)}</strong></div>`;
     html += `<ul class="mod-hist-list">`;
 
     if (sorted.length === 0) {
@@ -129,12 +136,12 @@ async function showModificationHistory(collection, docId, label) {
         const icon = icons[m.acao] || icons.default;
         const when = m.criado_em ? new Date(m.criado_em).toLocaleString('pt-BR') : '—';
         const det  = m.detalhe && Object.keys(m.detalhe).length
-          ? Object.entries(m.detalhe).map(([k,v])=>`${k}: <strong>${v}</strong>`).join(' · ') : '';
+          ? Object.entries(m.detalhe).map(([k,v])=>`${esc(k)}: <strong>${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</strong>`).join(' · ') : '';
         html += `<li class="mod-hist-item">
           <div class="mod-hist-dot">${icon}</div>
           <div class="mod-hist-body">
-            <div class="mod-hist-action">${(m.acao||'').replace(/_/g,' ')}</div>
-            <div class="mod-hist-meta">por <strong>${m.usuario_nome||'—'}</strong> · ${when}</div>
+            <div class="mod-hist-action">${esc((m.acao||'').replace(/_/g,' '))}</div>
+            <div class="mod-hist-meta">por <strong>${esc(m.usuario_nome||'—')}</strong> · ${when}</div>
             ${det ? `<div class="mod-hist-meta" style="margin-top:3px;">${det}</div>` : ''}
           </div>
         </li>`;
@@ -203,8 +210,8 @@ function renderCfgRates() {
   (window._cfgRates || RATES).forEach((rate, idx) => {
     const p1Str = rate.p1 ? `${rate.p1.range[0]}–${rate.p1.range[1] === Infinity ? '∞' : rate.p1.range[1]}` : '—';
     tbody.innerHTML += `<tr>
-      <td><strong>${rate.type}</strong></td>
-      <td><input type="number" id="cfg-r-ft-${idx}" value="${rate.freeUntil}" min="0" max="60" style="width:70px;"></td>
+      <td><strong>${esc(rate.type)}</strong></td>
+      <td><input type="number" id="cfg-r-ft-${idx}" value="${esc(rate.freeUntil)}" min="0" max="60" style="width:70px;"></td>
       <td style="color:var(--muted);font-size:12px;">${p1Str}</td>
       <td><input type="number" id="cfg-r-p1-${idx}" value="${rate.p1 ? rate.p1.usd : ''}" min="0" step="1"></td>
       <td><input type="number" id="cfg-r-p2-${idx}" value="${rate.p2 ? rate.p2.usd : ''}" min="0" step="1"></td>
@@ -214,11 +221,15 @@ function renderCfgRates() {
 }
 
 async function saveCfgRate(idx) {
+  if (!requireAdmin('alterar a tabela de taxas')) return;
   const rates = window._cfgRates || RATES;
   const rate  = rates[idx];
-  const ft    = parseInt(document.getElementById(`cfg-r-ft-${idx}`)?.value) || rate.freeUntil;
-  const p1usd = parseFloat(document.getElementById(`cfg-r-p1-${idx}`)?.value) || (rate.p1 ? rate.p1.usd : 0);
-  const p2usd = parseFloat(document.getElementById(`cfg-r-p2-${idx}`)?.value) || (rate.p2 ? rate.p2.usd : 0);
+  const num = (id, fb, f) => { const v = f(document.getElementById(id)?.value); return isNaN(v) || v < 0 ? fb : v; };
+  const ft    = num(`cfg-r-ft-${idx}`, rate.freeUntil, v => parseInt(v, 10));
+  const p1usd = num(`cfg-r-p1-${idx}`, rate.p1 ? rate.p1.usd : 0, parseFloat);
+  const p2usd = num(`cfg-r-p2-${idx}`, rate.p2 ? rate.p2.usd : 0, parseFloat);
+  const antes = { freeUntil: rate.freeUntil, p1: rate.p1 && rate.p1.usd, p2: rate.p2 && rate.p2.usd };
+  if (!confirm(`Alterar a taxa ${rate.type}?\n\nFree time: ${antes.freeUntil} → ${ft}\nP1: USD ${antes.p1} → ${p1usd}\nP2: USD ${antes.p2} → ${p2usd}\n\nAfeta o cálculo de todos os BLs PENDENTES (faturas já emitidas ficam congeladas).`)) return;
 
   // Atualiza na memória
   rate.freeUntil = ft;
@@ -252,7 +263,9 @@ async function saveCfgRate(idx) {
       p2usd: r.p2 ? r.p2.usd : null
     }));
     localStorage.setItem('dm_rates_v2', JSON.stringify(allRates));
+    logAuditAction('edicao_taxa', { tipo: rate.type, antes, depois: { freeUntil: ft, p1: p1usd, p2: p2usd } });
     toast('Taxa "' + rate.type + '" salva com sucesso!', 'success');
+    if (typeof renderList === 'function') renderList();
     renderCfgRates();
   } catch(e) {
     toast('Erro ao salvar taxa: ' + e.message, 'error');
@@ -329,7 +342,7 @@ async function cfgExportBackupJSON() {
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = `demurrage-backup-${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `demurrage-backup-${todayISO()}.json`;
     a.click();
     URL.revokeObjectURL(url);
     toast('Backup exportado com sucesso!', 'success');
@@ -347,9 +360,9 @@ function cfgExportContainersCSV() {
   const rows = trkData.map(r => [
     r.container, r.type, r.vessel, r.pol, r.pod, r.client, r.cnpj,
     r.discharge ? new Date(r.discharge).toLocaleDateString('pt-BR') : '',
-    r.freeTime || 21,
+    trkFreeTime(r),
     r.status || '',
-    r.emptyReturn ? '' : Math.max(0, (trkDaysElapsed(r.discharge)||0) - (r.freeTime||21)),
+    r.emptyReturn ? '' : Math.max(0, (trkDaysElapsed(r.discharge)||0) - (trkFreeTime(r))),
     r.emptyReturn ? new Date(r.emptyReturn).toLocaleDateString('pt-BR') : ''
   ]);
   const csv = [cols, ...rows].map(r => r.map(v => `"${String(v||'').replace(/"/g,'""')}"`).join(',')).join('\n');
@@ -357,7 +370,7 @@ function cfgExportContainersCSV() {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  a.download = `containers-${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `containers-${todayISO()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
   toast('CSV exportado com sucesso!', 'success');
@@ -365,42 +378,33 @@ function cfgExportContainersCSV() {
 
 async function cfgImportBackup(event) {
   const file = event.target.files[0];
-  if (!file) return;
-  if (!confirm('⚠️ Isso irá SUBSTITUIR os dados atuais pelo backup selecionado.\n\nTem certeza que deseja continuar?')) {
-    event.target.value = ''; return;
-  }
-  toast('Importando backup...', 'info');
-  try {
-    const text   = await file.text();
-    const backup = JSON.parse(text);
-    if (!backup.data) throw new Error('Formato de backup inválido');
-
-    const blsData      = backup.data.bls      || [];
-    const trackingData = backup.data.tracking || backup.data.trk || [];
-    const clientsData  = backup.data.clients  || [];
-
-    if (window._dmFireRestore) {
-      await window._dmFireRestore(backup);
-    }
-
-    // Restaura usando _dmFireSave para cada coleção
-    if (window._dmFireSave) {
-      if (blsData.length)      window._dmFireSave('bls',     blsData);
-      if (trackingData.length) window._dmFireSave('trk',     trackingData);
-      if (clientsData.length)  window._dmFireSave('clients', clientsData);
-    }
-
-    if (backup.alertDays) {
-      if (window._dmSaveAlertDays) window._dmSaveAlertDays(backup.alertDays);
-      if (window._dmStore) window._dmStore.alertDays = backup.alertDays;
-    }
-
-    toast('Backup restaurado! Recarregando...', 'success');
-    setTimeout(() => location.reload(), 1800);
-  } catch(e) {
-    toast('Erro ao importar: ' + e.message, 'error');
-  }
   event.target.value = '';
+  if (!file) return;
+  if (!requireAdmin('restaurar backups')) return;
+  let backup;
+  try { backup = JSON.parse(await file.text()); } catch (e) { toast('Arquivo inválido: ' + e.message, 'error'); return; }
+  const d = backup.data || backup; // aceita os dois formatos já exportados
+  const snapshot = {
+    bls:     d.bls || [],
+    trk:     d.tracking || d.trk || [],
+    clients: d.clients || []
+  };
+  if (!snapshot.bls.length && !snapshot.trk.length && !snapshot.clients.length) { toast('Backup vazio ou em formato desconhecido.', 'error'); return; }
+  showDoubleConfirmation('Restaurar backup?',
+    `Os dados atuais serão SUBSTITUÍDOS por ${snapshot.bls.length} BLs, ${snapshot.trk.length} containers e ${snapshot.clients.length} clientes (backup de ${backup.exportedAt ? new Date(backup.exportedAt).toLocaleString('pt-BR') : 'data desconhecida'}). Um checkpoint do estado atual é criado antes.`,
+    snapshot.bls.length + snapshot.trk.length + snapshot.clients.length,
+    async () => {
+      toast('Criando checkpoint de segurança...', '');
+      const cp = await window._dmFireSaveCheckpoint('Antes de restaurar backup ' + file.name, 'manual');
+      if (!cp) { toast('Não foi possível criar o checkpoint de segurança — restauração cancelada.', 'error'); return; }
+      toast('Restaurando backup...', '');
+      const res = await window._dmFireReplaceAll(snapshot);
+      if (!res.ok) { toast('Erro ao restaurar — a restauração pode ter ficado incompleta; restaure o checkpoint de segurança criado antes dela. Detalhe: ' + res.error, 'error'); return; }
+      if (backup.alertDays && window._dmSaveAlertDays) await window._dmSaveAlertDays(backup.alertDays);
+      logAuditAction('restauracao_backup', { arquivo: file.name, bls: snapshot.bls.length, containers: snapshot.trk.length, clientes: snapshot.clients.length, checkpointAntes: cp.id });
+      toast('Backup restaurado! Recarregando...', 'success');
+      setTimeout(() => location.reload(), 1200);
+    });
 }
 
 // ── SISTEMA ───────────────────────────────────────────────────────
@@ -455,7 +459,11 @@ function renderCfgSistema() {
 
 function cfgClearCache() {
   if (confirm('Limpar cache local (localStorage/sessionStorage)?')) {
-    try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}
+    // Preserva a sessão de login do Supabase (chaves sb-*).
+    try {
+      Object.keys(localStorage).filter(k => !k.startsWith('sb-')).forEach(k => localStorage.removeItem(k));
+      sessionStorage.clear();
+    } catch(e) {}
     toast('Cache limpo com sucesso!', 'success');
   }
 }
@@ -483,14 +491,14 @@ async function renderCheckpointList() {
     const tipoBadge = cp.tipo === 'auto'
       ? '<span style="background:#f3f4f6;color:#6b7280;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:600;">AUTO</span>'
       : '<span style="background:#ede9fe;color:#7c3aed;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:600;">MANUAL</span>';
-    return `<div class="checkpoint-item" data-id="${cp.id}">
+    return `<div class="checkpoint-item" data-id="${esc(cp.id)}">
       <div style="flex:1;min-width:0;">
-        <div style="font-weight:600;font-size:13px;margin-bottom:2px;">${cp.label || '(sem rótulo)'} ${tipoBadge}</div>
-        <div style="font-size:11px;color:var(--muted);">${dateStr} · por ${cp.criado_por || '—'}</div>
+        <div style="font-weight:600;font-size:13px;margin-bottom:2px;">${esc(cp.label || '(sem rótulo)')} ${tipoBadge}</div>
+        <div style="font-size:11px;color:var(--muted);">${dateStr} · por ${esc(cp.criado_por || '—')}</div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;">
-        <button onclick="restoreCheckpoint('${cp.id}','${(cp.label||'').replace(/'/g,'\\\'')}')" class="act-btn edit" style="font-size:11px;padding:4px 10px;">↩ Restaurar</button>
-        <button onclick="deleteCheckpoint('${cp.id}')" class="act-btn" style="font-size:11px;padding:4px 8px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;">✕</button>
+        <button onclick="restoreCheckpoint('${escJs(cp.id)}','${escJs(cp.label||'')}')" class="act-btn edit" style="font-size:11px;padding:4px 10px;">↩ Restaurar</button>
+        <button onclick="deleteCheckpoint('${escJs(cp.id)}')" class="act-btn" style="font-size:11px;padding:4px 8px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;">✕</button>
       </div>
     </div>`;
   }).join('');
@@ -518,6 +526,7 @@ async function createCheckpoint(tipo) {
 }
 
 async function restoreCheckpoint(id, label) {
+  if (!requireAdmin('restaurar checkpoints')) return;
   showDoubleConfirmation(
     'Restaurar Checkpoint?',
     `Todos os dados atuais (BLs, containers, clientes) serão substituídos pelo estado salvo em "${label || id.slice(0,8)}". Esta ação não pode ser desfeita.`,
@@ -526,17 +535,15 @@ async function restoreCheckpoint(id, label) {
       const el = document.getElementById('checkpoint-list');
       if (el) el.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;">⏳ Restaurando dados...</div>';
       try {
+        const before = await window._dmFireSaveCheckpoint('Antes de restaurar "' + (label || id.slice(0,8)) + '"', 'manual');
+        if (!before) { toast('Não foi possível criar o checkpoint de segurança — restauração cancelada.', 'error'); await renderCheckpointList(); return; }
         const result = await window._dmFireRestoreCheckpoint(id);
-        if (result) {
+        if (result && result.ok) {
           toast('✓ Dados restaurados do checkpoint "' + (label || id.slice(0,8)) + '"!', 'success');
           logAuditAction('restauracao_checkpoint', { checkpoint_id: id, label: label || '' });
-          // Recarrega a UI completa
-          if (typeof renderTracking === 'function') renderTracking();
-          if (typeof renderBilling === 'function') renderBilling();
-          if (typeof renderClients === 'function') renderClients();
-          await renderCheckpointList();
+          setTimeout(() => location.reload(), 1200);
         } else {
-          toast('Erro ao restaurar checkpoint.', 'error');
+          toast('Erro ao restaurar checkpoint: ' + ((result && result.error) || 'desconhecido'), 'error');
           await renderCheckpointList();
         }
       } catch(e) {
@@ -549,6 +556,7 @@ async function restoreCheckpoint(id, label) {
 }
 
 async function deleteCheckpoint(id) {
+  if (!requireAdmin('excluir checkpoints')) return;
   if (!confirm('Excluir este checkpoint permanentemente?')) return;
   if (window._dmFireDeleteCheckpoint) {
     const ok = await window._dmFireDeleteCheckpoint(id);
@@ -577,7 +585,7 @@ function computeAlerts() {
   const alerts = [];
   trkData.forEach(r => {
     if (r.emptyReturn) return;
-    const ft      = r.freeTime || 21;
+    const ft      = trkFreeTime(r);
     const elapsed = trkDaysElapsed(r.discharge);
     if (elapsed === null) return;
     const daysLeft = ft - elapsed;
@@ -615,9 +623,9 @@ function groupAlertsByCnee(alerts) {
 }
 
 function alertPillHTML(a) {
-  if (a.category === 'over')  return `<span class="alert-pill-over">⛔ ${a.daysOver}d em D&D</span>`;
+  if (a.category === 'over')  return `<span class="alert-pill-over">⛔ ${esc(a.daysOver)}d em D&D</span>`;
   if (a.category === 'today') return `<span class="alert-pill-today">🔴 Vence HOJE</span>`;
-  if (a.category === 'warn')  return `<span class="alert-pill-warn">⚠️ Vence em ${a.daysLeft}d</span>`;
+  if (a.category === 'warn')  return `<span class="alert-pill-warn">⚠️ Vence em ${esc(a.daysLeft)}d</span>`;
   return '';
 }
 
@@ -655,14 +663,14 @@ function renderAlertPanel() {
     const sorted = [...g.items].sort((a,b) => catOrder[a.category] - catOrder[b.category]);
     const rows = sorted.map(a => `
       <div class="alert-row">
-        <span style="font-weight:600;color:var(--navy);min-width:120px;">${a.row.container}</span>
-        <span style="color:var(--muted);font-size:11px;min-width:90px;">${a.row.bl||'—'}</span>
+        <span style="font-weight:600;color:var(--navy);min-width:120px;">${esc(a.row.container)}</span>
+        <span style="color:var(--muted);font-size:11px;min-width:90px;">${esc(a.row.bl||'—')}</span>
         <span style="color:var(--muted);font-size:11px;flex:1;">${trkFmtDate(a.row.discharge)} → deadline ${trkFmtDate(a.row.deadline)}</span>
         ${alertPillHTML(a)}
       </div>`).join('');
 
     const emailBadge = g.emails.length
-      ? `<span style="color:#059669;font-size:11px;">✉️ ${g.emails.join(', ')}</span>`
+      ? `<span style="color:#059669;font-size:11px;">✉️ ${esc(g.emails.join(', '))}</span>`
       : `<span style="color:#dc2626;font-size:11px;">⚠ sem e-mail</span>`;
 
     // Aviso de CNPJ ausente no container (cliente encontrado pelo nome, mas CNPJ não está na planilha)
@@ -683,14 +691,14 @@ function renderAlertPanel() {
     return `<div class="alert-group">
       <div class="alert-group-header">
         <div>
-          ${g.name}
+          ${esc(g.name)}
           ${g.cnpj ? `<span style="color:var(--muted);font-size:11px;margin-left:6px;font-weight:400;">${formatCnpj(g.cnpj)}</span>` : ''}
           ${cnpjWarn}
           <span style="margin-left:10px;font-weight:400;">${summary}</span>
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
           ${emailBadge}
-          ${g.emails.length ? `<button class="btn btn-sm btn-outline" onclick="openAlertEmailForKey('${safeKey}')" style="font-size:11px;padding:3px 10px;">✉️ E-mail</button>` : ''}
+          ${g.emails.length ? `<button class="btn btn-sm btn-outline" onclick="openAlertEmailForKey('${escJs(safeKey)}')" style="font-size:11px;padding:3px 10px;">✉️ E-mail</button>` : ''}
         </div>
       </div>
       <div>${rows}</div>
@@ -772,13 +780,13 @@ function openAlertEmailModal() {
     return `<div class="alert-email-item">
       <div class="alert-email-header" onclick="toggleAlertEmailPreview(${idx})">
         <div>
-          <div class="alert-email-cname">${g.name}${g.cnpj?` <span style="font-weight:400;font-size:11px;color:var(--muted);">${formatCnpj(g.cnpj)}</span>`:''}</div>
-          <div class="alert-email-meta">✉️ ${g.emails.join(', ')} &nbsp;·&nbsp; ${g.items.length} container(s) &nbsp;·&nbsp; ${pills}</div>
+          <div class="alert-email-cname">${esc(g.name)}${g.cnpj?` <span style="font-weight:400;font-size:11px;color:var(--muted);">${formatCnpj(g.cnpj)}</span>`:''}</div>
+          <div class="alert-email-meta">✉️ ${esc(g.emails.join(', '))} &nbsp;·&nbsp; ${g.items.length} container(s) &nbsp;·&nbsp; ${pills}</div>
         </div>
         <span style="font-size:18px;color:var(--muted);" id="alert-arrow-${idx}">▸</span>
       </div>
       <div class="alert-email-body" id="alert-body-${idx}">
-        <div class="alert-email-preview">${body}</div>
+        <div class="alert-email-preview">${esc(body)}</div>
         <button class="btn btn-sm btn-primary" onclick="sendAlertEmailFor(${idx})" style="font-size:12px;">✉️ Abrir este e-mail</button>
       </div>
     </div>`;
@@ -814,7 +822,7 @@ function sendAllAlertEmails() {
     }, i * 600);
   });
   closeModal('modal-alert-email');
-  toast(`${eligible.length} e-mail(s) disparado(s)!`, 'success');
+  toast(`Abrindo ${eligible.length} e-mail(s). Se só um abrir, permita pop-ups para este site e tente de novo.`, '');
 }
 
 // ── CONSOLIDATED EMAIL ─────────────────────────────────────────────────────
@@ -897,10 +905,10 @@ function renderConsClientList(query) {
     const isActive = _consSelected.has(cnpj);
     const aging    = agingLabel(info.bls);
     const safeId   = 'cr-' + cnpj.replace(/\D/g,'');
-    return `<div id="${safeId}" class="cons-row${isActive?' selected':''}" onclick="toggleConsSelection('${cnpj}', this)">
-      <input type="checkbox" class="cons-checkbox" ${isActive?'checked':''} onclick="event.stopPropagation();toggleConsSelection('${cnpj}',this.closest('.cons-row'))">
+    return `<div id="${safeId}" class="cons-row${isActive?' selected':''}" onclick="toggleConsSelection('${escJs(cnpj)}', this)">
+      <input type="checkbox" class="cons-checkbox" ${isActive?'checked':''} onclick="event.stopPropagation();toggleConsSelection('${escJs(cnpj)}',this.closest('.cons-row'))">
       <div style="flex:1;min-width:0;">
-        <div style="font-weight:600;color:var(--navy);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${info.name}</div>
+        <div style="font-weight:600;color:var(--navy);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(info.name)}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px;">
           ${formatCnpj(cnpj)} &nbsp;·&nbsp;
           <strong style="color:${count>0?'#dc2626':'var(--muted)'};">${count}</strong>
@@ -919,6 +927,8 @@ function renderConsClientList(query) {
 function sendMultipleEmails() {
   if (!_consSelected.size) return;
   const cnpjs = [..._consSelected];
+  // Sem PTAX o valor é desconhecido: não manda cobrança de R$ 0,00 ao cliente.
+  if (cnpjs.some(c => ((_consMap[c] || {}).bls || []).some(b => !b.paid && invoiceTotalBRL(b) == null))) { ptaxMissingAlert(); return; }
   cnpjs.forEach((cnpj, i) => {
     setTimeout(() => {
       const info      = _consMap[cnpj] || {};
@@ -930,13 +940,7 @@ function sendMultipleEmails() {
       const to        = encodeURIComponent(info.emails.join(', '));
       let grand = 0;
       const linhas = unpaid.map(b => {
-        const roe = (b.paid||b.billed)&&b.frozenRoe!=null ? b.frozenRoe : effectiveROE(b);
-        let total = 0;
-        (b.containers||[]).forEach(c => {
-          const dc = daysBetween(c.discharge, c.emptyReturn);
-          if (dc !== null) total += calcContainer(b, c).totalUSD * roe;
-        });
-        if ((b.paid||b.billed)&&b.frozenTotal!=null) total = b.frozenTotal;
+        const total = invoiceTotalBRL(b);
         grand += total;
         const docnum = b.docnum || genDocnum(b.bl);
         const fmt    = total.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -949,7 +953,7 @@ function sendMultipleEmails() {
     }, i * 700);
   });
   closeModal('modal-consolidated');
-  toast(`Disparando ${cnpjs.length} cobrança${cnpjs.length>1?'s':''}...`, 'success');
+  toast(`Abrindo ${cnpjs.length} e-mail(s). Se só um abrir, permita pop-ups para este site.`, '');
 }
 
 
@@ -960,6 +964,7 @@ function dispararTodasCobranças() {
     info.emails.length > 0 && info.bls.some(b => !b.paid)
   );
   if (!eligible.length) { toast('Nenhum cliente com e-mail cadastrado e faturas em aberto.', 'error'); return; }
+  if (eligible.some(([, info]) => info.bls.some(b => !b.paid && invoiceTotalBRL(b) == null))) { ptaxMissingAlert(); return; }
   if (!confirm(`Disparar cobranças para ${eligible.length} cliente${eligible.length !== 1 ? 's' : ''}?\n\nSerá aberto um e-mail para cada cliente com faturas pendentes.`)) return;
   eligible.forEach(([cnpj, info], i) => {
     setTimeout(() => {
@@ -970,13 +975,7 @@ function dispararTodasCobranças() {
       const to        = encodeURIComponent(info.emails.join(', '));
       let grand = 0;
       const linhas = unpaid.map(b => {
-        const roe = (b.paid || b.billed) && b.frozenRoe != null ? b.frozenRoe : effectiveROE(b);
-        let total = 0;
-        (b.containers || []).forEach(c => {
-          const dc = daysBetween(c.discharge, c.emptyReturn);
-          if (dc !== null) total += calcContainer(b, c).totalUSD * roe;
-        });
-        if ((b.paid || b.billed) && b.frozenTotal != null) total = b.frozenTotal;
+        const total = invoiceTotalBRL(b);
         grand += total;
         const docnum = b.docnum || genDocnum(b.bl);
         const ctrs   = (b.containers||[]).map(c=>c.container).join(', ');
@@ -989,24 +988,19 @@ function dispararTodasCobranças() {
       window.open(`mailto:${to}?cc=eqp@fwlog.com.br&subject=${subject}&body=${body}`);
     }, i * 700);
   });
-  toast(`Disparando ${eligible.length} cobrança${eligible.length>1?'s':''}...`, 'success');
+  toast(`Abrindo ${eligible.length} e-mail(s). Se só um abrir, permita pop-ups para este site.`, '');
 }
 
 // ── CLIENTS EXPORT ─────────────────────────────────────────────────────────
 function exportClientsReport() {
   if (!clients.length) { toast('Nenhum cliente para exportar.', 'error'); return; }
+  if (bls.some(b => !b.paid && invoiceTotalBRL(b) == null)) { toast('PTAX indisponível — o total em aberto não pode ser calculado. Tente novamente após carregar a cotação.', 'error'); return; }
   const sorted = [...clients].sort((a,b) => (a.name||a.cnpj||'').localeCompare(b.name||b.cnpj||'', 'pt-BR'));
   const rows = sorted.map(c => {
     const unpaid = bls.filter(b => b.cnpj && normalizeCnpj(b.cnpj) === normalizeCnpj(c.cnpj) && !b.paid);
     let totalAberto = 0;
     unpaid.forEach(b => {
-      const roe = (b.billed && b.frozenRoe != null) ? b.frozenRoe : effectiveROE(b);
-      let tot = b.frozenTotal != null && b.billed ? b.frozenTotal : 0;
-      if (!tot) (b.containers||[]).forEach(ct => {
-        const dc = daysBetween(ct.discharge, ct.emptyReturn);
-        if (dc !== null) tot += calcContainer(b, ct).totalUSD * roe;
-      });
-      totalAberto += tot;
+      totalAberto += invoiceTotalBRL(b);
     });
     return {
       'RAZÃO SOCIAL': c.name||'—', 'CNPJ': formatCnpj(c.cnpj),
@@ -1023,7 +1017,7 @@ function exportClientsReport() {
   ws['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:Object.keys(rows[0]).length-1}}];
   ws['!ref'] = `A1:${XLSX.utils.encode_cell({r:rows.length+1, c:Object.keys(rows[0]).length-1})}`;
   XLSX.utils.book_append_sheet(wb, ws, 'Clientes');
-  XLSX.writeFile(wb, `Clientes_Transhipping_${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.writeFile(wb, `Clientes_Transhipping_${todayISO()}.xlsx`);
   toast('Planilha exportada!', 'success');
 }
 
@@ -1046,13 +1040,11 @@ function renderDashboard() {
   let totalFaturado = 0;
   let totalDisputa  = 0;
 
+  let semPtax = 0;
   bls.filter(b => !b.paid).forEach(b => {
-    const roe = (b.billed && b.frozenRoe != null) ? b.frozenRoe : effectiveROE(b);
-    let tot = b.frozenTotal != null && b.billed ? b.frozenTotal : 0;
-    if (!tot) (b.containers||[]).forEach(c => {
-      const dc = daysBetween(c.discharge, c.emptyReturn);
-      if (dc !== null) tot += calcContainer(b, c).totalUSD * roe;
-    });
+    const t = invoiceTotalBRL(b);
+    if (t == null) semPtax++;
+    const tot = t || 0;
     totalAberto += tot;
 
     // Count faturado and not paid
@@ -1074,6 +1066,8 @@ function renderDashboard() {
   const totalEl  = document.getElementById('dk-total-aberto');
   if (totalEl) {
     totalEl.textContent = totalStr;
+    totalEl.title = semPtax ? `${semPtax} BL(s) pendente(s) sem PTAX não estão somados` : '';
+    if (semPtax) totalEl.textContent += ' *';
     // Auto-shrink font for very large values
     const len = totalStr.length;
     totalEl.style.fontSize = len > 16 ? '15px' : len > 13 ? '17px' : '20px';
@@ -1091,7 +1085,7 @@ function renderDashboard() {
   let nDD=0, nAlerta=0, nLivres=0, nDD30=0;
   trkData.forEach(r => {
     if (r.emptyReturn) return;
-    const ft = r.freeTime || 21;
+    const ft = trkFreeTime(r);
     const elapsed = trkDaysElapsed(r.discharge);
     if (elapsed === null) return;
     const daysLeft = ft - elapsed;
@@ -1128,12 +1122,7 @@ function renderDashboard() {
       return b.client || '—';
     })();
     if (!byClient[key]) byClient[key] = { name, total:0, count:0 };
-    const roe = (b.billed && b.frozenRoe != null) ? b.frozenRoe : effectiveROE(b);
-    let tot = b.frozenTotal != null && b.billed ? b.frozenTotal : 0;
-    if (!tot) (b.containers||[]).forEach(c => {
-      const dc = daysBetween(c.discharge, c.emptyReturn);
-      if (dc !== null) tot += calcContainer(b, c).totalUSD * roe;
-    });
+    const tot = invoiceTotalBRL(b) || 0;
     byClient[key].total += tot; byClient[key].count++;
   });
   const topClientes = Object.values(byClient).sort((a,b)=>b.total-a.total).slice(0,10);
@@ -1145,8 +1134,8 @@ function renderDashboard() {
         const valFmt = c.total.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
         return `<div class="dash-panel-row">
           <span class="dash-panel-rank">${i+1}</span>
-          <span class="dash-panel-name" title="${c.name}">${c.name}</span>
-          <span class="dash-panel-badge" style="background:#fee2e2;color:#b91c1c;">${c.count} BL${c.count>1?'s':''}</span>
+          <span class="dash-panel-name" title="${esc(c.name)}">${esc(c.name)}</span>
+          <span class="dash-panel-badge" style="background:#fee2e2;color:#b91c1c;">${esc(c.count)} BL${c.count>1?'s':''}</span>
           <span class="dash-panel-val" style="color:#b91c1c;">R$&nbsp;${valFmt}</span>
         </div>`;
       }).join('');
@@ -1156,18 +1145,18 @@ function renderDashboard() {
   const ddList = trkData.filter(r => {
     if (r.emptyReturn) return false;
     const elapsed = trkDaysElapsed(r.discharge);
-    return elapsed !== null && elapsed > (r.freeTime||21);
-  }).sort((a,b) => (trkDaysElapsed(b.discharge)-(b.freeTime||21)) - (trkDaysElapsed(a.discharge)-(a.freeTime||21))).slice(0,10);
+    return elapsed !== null && elapsed > (trkFreeTime(r));
+  }).sort((a,b) => (trkDaysElapsed(b.discharge)-(trkFreeTime(b))) - (trkDaysElapsed(a.discharge)-(trkFreeTime(a)))).slice(0,10);
   const ddEl = document.getElementById('dk-dd-list');
   if (ddEl) {
     if (!ddList.length) { ddEl.innerHTML = '<div class="dash-panel-empty">✅ Nenhum container em demurrage.</div>'; }
     else {
       ddEl.innerHTML = ddList.map(r => {
-        const over = trkDaysElapsed(r.discharge) - (r.freeTime||21);
+        const over = trkDaysElapsed(r.discharge) - (trkFreeTime(r));
         const col  = over > 30 ? '#b91c1c' : over > 14 ? '#dc2626' : '#ef4444';
         return `<div class="dash-panel-row">
-          <span class="dash-panel-name"><strong>${r.container}</strong></span>
-          <span style="font-size:11px;color:var(--muted);flex-shrink:0;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.cnee||''}">${r.cnee||'—'}</span>
+          <span class="dash-panel-name"><strong>${esc(r.container)}</strong></span>
+          <span style="font-size:11px;color:var(--muted);flex-shrink:0;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.cnee||'')}">${esc(r.cnee||'—')}</span>
           <span class="dash-panel-badge" style="background:#fee2e2;color:${col};font-weight:700;">+${over}d</span>
         </div>`;
       }).join('');
@@ -1242,7 +1231,7 @@ function renderTodoList() {
   const dd30 = trkData.filter(r => {
     if (r.emptyReturn) return false;
     const e = trkDaysElapsed(r.discharge);
-    return e !== null && e - (r.freeTime||21) > 30;
+    return e !== null && e - (trkFreeTime(r)) > 30;
   });
   if (dd30.length) {
     items.push({
@@ -1278,7 +1267,7 @@ function renderTodoList() {
   const readyToMigrate = trkData.filter(r => {
     if (!r.emptyReturn || !r.discharge) return false;
     const used = trkDaysBetween(r.discharge, r.emptyReturn);
-    return used !== null && used > (r.freeTime||21);
+    return used !== null && used > (trkFreeTime(r));
   });
   const blsInBilling = new Set(bls.map(b => b.bl));
   const notYetBilled = readyToMigrate.filter(r => !blsInBilling.has(r.bl));
@@ -1314,84 +1303,17 @@ function renderTodoList() {
   items.sort((a,b) => order[a.level] - order[b.level]);
 
   el.innerHTML = items.slice(0,6).map((item, i) => `
-    <div class="todo-item todo-item-${item.level}" onclick="window._todoActions[${i}]()" style="cursor:pointer;">
-      <span class="todo-icon">${item.icon}</span>
+    <div class="todo-item todo-item-${esc(item.level)}" onclick="window._todoActions[${i}]()" style="cursor:pointer;">
+      <span class="todo-icon">${esc(item.icon)}</span>
       <div class="todo-text">
-        <div class="todo-title">${item.title}</div>
-        <div class="todo-sub">${item.sub}</div>
+        <div class="todo-title">${esc(item.title)}</div>
+        <div class="todo-sub">${esc(item.sub)}</div>
       </div>
       <span class="todo-action">Resolver →</span>
     </div>`).join('');
 
   // Store actions
   window._todoActions = items.slice(0,6).map(i => i.action);
-}
-
-// ══════════════════════════════════════════════════════════════════
-// FEATURE 2: BACKUP / RESTORE
-// ══════════════════════════════════════════════════════════════════
-function backupData() {
-  const data = {
-    version:   '1.0',
-    exportedAt: new Date().toISOString(),
-    bls:      load(),
-    tracking: trkLoad(),
-    clients:  cliLoad(),
-    // FIX #13: alertDays incluído no backup para ser restaurado corretamente
-    alertDays: getAlertDays(),
-  };
-  const json  = JSON.stringify(data, null, 2);
-  const blob  = new Blob([json], { type: 'application/json' });
-  const url   = URL.createObjectURL(blob);
-  const a     = document.createElement('a');
-  const stamp = new Date().toISOString().slice(0,10);
-  a.href      = url;
-  a.download  = `DemurrageManager_Backup_${stamp}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  toast(`Backup exportado: ${data.bls.length} BLs, ${data.tracking.length} containers, ${data.clients.length} clientes.`, 'success');
-}
-
-function restoreData() {
-  const input = document.createElement('input');
-  input.type  = 'file';
-  input.accept = '.json';
-  input.onchange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = JSON.parse(ev.target.result);
-        if (!data.bls && !data.tracking && !data.clients) {
-          toast('Arquivo inválido — não é um backup do Demurrage Manager.', 'error');
-          return;
-        }
-        const msg = `Restaurar backup de ${data.exportedAt ? new Date(data.exportedAt).toLocaleString('pt-BR') : 'data desconhecida'}?\n\n` +
-          `• ${(data.bls||[]).length} BLs\n` +
-          `• ${(data.tracking||[]).length} containers\n` +
-          `• ${(data.clients||[]).length} clientes\n\n` +
-          `ATENÇÃO: os dados atuais serão SUBSTITUÍDOS por este backup.`;
-        if (!confirm(msg)) return;
-        if (window._dmFireRestore) {
-          window._dmFireRestore(data).then(() => {
-            toast('Backup restaurado! Recarregando...', 'success');
-            setTimeout(() => location.reload(), 1200);
-          }).catch(err => toast('Erro ao restaurar: ' + err.message, 'error'));
-        } else {
-          toast('Supabase não inicializado. Aguarde e tente novamente.', 'error');
-        }
-      } catch(err) {
-        toast('Erro ao ler arquivo: ' + err.message, 'error');
-      }
-    };
-    reader.readAsText(file);
-  };
-  document.body.appendChild(input);
-  input.click();
-  document.body.removeChild(input);
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1483,6 +1405,7 @@ function _updateTrkTableHeader() {
             <option value="dd_returned">D&D dev</option>
             <option value="returned">devolvido</option>
             <option value="grace">atenção</option>
+            <option value="free">no free time</option>
           </select>
         </th>
       </tr>
@@ -1525,6 +1448,7 @@ function _updateTrkTableHeader() {
             <option value="dd_returned">D&D dev</option>
             <option value="returned">devolvido</option>
             <option value="grace">atenção</option>
+            <option value="free">no free time</option>
           </select>
         </th>
         <th><input type="text" id="tf-migratedat" placeholder="DD/MM..." oninput="renderTracking()"></th>
@@ -1554,7 +1478,7 @@ function renderTrkGroupedByBL(filtered) {
   return [...groups.entries()].map(([key, g]) => {
     const ctrs    = g.ctrs;
     const isExp   = window._trkExpanded.has(key);
-    const safeKey = key.replace(/'/g, "\'");
+    const safeKey = escJs(key);
 
     // Aggregate status counts
     const nDD    = ctrs.filter(r => trkStatus(r) === 'dd_open').length;
@@ -1564,7 +1488,7 @@ function renderTrkGroupedByBL(filtered) {
     const maxOver = Math.max(0, ...ctrs.map(r => {
       if (r.emptyReturn) return 0;
       const e = trkDaysElapsed(r.discharge);
-      return e !== null ? e - (r.freeTime||21) : 0;
+      return e !== null ? e - (trkFreeTime(r)) : 0;
     }));
 
     // Earliest discharge and latest deadline across containers
@@ -1590,13 +1514,13 @@ function renderTrkGroupedByBL(filtered) {
     const summaryRow = `<tr class="bl-group-row bl-group-header" onclick="toggleBlGroup('${safeKey}')"
         style="background:${bg};cursor:pointer;border-left:3px solid ${borderColor};">
       <td style="padding:10px 12px;border-top:2px solid var(--border);">
-        <span style="font-weight:700;color:var(--navy);font-size:13px;">${arrow} ${g.bl}</span>
+        <span style="font-weight:700;color:var(--navy);font-size:13px;">${arrow} ${esc(g.bl)}</span>
       </td>
       <td style="padding:10px 8px;border-top:2px solid var(--border);">
-        <span style="font-size:12px;color:#374151;font-weight:500;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${g.cnee}">${g.cnee}</span>
+        <span style="font-size:12px;color:#374151;font-weight:500;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(g.cnee)}">${esc(g.cnee)}</span>
       </td>
-      <td style="padding:10px 8px;font-size:12px;color:var(--muted);border-top:2px solid var(--border);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${g.vessel}">${g.vessel}</td>
-      <td style="padding:10px 8px;font-size:11px;color:var(--muted);border-top:2px solid var(--border);white-space:nowrap;">${g.pol||'—'} → ${g.pod||'—'}</td>
+      <td style="padding:10px 8px;font-size:12px;color:var(--muted);border-top:2px solid var(--border);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(g.vessel)}">${esc(g.vessel)}</td>
+      <td style="padding:10px 8px;font-size:11px;color:var(--muted);border-top:2px solid var(--border);white-space:nowrap;">${esc(g.pol||'—')} → ${esc(g.pod||'—')}</td>
       <td style="padding:10px 8px;text-align:center;border-top:2px solid var(--border);">
         <span style="background:var(--navy);color:white;border-radius:99px;padding:2px 10px;font-size:12px;font-weight:700;">${ctrs.length}</span>
       </td>
@@ -1611,7 +1535,7 @@ function renderTrkGroupedByBL(filtered) {
     const childRows = ctrs.map(r => {
       const status = trkStatus(r);
       const elapsed = trkDaysElapsed(r.discharge);
-      const ft = r.freeTime || 21;
+      const ft = trkFreeTime(r);
       const daysOver = elapsed !== null ? elapsed - ft : null;
       const useDays = r.useDays !== null && r.useDays !== undefined
         ? r.useDays
@@ -1638,10 +1562,10 @@ function renderTrkGroupedByBL(filtered) {
       const devol = r.emptyReturn ? trkFmtDate(r.emptyReturn) : (useDays !== null ? `${useDays}d usados` : '—');
 
       return `<tr style="background:#f7faff;border-left:3px solid #bfdbfe;">
-        <td style="padding:7px 12px;padding-left:24px;font-weight:600;font-size:12px;color:var(--navy);">${r.container} <span style="font-size:10px;color:var(--muted);font-weight:400;">${r.type||''}</span></td>
+        <td style="padding:7px 12px;padding-left:24px;font-weight:600;font-size:12px;color:var(--navy);">${esc(r.container)} <span style="font-size:10px;color:var(--muted);font-weight:400;">${esc(r.type||'')}</span></td>
         <td style="font-size:11px;color:var(--muted);padding:7px 8px;">—</td>
-        <td style="font-size:11px;color:var(--muted);padding:7px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.vessel||''}">${r.vessel||'—'}</td>
-        <td style="font-size:11px;color:var(--muted);padding:7px 8px;">${r.pol||'—'} → ${r.pod||'—'}</td>
+        <td style="font-size:11px;color:var(--muted);padding:7px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.vessel||'')}">${esc(r.vessel||'—')}</td>
+        <td style="font-size:11px;color:var(--muted);padding:7px 8px;">${esc(r.pol||'—')} → ${esc(r.pod||'—')}</td>
         <td style="padding:7px 8px;text-align:center;font-size:11px;color:var(--muted);">—</td>
         <td style="font-size:12px;padding:7px 8px;">${trkFmtDate(r.discharge)}</td>
         <td style="font-size:12px;padding:7px 8px;">${trkFmtDate(r.deadline)}<br><span style="font-size:10px;color:var(--muted);">dev: ${devol}</span></td>
@@ -1659,6 +1583,9 @@ function renderTrkGroupedByBL(filtered) {
 window._dmOnReady = async function() {
   // ── Reload all global arrays from Firestore ──
   bls = load();              // ← critical: reatribui bls com dados do Supabase
+  // Taxas configuradas ANTES da limpeza de containers (o free time padrão
+  // do tipo vem delas; com o padrão errado, um container cobrável seria apagado).
+  await loadCfgRatesFromFirestore();
 
   // FIX-QUOTA: Todas as migrações de startup em UMA passagem, com 1 save consolidado
   // (antes: _backfillVenc + migrateDotcnum + backfillMigratedAt = até 3 saves separados)
@@ -1670,7 +1597,7 @@ window._dmOnReady = async function() {
 
     // 1b) avança venc vencido apenas em BLs Pendentes (!billed && !paid)
     //     BLs Faturados mantêm o venc original (já comunicado ao cliente na fatura)
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = todayISO();
     bls.forEach(b => {
       if (!b.billed && !b.paid && b.venc && b.venc < todayStr) {
         b.venc = nextBusinessDay(null);
@@ -1685,8 +1612,8 @@ window._dmOnReady = async function() {
     bls.forEach(b => {
       if (b.migratedFromTracking && !b.migratedAt) {
         b.migratedAt = b.createdAt
-          ? new Date(b.createdAt).toISOString().slice(0, 10)
-          : new Date().toISOString().slice(0, 10);
+          ? isoLocal(new Date(b.createdAt))
+          : todayISO();
         changed = true;
       }
     });
@@ -1731,7 +1658,7 @@ window._dmOnReady = async function() {
   const cleanTrk = rawTrk.filter(r => {
     if (r.emptyReturn && r.discharge) {
       const used = trkDaysBetween(r.discharge, r.emptyReturn);
-      const ft = r.freeTime || 21;
+      const ft = trkFreeTime(r);
       if (used !== null && used <= ft) return false;
     }
     return true;
@@ -1747,7 +1674,6 @@ window._dmOnReady = async function() {
   // MELHORIA #1: aplicar alertas visuais nos containers críticos
   setTimeout(applyContainerAlerts, 500);
   // Carrega taxas do Supabase (compartilhadas) com fallback localStorage
-  await loadCfgRatesFromFirestore();
   switchModule('dashboard');
   // Exibe nome do usuário no header (nome completo ou e-mail como fallback)
   (function() {
@@ -1765,32 +1691,25 @@ window._dmOnReady = async function() {
 
   // Auto-checkpoint diário gerenciado pelo pg_cron no Supabase (23:59 BRT)
 
-  // FIX-QUOTA #H: flag anti-cascata para evitar loop onSnapshot → trkSave → onSnapshot
-  var _trkSaving = false;
-  window._dmOnTrkUpdate = function() {
-    if (_trkSaving) return; // Ignora callbacks causados pelo nosso próprio save
-    // FIX #7: aplica filtro de containers devolvidos dentro do free time
-    // (mesmo filtro do carregamento inicial em _dmOnReady)
-    var raw7 = trkLoad();
-    var clean7 = raw7.filter(function(r) {
-      if (r.emptyReturn && r.discharge) {
-        var used = trkDaysBetween(r.discharge, r.emptyReturn);
-        var ft   = r.freeTime || 21;
-        if (used !== null && used <= ft) return false;
-      }
-      return true;
-    });
-    if (clean7.length < raw7.length) {
-      _trkSaving = true;
-      trkSave(clean7);
-      setTimeout(function() { _trkSaving = false; }, 2000);
+  // ── Sincronização em tempo real ──────────────────────────────────────
+  // db.js atualiza o store quando outro usuário grava e só chama isto quando
+  // não há save em andamento (o debounce também fica lá). Recarrega as listas
+  // da tela a partir do store.
+  window._dmOnRemoteChange = function(type) {
+    if (type === 'bls') {
+      bls = load();
+      // A fatura aberta na tela aponta para o objeto antigo: reaponta, senão
+      // "Editar Valor"/impressão gravariam uma cópia defasada.
+      if (currentBL) currentBL = bls.find(x => x.id === currentBL.id) || currentBL;
+      renderList();
+      if (document.getElementById('mod-dashboard')?.style.display !== 'none') renderDashboard();
+    } else if (type === 'trk') {
+      trkData = trkLoad();
+      renderTracking();
+      updateAlertBadge();
+    } else if (type === 'clients') {
+      clients = cliLoad();
+      if (document.getElementById('mod-clients')?.style.display !== 'none') renderClients();
     }
-    trkData = clean7;
-    renderTracking();
-    updateAlertBadge();
-  };
-  window._dmOnClientsUpdate = function() {
-    clients = cliLoad();
-    renderClients();
   };
 };

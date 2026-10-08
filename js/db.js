@@ -107,17 +107,31 @@ const _CONFLICT = {
   window._dmIsAdmin = false;
   window._dmSession = 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 
-  // FIX: paginação para bls, containers e clients — PostgREST trunca em 1000 linhas.
-  // Todos os três usam busca em chunks até esgotar os registros.
-  async function fetchAllPages(table, columns, extraQuery) {
+  function fatalScreen(title, msg) {
+    const el = document.getElementById('dm-loading-overlay') || document.body;
+    el.style.display = 'flex';
+    el.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:Inter,sans-serif;color:#cbd5e1;gap:16px;padding:24px;text-align:center">'
+      + '<div class="t" style="font-size:22px;font-weight:700;color:#f87171"></div><div class="m" style="max-width:460px;line-height:1.5"></div>'
+      + '<button onclick="location.reload()" style="padding:10px 24px;border-radius:8px;border:none;background:#3b82f6;color:#fff;font-size:14px;cursor:pointer">Tentar novamente</button></div>';
+    el.querySelector('.t').textContent = title;
+    el.querySelector('.m').textContent = msg;
+  }
+
+  // Paginação: PostgREST trunca em 1000 linhas. Um erro em qualquer página
+  // ABORTA o carregamento — antes o app seguia com dados parciais em silêncio,
+  // e o usuário podia trabalhar (e salvar) sobre uma base incompleta.
+  // Ordem total pela PK: sem ORDER BY o Postgres não garante a mesma ordem
+  // entre páginas, e com mais de 1000 linhas registros podiam sumir ou repetir.
+  const _ORDER = { bls: ['id'], clients: ['id', 'user_id'], containers: ['container', 'bl', 'user_id'] };
+  async function fetchAllPages(table, columns) {
     const PAGE = 1000;
     let from = 0;
     const allRows = [];
     while (true) {
-      let q = sb.from(table).select(columns).range(from, from + PAGE - 1);
-      if (extraQuery) q = extraQuery(q);
-      const { data: page, error: pageErr } = await q;
-      if (pageErr) { console.error('[DB] fetchAllPages ' + table + ':', pageErr); break; }
+      let q = sb.from(table).select(columns);
+      (_ORDER[table] || []).forEach(col => { q = q.order(col, { ascending: true }); });
+      const { data: page, error } = await q.range(from, from + PAGE - 1);
+      if (error) throw new Error(table + ': ' + error.message);
       allRows.push(...(page || []));
       if ((page || []).length < PAGE) break;
       from += PAGE;
@@ -125,22 +139,38 @@ const _CONFLICT = {
     return allRows;
   }
 
-  const [blsAllRows, cliAllRows, trkAllRows, settRes, profRes] = await Promise.all([
-    fetchAllPages('bls',    'id, data'),
-    fetchAllPages('clients','id, data, updated_at'),
-    fetchAllPages('containers', 'container, bl, data, updated_at'),
-    sb.from('settings').select('alert_days').eq('user_id', uid).maybeSingle(),
-    sb.from('usuarios').select('*').eq('id', uid).maybeSingle()
-  ]);
+  // Perfil primeiro: usuário inativo não carrega nenhum dado.
+  const { data: profile, error: profErr } = await sb.from('usuarios').select('*').eq('id', uid).maybeSingle();
+  if (profErr) { fatalScreen('Erro ao carregar perfil', profErr.message); return; }
+  // A decisão final é do servidor (mesma função usada pelas policies de RLS):
+  // sem perfil, ou perfil inativo, a conta não acessa nada. Sem isso o app
+  // abriria "vazio" (o RLS filtra em silêncio). Se a migração ainda não foi
+  // aplicada a função não existe — aí vale só o perfil.
+  const { data: ativoSrv, error: ativoErr } = await sb.rpc('auth_is_active');
+  if ((profile && profile.ativo === false) || (!ativoErr && ativoSrv === false)) {
+    await sb.auth.signOut().catch(() => {});
+    window.location.href = 'index.html?inativo=1';
+    return;
+  }
+  window._dmIsAdmin  = !!profile?.admin;
+  window._dmUserData = profile || {};
 
-  console.log('[DB] bls carregados:', blsAllRows.length,
-              '| clients:', cliAllRows.length,
-              '| containers:', trkAllRows.length);
+  let blsAllRows, cliAllRows, trkAllRows, settRes;
+  try {
+    [blsAllRows, cliAllRows, trkAllRows, settRes] = await Promise.all([
+      fetchAllPages('bls',    'id, data'),
+      fetchAllPages('clients','id, data, updated_at'),
+      fetchAllPages('containers', 'container, bl, data, updated_at'),
+      sb.from('settings').select('alert_days').eq('user_id', uid).maybeSingle()
+    ]);
+  } catch (e) {
+    console.error('[DB] carga inicial:', e);
+    fatalScreen('Não foi possível carregar os dados', 'O sistema não abre com dados incompletos para evitar gravações sobre uma base parcial. Detalhe: ' + e.message);
+    return;
+  }
 
   window._dmStore.bls = blsAllRows.map(r => r.data);
 
-  // FIX: mescla as colunas de primeira classe (container, bl) com o jsonb data,
-  // garantindo que container e bl SEMPRE existem no objeto local.
   const _rawTrk = trkAllRows.map(r => ({
     ...r.data,
     container: r.container,
@@ -149,21 +179,28 @@ const _CONFLICT = {
   }));
   window._dmStore.trk = deduplicateTrkList(_rawTrk);
 
-  // FIX: garante que todo cliente tem um `id` válido ao carregar do banco
   const _rawClients = cliAllRows.map(r => ({
     ...r.data,
     id: r.id || (r.data && r.data.id) || (r.data && r.data.cnpj) || '',
-    _updatedAt: r.updated_at || r.data.updatedAt || null
+    _updatedAt: r.updated_at || (r.data && r.data.updatedAt) || null
   }));
-  console.log('[DB] clients raw:', _rawClients.length, _rawClients.map(c => ({ id: c.id, cnpj: c.cnpj, emailCount: (c.emails||[]).length, updatedAt: c._updatedAt })));
   window._dmStore.clients = deduplicateClientsList(_rawClients);
-  console.log('[DB] clients deduped:', window._dmStore.clients.length);
 
-  if (settRes.data) window._dmStore.alertDays = settRes.data.alert_days ?? 5;
+  if (settRes && settRes.data) window._dmStore.alertDays = settRes.data.alert_days ?? 5;
 
-  const profile = profRes.data;
-  window._dmIsAdmin  = !!profile?.admin;
-  window._dmUserData = profile || {};
+  // ── Base de comparação dos saves ───────────────────────────
+  // _dmStore é o estado VIVO (o tempo real grava nele). _base é o estado a
+  // partir do qual as listas da tela foram carregadas. O save completo compara
+  // a lista da tela com _base — e não com o store vivo —, senão um BL criado
+  // por outro usuário (que está no store mas ainda não na tela) seria tratado
+  // como "removido aqui" e EXCLUÍDO do banco, e uma alteração remota seria
+  // revertida pela cópia antiga da tela.
+  const _clone = x => JSON.parse(JSON.stringify(x));
+  const _base = {
+    bls: _clone(window._dmStore.bls), trk: _clone(window._dmStore.trk), clients: _clone(window._dmStore.clients)
+  };
+  const _busy = { bls: 0, trk: 0, clients: 0 };   // saveOne/delete em andamento
+  const _remoteDirty = {};                          // store vivo diverge de _base
 
   // ── Último upload de containers ────────────────────────────
   window._dmRenderLastUpload = function(isoDate) {
@@ -174,7 +211,6 @@ const _CONFLICT = {
     try {
       const d = new Date(isoDate);
       const now = new Date();
-      // Comparar datas do calendário (ano/mês/dia), não horas decorridas
       const dDate   = new Date(d.getFullYear(), d.getMonth(), d.getDate());
       const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const diffDays = Math.round((nowDate - dDate) / 86400000);
@@ -188,259 +224,278 @@ const _CONFLICT = {
       } else if (diffDays === 1) {
         label = `ontem ${timeStr}`;
       } else {
-        label = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-              + ' ' + timeStr;
+        label = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + timeStr;
       }
       timeEl.textContent = label;
       badge.style.display = 'flex';
     } catch(e) { badge.style.display = 'none'; }
   };
-  // Calcula max updated_at dos containers carregados
   if (trkAllRows.length > 0) {
-    const maxUpd = trkAllRows.reduce((max, r) => {
-      const t = r.updated_at || '';
-      return t > max ? t : max;
-    }, '');
+    const maxUpd = trkAllRows.reduce((max, r) => ((r.updated_at || '') > max ? r.updated_at : max), '');
     if (maxUpd) window._dmRenderLastUpload(maxUpd);
   }
 
+  function _toastErr(msg) { if (typeof window.toast === 'function') window.toast(msg, 'error'); }
+
+  const TABLE = { bls: 'bls', trk: 'containers', clients: 'clients' };
+  const STORE = { bls: 'bls', trk: 'trk',        clients: 'clients' };
+
+  function _rowFor(type, r) {
+    return { ..._COLS_FN[type](r), user_id: uid, data: sanitize(r), updated_at: new Date().toISOString() };
+  }
+
+  // Modelo colaborativo: exclusões NÃO filtram por user_id. Antes, apagar um
+  // container/cliente criado por outro usuário não removia nada no banco (sem
+  // erro) e o registro "ressuscitava" no próximo carregamento.
+  async function _deleteKeys(type, keys) {
+    if (!keys.length) return null;
+    if (type === 'trk') {
+      const byBL = new Map();
+      keys.forEach(k => { const [c, b] = k.split('\x00'); if (!byBL.has(b || '')) byBL.set(b || '', []); byBL.get(b || '').push(c); });
+      for (const [bl, ctrs] of byBL) {
+        for (let i = 0; i < ctrs.length; i += 100) {
+          const { error } = await sb.from('containers').delete().eq('bl', bl).in('container', ctrs.slice(i, i + 100));
+          if (error) return error;
+        }
+      }
+      return null;
+    }
+    for (let i = 0; i < keys.length; i += 100) {
+      const chunk = keys.slice(i, i + 100);
+      const { error } = await sb.from(TABLE[type]).delete().in('id', chunk);
+      if (error) return error;
+      if (type === 'bls') {
+        // O RLS bloqueia a exclusão SEM erro (0 linhas afetadas). Sem conferir,
+        // o BL sumia da tela e "ressuscitava" no próximo carregamento.
+        const { data: left, error: chkErr } = await sb.from('bls').select('id').in('id', chunk);
+        if (chkErr) return chkErr;
+        if (left && left.length) return { message: `sem permissão para excluir ${left.length} BL(s) — fatura já emitida só pode ser excluída por administrador` };
+      }
+    }
+    return null;
+  }
+
+  // Upsert em blocos. Para containers/clientes (PK inclui user_id), remove as
+  // cópias do mesmo registro gravadas por outros usuários — senão ficava uma
+  // versão antiga "fantasma" que voltava ao excluir a atual.
+  async function _upsertRows(type, records) {
+    const rowMap = new Map();
+    records.forEach(r => rowMap.set(_KEY_FN[type](r), _rowFor(type, r)));
+    const rows = Array.from(rowMap.values());
+    for (let i = 0; i < rows.length; i += 50) {
+      const chunk = rows.slice(i, i + 50);
+      const { error } = await sb.from(TABLE[type]).upsert(chunk, { onConflict: _CONFLICT[type] });
+      if (error) return error;
+      if (type === 'trk') {
+        const byBL = new Map();
+        chunk.forEach(r => { if (!byBL.has(r.bl)) byBL.set(r.bl, []); byBL.get(r.bl).push(r.container); });
+        for (const [bl, ctrs] of byBL) {
+          await sb.from('containers').delete().eq('bl', bl).in('container', ctrs).neq('user_id', uid);
+        }
+      } else if (type === 'clients') {
+        await sb.from('clients').delete().in('id', chunk.map(r => r.id)).neq('user_id', uid);
+      }
+    }
+    return null;
+  }
+
+  // ── Fatura PAGA: somente-leitura para quem não é admin ──────────────
+  // Espelha o trigger bls_protege_paga do banco (mesma lista de campos — manter
+  // iguais). Conferir aqui evita mandar ao servidor uma alteração que ele vai
+  // recusar: no save completo a recusa derrubaria o lote inteiro, e como o
+  // registro recusado continuaria na lista, todos os saves seguintes falhariam.
+  const _PAGA_CAMPOS_LIVRES = new Set(['email', 'phone', 'dispute', 'firstBilledAt', 'migratedAt', 'readyAt', '_updatedAt', 'docnum']);
+  const _canon = v => Array.isArray(v) ? '[' + v.map(_canon).join(',') + ']'
+    : (v && typeof v === 'object') ? '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + _canon(v[k])).join(',') + '}'
+    : JSON.stringify(v === undefined ? null : v);
+  function _pagaBloqueada(oldRec, newRec) {
+    if (window._dmIsAdmin || !oldRec || !oldRec.paid) return false;
+    const fin = r => { const o = {}; Object.keys(sanitize(r || {})).forEach(k => { if (!_PAGA_CAMPOS_LIVRES.has(k)) o[k] = r[k]; }); return _canon(sanitize(o)); };
+    if (fin(oldRec) !== fin(newRec)) return true;
+    return !!oldRec.docnum && newRec.docnum !== oldRec.docnum;
+  }
+  function _avisoPaga(nums) {
+    _toastErr(`Fatura paga só pode ser alterada por administrador — alteração desfeita: ${nums.join(', ')}`);
+    if (typeof window.renderList === 'function') { try { window.renderList(); } catch (e) {} }
+  }
+
   // ================= SAVE (full array diff) =================
-  // FIX: mutex por tipo — serializa saves concorrentes para evitar race conditions.
-  // Se um save chega enquanto outro do mesmo tipo está em andamento, a versão mais
-  // recente dos dados é salva automaticamente ao final.
-  const _saveLocks   = {};   // tipo → boolean (save em andamento?)
-  const _savePending = {};   // tipo → newData mais recente aguardando
+  // Mutex por tipo: saves concorrentes do mesmo tipo são serializados e o
+  // último estado pendente é salvo ao final.
+  const _saveLocks   = {};
+  const _savePending = {};
+  const _saveWaiters = {};
 
   window._dmFireSave = function(type, newData) {
-    // Sempre atualiza os dados pendentes com a versão mais recente
     _savePending[type] = newData;
-
-    // Se já há um save em andamento para este tipo, ele vai pegar o pending ao final
-    if (_saveLocks[type]) return;
-
-    _saveLocks[type] = true;
-    _runSave(type);
+    const p = new Promise(res => { (_saveWaiters[type] = _saveWaiters[type] || []).push(res); });
+    if (!_saveLocks[type]) { _saveLocks[type] = true; _runSave(type); }
+    return p;
   };
 
   async function _runSave(type) {
-    const TABLE = { bls: 'bls', trk: 'containers', clients: 'clients' };
-    const STORE = { bls: 'bls', trk: 'trk',        clients: 'clients' };
-
-    const table    = TABLE[type];
-    const sKey     = STORE[type];
-    const keyFn    = _KEY_FN[type];
-    const colsFn   = _COLS_FN[type];
-    const conflict = _CONFLICT[type];
-
-    if (!table || !sKey || !keyFn) { _saveLocks[type] = false; return; }
-
-    try {
-      // Consome os dados pendentes — libera slot para próximas chamadas enfileirarem
-      const newData = _savePending[type];
-      delete _savePending[type];
-
-      // Snapshot imutável do store atual (evita que mutações posteriores ao array
-      // do módulo invalidem o diff antes do upsert assíncrono completar)
-      const oldStore = JSON.parse(JSON.stringify(window._dmStore[sKey] || []));
-
-      // FIX: deduplicação usa chave composta (container|bl para trk, id para os outros)
-      const oldMap = new Map(
-        oldStore.map(r => [keyFn(r), JSON.stringify(sanitize(r))])
-      );
-
-      const newKeySet = new Set(newData.map(r => keyFn(r)));
-
-      // Registros a deletar: estavam no store antigo mas não estão no novo
-      const toDeleteKeys = oldStore
-        .filter(r => !newKeySet.has(keyFn(r)))
-        .map(r => keyFn(r));
-
-      // Registros a upsert: novos ou com dados diferentes
-      const toUpsert = newData.filter(r => {
-        const key = keyFn(r);
-        return !oldMap.has(key) || oldMap.get(key) !== JSON.stringify(sanitize(r));
-      });
-
-      if (toDeleteKeys.length > 0 || toUpsert.length > 0) {
-        console.log('[DB-SAVE] ' + type + ' — deletes:', toDeleteKeys.length, 'upserts:', toUpsert.length,
-          toUpsert.map(r => keyFn(r)));
-      }
-
-      // DELETE — filtros específicos por tipo (bls é compartilhado: sem filtro de dono)
-      if (toDeleteKeys.length > 0) {
-        if (type === 'trk') {
-          // FIX: containers precisam de delete por (container, bl) — chave composta
-          for (const key of toDeleteKeys) {
-            const [container, bl] = key.split('\x00');
-            const { error: delErr } = await sb.from(table).delete()
-              .eq('user_id', uid)
-              .eq('container', container)
-              .eq('bl', bl);
-            if (delErr) {
-              console.error('[DB-SAVE] delete container error:', delErr);
-              if (typeof window.toast === 'function') window.toast('Erro ao excluir: ' + delErr.message, 'error');
-            }
+    const sKey  = STORE[type];
+    const keyFn = _KEY_FN[type];
+    const waiters = _saveWaiters[type] || []; _saveWaiters[type] = [];
+    let ok = false;
+    if (sKey && keyFn) {
+      try {
+        const newData = _savePending[type];
+        delete _savePending[type];
+        const oldStore = _base[sKey] || [];
+        const oldMap = new Map(oldStore.map(r => [keyFn(r), JSON.stringify(sanitize(r))]));
+        const newKeySet = new Set(newData.map(keyFn));
+        const toDeleteKeys = oldStore.filter(r => !newKeySet.has(keyFn(r))).map(keyFn);
+        let toUpsert = newData.filter(r => oldMap.get(keyFn(r)) !== JSON.stringify(sanitize(r)));
+        if (type === 'bls') {
+          // Desfaz na própria lista da tela a alteração proibida em BL pago
+          // e grava o resto normalmente.
+          const baseById = new Map(oldStore.map(r => [keyFn(r), r]));
+          const bloqueados = toUpsert.filter(r => _pagaBloqueada(baseById.get(keyFn(r)), r));
+          if (bloqueados.length) {
+            bloqueados.forEach(r => { const i = newData.indexOf(r); if (i >= 0) newData[i] = _clone(baseById.get(keyFn(r))); });
+            toUpsert = toUpsert.filter(r => !bloqueados.includes(r));
+            _avisoPaga(bloqueados.map(r => r.bl || r.id));
           }
-        } else if (type === 'bls') {
-          // Modelo compartilhado (PK só id): delete sem filtro de user_id —
-          // qualquer usuário pode excluir qualquer BL.
-          const { error: delErr } = await sb.from(table).delete()
-            .in('id', toDeleteKeys);
-          if (delErr) {
-            console.error('[DB-SAVE] delete error:', delErr);
-            if (typeof window.toast === 'function') window.toast('Erro ao salvar: ' + delErr.message, 'error');
-          }
+        }
+
+        const delErr = await _deleteKeys(type, toDeleteKeys);
+        const upsErr = delErr ? null : await _upsertRows(type, toUpsert);
+        const err = delErr || upsErr;
+        if (err) {
+          // NÃO atualiza base/store: o próximo save recalcula o diff e tenta de novo.
+          console.error('[DB-SAVE]', type, err);
+          _toastErr('Erro ao salvar no servidor — as alterações NÃO foram gravadas: ' + err.message);
         } else {
-          // clients têm id simples — delete em batch do próprio usuário
-          const idCol = 'id';
-          const ids = toDeleteKeys;
-          const { error: delErr } = await sb.from(table).delete()
-            .eq('user_id', uid)
-            .in(idCol, ids);
-          if (delErr) {
-            console.error('[DB-SAVE] delete error:', delErr);
-            if (typeof window.toast === 'function') window.toast('Erro ao salvar: ' + delErr.message, 'error');
+          _base[sKey] = _clone(newData);
+          if (!_remoteDirty[type]) {
+            window._dmStore[sKey] = _clone(newData);
+          } else {
+            // Há alterações remotas ainda não levadas para a tela: aplica só o
+            // que ESTE save mudou sobre o store vivo, sem apagá-las.
+            const live = new Map((window._dmStore[sKey] || []).map(r => [keyFn(r), r]));
+            toDeleteKeys.forEach(k => live.delete(k));
+            toUpsert.forEach(r => live.set(keyFn(r), _clone(r)));
+            window._dmStore[sKey] = Array.from(live.values());
           }
+          ok = true;
         }
+      } catch(e) {
+        console.error('[DB-SAVE]', e);
+        _toastErr('Erro interno ao salvar dados: ' + e.message);
       }
-
-      // UPSERT
-      if (toUpsert.length > 0) {
-        // FIX: rowMap usa chave composta para evitar duplicatas no batch
-        const rowMap = new Map();
-        for (const r of toUpsert) {
-          const key = keyFn(r);
-          rowMap.set(key, {
-            ...colsFn(r),         // colunas de primeira classe (container+bl, ou id)
-            user_id: uid,
-            data: sanitize(r),
-            updated_at: new Date().toISOString()
-          });
-        }
-        const rows = Array.from(rowMap.values());
-        const CHUNK = 50;
-        for (let i = 0; i < rows.length; i += CHUNK) {
-          const chunk = rows.slice(i, i + CHUNK);
-          const { error: upsErr } = await sb.from(table).upsert(chunk, { onConflict: conflict });
-          if (upsErr) {
-            console.error('[DB-SAVE] upsert error (chunk ' + i + '):', upsErr);
-            if (typeof window.toast === 'function') window.toast('Erro ao salvar no servidor: ' + upsErr.message, 'error');
-            break;
-          }
-        }
-      }
-
-      // FIX: armazena cópia profunda — NUNCA a referência direta.
-      window._dmStore[sKey] = JSON.parse(JSON.stringify(newData));
-    } catch(e) {
-      console.error('[DB-SAVE]', e);
-      if (typeof window.toast === 'function') window.toast('Erro interno ao salvar dados: ' + e.message, 'error');
     }
+    waiters.forEach(w => w(ok));
+    if (_savePending[type] !== undefined) _runSave(type);
+    else _saveLocks[type] = false;
+  }
 
-    // Se novos dados chegaram enquanto este save rodava, executa novamente
-    if (_savePending[type] !== undefined) {
-      _runSave(type);
-    } else {
-      _saveLocks[type] = false;
-    }
+  function _storeReplace(sKey, keyFn, data) {
+    const copy = JSON.parse(JSON.stringify(data));
+    const key = keyFn(data);
+    [window._dmStore, _base].forEach(holder => {
+      const store = (holder[sKey] || []).slice();
+      const idx = store.findIndex(r => keyFn(r) === key);
+      if (idx >= 0) store[idx] = _clone(copy); else store.push(_clone(copy));
+      holder[sKey] = store;
+    });
   }
 
   // ================= SAVE ONE RECORD =================
-  window._dmFireSaveOne = function(type, id, data) {
-    const TABLE  = { bls: 'bls', trk: 'containers', clients: 'clients' };
-    const STORE  = { bls: 'bls', trk: 'trk',        clients: 'clients' };
-
-    const table    = TABLE[type];
-    const sKey     = STORE[type];
-    const keyFn    = _KEY_FN[type];
-    const colsFn   = _COLS_FN[type];
-    const conflict = _CONFLICT[type];
-    if (!table) return;
-
-    (async () => {
-      try {
-        const row = {
-          ...colsFn(data),       // colunas de primeira classe
-          user_id: uid,
-          data: sanitize(data),
-          updated_at: new Date().toISOString()
-        };
-        const { error } = await sb.from(table).upsert(row, { onConflict: conflict });
-        if (error) {
-          console.error('[DB-SAVE-ONE]', error);
-          if (typeof window.toast === 'function') window.toast('Erro ao salvar no servidor: ' + error.message, 'error');
-          return;
-        }
-
-        // Atualiza store local com cópia profunda (evita referência compartilhada)
-        const store   = JSON.parse(JSON.stringify(window._dmStore[sKey] || []));
-        const key     = keyFn(data);
-        const idx     = store.findIndex(r => keyFn(r) === key);
-        const dataCopy = JSON.parse(JSON.stringify(data));
-        if (idx >= 0) store[idx] = dataCopy;
-        else store.push(dataCopy);
-        window._dmStore[sKey] = store;
-      } catch(e) {
-        console.error('[DB-SAVE-ONE]', e);
-        if (typeof window.toast === 'function') window.toast('Erro interno ao salvar dados: ' + e.message, 'error');
+  window._dmFireSaveOne = async function(type, id, data) {
+    if (!TABLE[type]) return false;
+    if (type === 'bls') {
+      const antes = (_base.bls || []).find(r => String(r.id) === String(data.id));
+      if (_pagaBloqueada(antes, data)) {
+        // Volta o objeto da tela ao estado gravado.
+        Object.keys(data).forEach(k => delete data[k]);
+        Object.assign(data, _clone(antes));
+        _avisoPaga([data.bl || data.id]);
+        return false;
       }
-    })();
+    }
+    _busy[type]++;
+    try {
+      const err = await _upsertRows(type, [data]);
+      if (err) { console.error('[DB-SAVE-ONE]', err); _toastErr('Erro ao salvar no servidor — alteração NÃO gravada: ' + err.message); return false; }
+      _storeReplace(STORE[type], _KEY_FN[type], data);
+      return true;
+    } catch(e) {
+      console.error('[DB-SAVE-ONE]', e); _toastErr('Erro interno ao salvar dados: ' + e.message); return false;
+    } finally { _busy[type]--; }
   };
 
   // ================= DELETE ONE RECORD =================
-  window._dmFireDelete = function(type, id) {
-    const TABLE  = { bls: 'bls', trk: 'containers', clients: 'clients' };
-    const STORE  = { bls: 'bls', trk: 'trk',        clients: 'clients' };
-    const IDKEY  = { bls: 'id',  trk: null,          clients: 'id'     };
-
-    const table = TABLE[type];
-    const sKey  = STORE[type];
-    if (!table) return;
-
-    (async () => {
-      try {
-        if (type === 'trk') {
-          // FIX: para containers, id deve ser 'container\x00bl'
-          const [container, bl] = String(id).split('\x00');
-          const { error } = await sb.from(table).delete()
-            .eq('user_id', uid)
-            .eq('container', container)
-            .eq('bl', bl !== undefined ? bl : '');
-          if (error) { console.error('[DB-DELETE] container:', error); return; }
-          if (sKey && window._dmStore[sKey]) {
-            window._dmStore[sKey] = window._dmStore[sKey].filter(r =>
-              !(String(r.container) === container && String(r.bl || '') === (bl || ''))
-            );
-          }
-        } else if (type === 'bls') {
-          // Modelo compartilhado (PK só id): qualquer usuário deleta qualquer BL.
-          const { error } = await sb.from(table).delete()
-            .eq('id', String(id));
-          if (error) { console.error('[DB-DELETE]', error); return; }
-          if (sKey && window._dmStore[sKey]) {
-            window._dmStore[sKey] = window._dmStore[sKey].filter(r => String(r.id) !== String(id));
-          }
-        } else {
-          const idKey = IDKEY[type];
-          const { error } = await sb.from(table).delete()
-            .eq('user_id', uid)
-            .eq(idKey, String(id));
-          if (error) { console.error('[DB-DELETE]', error); return; }
-          if (sKey && window._dmStore[sKey]) {
-            window._dmStore[sKey] = window._dmStore[sKey].filter(r => String(r[idKey]) !== String(id));
-          }
-        }
-      } catch(e) {
-        console.error('[DB-DELETE]', e);
-      }
-    })();
+  // Para containers, id = 'container\x00bl'.
+  window._dmFireDelete = async function(type, id) {
+    if (!TABLE[type]) return false;
+    _busy[type]++;
+    try {
+      const err = await _deleteKeys(type, [String(id)]);
+      if (err) { console.error('[DB-DELETE]', err); _toastErr('Erro ao excluir no servidor: ' + err.message); return false; }
+      const sKey = STORE[type];
+      [window._dmStore, _base].forEach(h => { h[sKey] = (h[sKey] || []).filter(r => _KEY_FN[type](r) !== String(id)); });
+      return true;
+    } catch(e) {
+      console.error('[DB-DELETE]', e); _toastErr('Erro ao excluir: ' + e.message); return false;
+    } finally { _busy[type]--; }
   };
 
-  // ================= RESTORE (limpa tudo) =================
-  window._dmFireRestore = async function(bkp) {
-    await sb.from('bls').delete().neq('id', '');
-    await sb.from('containers').delete().neq('container', '');
-    await sb.from('clients').delete().neq('id', '');
+  // ================= SUBSTITUIÇÃO COMPLETA (backup / checkpoint) =================
+  // Ordem segura: 1) grava TODOS os registros do snapshot; 2) só depois remove
+  // o que não está no snapshot. Se a gravação falhar, nada é apagado.
+  // (Antes: apagava as tabelas e reinseria só o que "mudou" em relação à
+  // memória — registros iguais nunca voltavam.)
+  window._dmFireReplaceAll = async function(snapshot) {
+    const types = ['bls', 'trk', 'clients'];
+    // Índice único por nº de BL: um BL do banco que NÃO está no snapshot mas tem
+    // o mesmo número de um que está (ex.: processo recriado depois do backup)
+    // faria a gravação falhar sempre. Ordem: 1) grava tudo que não conflita;
+    // 2) troca os conflitantes (apaga o atual, grava o do snapshot); se a troca
+    // falhar, regrava os atuais — nada se perde.
+    const snapBls = snapshot.bls || [];
+    let clashLive = [], clashNums = new Set();
+    try {
+      const snapIds = new Set(snapBls.map(b => String(b.id || '')));
+      const snapNums = new Set(snapBls.filter(b => !b.complementOf).map(b => String(b.bl || '').toUpperCase()));
+      const cur = await fetchAllPages('bls', 'id, data');
+      clashLive = cur.filter(r => !snapIds.has(String(r.id)) && !(r.data || {}).complementOf && snapNums.has(String((r.data || {}).bl || '').toUpperCase()))
+        .map(r => r.data);
+      clashNums = new Set(clashLive.map(d => String(d.bl || '').toUpperCase()));
+    } catch (e) { return { ok: false, error: e.message }; }
+    const isClash = b => !b.complementOf && clashNums.has(String(b.bl || '').toUpperCase());
+    for (const t of types) {
+      const rows = (snapshot[t] || []).filter(r => _KEY_FN[t](r).replace('\x00', '') && !(t === 'bls' && isClash(r)));
+      const err = await _upsertRows(t, rows);
+      if (err) return { ok: false, error: `${t}: ${err.message}` };
+    }
+    if (clashLive.length) {
+      const delErr = await _deleteKeys('bls', clashLive.map(d => String(d.id)));
+      if (delErr) return { ok: false, error: 'bls: ' + delErr.message };
+      const upErr = await _upsertRows('bls', snapBls.filter(isClash));
+      if (upErr) {
+        const back = await _upsertRows('bls', clashLive);
+        return { ok: false, error: 'bls: ' + upErr.message + (back ? ' — ATENÇÃO: falha ao regravar os BLs atuais (' + back.message + '); use o checkpoint criado antes da restauração.' : ' (BLs atuais regravados)') };
+      }
+    }
+    for (const t of types) {
+      const keep = new Set((snapshot[t] || []).map(_KEY_FN[t]));
+      let existing;
+      try {
+        existing = t === 'trk'
+          ? (await fetchAllPages('containers', 'container, bl')).map(r => r.container + '\x00' + (r.bl || ''))
+          : (await fetchAllPages(TABLE[t], 'id')).map(r => String(r.id));
+      } catch (e) { return { ok: false, error: e.message }; }
+      const err = await _deleteKeys(t, [...new Set(existing.filter(k => !keep.has(k)))]);
+      if (err) return { ok: false, error: `${t}: ${err.message}` };
+      window._dmStore[STORE[t]] = JSON.parse(JSON.stringify(snapshot[t] || []));
+      _base[STORE[t]] = JSON.parse(JSON.stringify(snapshot[t] || []));
+    }
+    window._dmStore.clients = deduplicateClientsList(window._dmStore.clients);
+    window._dmStore.trk     = deduplicateTrkList(window._dmStore.trk);
+    _base.clients = _clone(window._dmStore.clients);
+    _base.trk     = _clone(window._dmStore.trk);
+    return { ok: true };
   };
 
   // ================= AUDIT LOG =================
@@ -448,231 +503,177 @@ const _CONFLICT = {
     try {
       const nome = window._dmUserData?.nome || window._dmUser?.email || uid;
       const { error } = await sb.from('logs').insert({
-        user_id:       uid,
-        usuario_nome:  nome,
-        sessao_id:     window._dmSession,
-        acao:          action,
-        detalhe:       sanitize(details || {})
+        user_id: uid, usuario_nome: nome, sessao_id: window._dmSession,
+        acao: action, detalhe: sanitize(details || {})
       });
       if (error) console.error('[DB-LOG]', error);
-    } catch(e) {
-      console.error('[DB-LOG]', e);
-    }
+    } catch(e) { console.error('[DB-LOG]', e); }
   };
+
+  // Login registrado uma vez por sessão do navegador.
+  try {
+    const k = 'dm_login_logged_' + uid;
+    if (!sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); window._dmFireLog('login', { email: user.email }); }
+  } catch (e) { /* storage indisponível */ }
 
   // ================= ALERT DAYS =================
   window._dmSaveAlertDays = async function(days) {
     try {
       const { error } = await sb.from('settings').upsert({ user_id: uid, alert_days: days });
-      if (error) console.error('[DB-SETTINGS]', error);
+      if (error) { console.error('[DB-SETTINGS]', error); _toastErr('Erro ao salvar configuração: ' + error.message); }
       else if (window._dmStore) window._dmStore.alertDays = days;
-    } catch(e) {
-      console.error('[DB-SETTINGS]', e);
-    }
+    } catch(e) { console.error('[DB-SETTINGS]', e); }
   };
 
   // ================= USUARIOS =================
   window._dmFireLoadUsuarios = async function() {
-    try {
-      const { data, error } = await sb.from('usuarios').select('*').order('nome');
-      if (error) { console.error('[DB] loadUsuarios:', error); return []; }
-      return (data || []).map(r => ({ ...r, uid: r.id }));
-    } catch(e) {
-      console.error('[DB] loadUsuarios:', e);
-      return [];
-    }
+    const { data, error } = await sb.from('usuarios').select('*').order('nome');
+    if (error) { console.error('[DB] loadUsuarios:', error); return []; }
+    return (data || []).map(r => ({ ...r, uid: r.id }));
   };
 
   window._dmFireSaveUsuario = async function(userData) {
-    try {
-      if (!userData.uid && !userData.id) {
-        console.error('[DB] saveUsuario: id ausente');
-        return false;
-      }
-      const row = {
-        id:    userData.uid || userData.id,
-        nome:  userData.nome  || '',
-        email: userData.email || '',
-        cargo: userData.cargo || '',
-        admin: !!userData.admin,
-        ativo: userData.ativo !== false
-      };
-      const { error } = await sb.from('usuarios').upsert(row);
-      if (error) { console.error('[DB] saveUsuario:', error); return false; }
-      return true;
-    } catch(e) {
-      console.error('[DB] saveUsuario:', e);
-      return false;
-    }
+    const id = userData.uid || userData.id;
+    if (!id) return { ok: false, error: 'id ausente' };
+    const row = {
+      id, nome: userData.nome || '', email: userData.email || '', cargo: userData.cargo || '',
+      admin: !!userData.admin, ativo: userData.ativo !== false
+    };
+    const { error } = await sb.from('usuarios').upsert(row);
+    if (error) { console.error('[DB] saveUsuario:', error); return { ok: false, error: error.message }; }
+    return { ok: true };
   };
 
   // ================= LOGS DE AUDITORIA =================
-  window._dmFireLoadLogs = async function() {
-    try {
-      const { data, error } = await sb
-        .from('logs')
-        .select('*')
-        .order('criado_em', { ascending: false })
-        .limit(500);
-      if (error) { console.error('[DB] loadLogs:', error); return []; }
-      return data || [];
-    } catch(e) {
-      console.error('[DB] loadLogs:', e);
-      return [];
-    }
-  };
-
-  window._dmFireDeleteLogs = async function(ids) {
-    try {
-      if (!ids || !ids.length) return 0;
-      const { error } = await sb.from('logs').delete().in('id', ids);
-      if (error) { console.error('[DB] deleteLogs:', error); return 0; }
-      return ids.length;
-    } catch(e) {
-      console.error('[DB] deleteLogs:', e);
-      return 0;
-    }
+  window._dmFireLoadLogs = async function(limit) {
+    const { data, error } = await sb.from('logs').select('*').order('criado_em', { ascending: false }).limit(limit || 2000);
+    if (error) { console.error('[DB] loadLogs:', error); return []; }
+    return data || [];
   };
 
   // ================= CHECKPOINTS =================
   window._dmFireSaveCheckpoint = async function(label, tipo) {
-    try {
-      const payload = {
-        bls:     JSON.parse(JSON.stringify(window._dmStore.bls     || [])),
-        trk:     JSON.parse(JSON.stringify(window._dmStore.trk     || [])),
-        clients: JSON.parse(JSON.stringify(window._dmStore.clients || []))
-      };
-      const nome = window._dmUserData?.nome || window._dmUser?.email || uid;
-      const { data, error } = await sb.from('checkpoints').insert({
-        user_id:     uid,
-        label:       label || '',
-        tipo:        tipo  || 'manual',
-        criado_por:  nome,
-        payload:     payload
-      }).select('id, label, tipo, criado_por, criado_em').single();
-      if (error) { console.error('[DB] saveCheckpoint:', error); return null; }
-      return data;
-    } catch(e) {
-      console.error('[DB] saveCheckpoint:', e);
-      return null;
-    }
+    const payload = {
+      bls:     JSON.parse(JSON.stringify(window._dmStore.bls     || [])),
+      trk:     JSON.parse(JSON.stringify(window._dmStore.trk     || [])),
+      clients: JSON.parse(JSON.stringify(window._dmStore.clients || []))
+    };
+    const nome = window._dmUserData?.nome || window._dmUser?.email || uid;
+    const { data, error } = await sb.from('checkpoints').insert({
+      user_id: uid, label: label || '', tipo: tipo || 'manual', criado_por: nome, payload
+    }).select('id, label, tipo, criado_por, criado_em').single();
+    if (error) { console.error('[DB] saveCheckpoint:', error); return null; }
+    return data;
   };
 
   window._dmFireLoadCheckpoints = async function() {
-    try {
-      const { data, error } = await sb
-        .from('checkpoints')
-        .select('id, label, tipo, criado_por, criado_em')
-        .order('criado_em', { ascending: false })
-        .limit(50);
-      if (error) { console.error('[DB] loadCheckpoints:', error); return []; }
-      return data || [];
-    } catch(e) {
-      console.error('[DB] loadCheckpoints:', e);
-      return [];
-    }
+    const { data, error } = await sb.from('checkpoints')
+      .select('id, label, tipo, criado_por, criado_em').order('criado_em', { ascending: false }).limit(50);
+    if (error) { console.error('[DB] loadCheckpoints:', error); return []; }
+    return data || [];
   };
 
   window._dmFireRestoreCheckpoint = async function(id) {
-    try {
-      const { data, error } = await sb
-        .from('checkpoints')
-        .select('payload, label')
-        .eq('id', id)
-        .single();
-      if (error || !data) { console.error('[DB] restoreCheckpoint fetch:', error); return false; }
-
-      const payload = data.payload || {};
-      // Limpa tabelas existentes (bls é compartilhado: limpa tudo, sem filtro de dono)
-      await Promise.all([
-        sb.from('bls').delete().neq('id', ''),
-        sb.from('containers').delete().eq('user_id', uid),
-        sb.from('clients').delete().eq('user_id', uid)
-      ]);
-
-      // Restaura BLs
-      if (payload.bls?.length) {
-        const rows = payload.bls.map(r => ({ id: String(r.id||''), user_id: uid, data: sanitize(r), updated_at: new Date().toISOString() }));
-        for (let i = 0; i < rows.length; i += 50) {
-          const { error: e } = await sb.from('bls').upsert(rows.slice(i, i+50), { onConflict: 'id' });
-          if (e) { console.error('[DB] restore bls chunk:', e); return false; }
-        }
-      }
-
-      // Restaura containers
-      if (payload.trk?.length) {
-        const rows = payload.trk.map(r => ({ container: String(r.container||''), bl: String(r.bl||''), user_id: uid, data: sanitize(r), updated_at: new Date().toISOString() }));
-        for (let i = 0; i < rows.length; i += 50) {
-          const { error: e } = await sb.from('containers').upsert(rows.slice(i, i+50), { onConflict: 'user_id,container,bl' });
-          if (e) { console.error('[DB] restore containers chunk:', e); return false; }
-        }
-      }
-
-      // Restaura clientes
-      if (payload.clients?.length) {
-        const rows = payload.clients.map(r => ({ id: String(r.id||r.cnpj||''), user_id: uid, data: sanitize(r), updated_at: new Date().toISOString() }));
-        for (let i = 0; i < rows.length; i += 50) {
-          const { error: e } = await sb.from('clients').upsert(rows.slice(i, i+50), { onConflict: 'user_id,id' });
-          if (e) { console.error('[DB] restore clients chunk:', e); return false; }
-        }
-      }
-
-      // Atualiza store em memória
-      window._dmStore.bls     = JSON.parse(JSON.stringify(payload.bls     || []));
-      window._dmStore.trk     = JSON.parse(JSON.stringify(payload.trk     || []));
-      window._dmStore.clients = deduplicateClientsList(JSON.parse(JSON.stringify(payload.clients || [])));
-
-      return data.label || true;
-    } catch(e) {
-      console.error('[DB] restoreCheckpoint:', e);
-      return false;
-    }
+    const { data, error } = await sb.from('checkpoints').select('payload, label').eq('id', id).single();
+    if (error || !data) return { ok: false, error: error ? error.message : 'checkpoint não encontrado' };
+    const res = await window._dmFireReplaceAll(data.payload || {});
+    return res.ok ? { ok: true, label: data.label } : res;
   };
 
   window._dmFireDeleteCheckpoint = async function(id) {
-    try {
-      const { error } = await sb.from('checkpoints').delete().eq('id', id);
-      if (error) { console.error('[DB] deleteCheckpoint:', error); return false; }
-      return true;
-    } catch(e) {
-      console.error('[DB] deleteCheckpoint:', e);
-      return false;
-    }
+    const { error } = await sb.from('checkpoints').delete().eq('id', id);
+    if (error) { console.error('[DB] deleteCheckpoint:', error); return false; }
+    return true;
   };
 
   // ================= LOGOUT =================
   window._dmLogout = async function() {
-    try {
-      await sb.auth.signOut();
-    } catch(e) {
-      console.error('[DB] logout:', e);
-      window.location.href = 'index.html';
-    }
+    try { await window._dmFireLog('logout', {}); } catch (e) {}
+    try { sessionStorage.removeItem('dm_login_logged_' + uid); } catch (e) {}
+    try { await sb.auth.signOut(); }
+    catch(e) { console.error('[DB] logout:', e); window.location.href = 'index.html'; }
   };
+
+  // ================= REALTIME =================
+  // Alterações de outros usuários chegam aqui e atualizam o store VIVO. A tela
+  // (e a _base dos saves) só é recarregada quando não há save em andamento
+  // para aquele tipo — senão a recarga trocava a lista da tela por uma versão
+  // anterior ao save em voo, e o save seguinte revertia a alteração.
+  const _syncTimers = {};
+  function _scheduleSync(type) {
+    _remoteDirty[type] = true;
+    clearTimeout(_syncTimers[type]);
+    _syncTimers[type] = setTimeout(() => {
+      if (_busy[type] > 0 || _saveLocks[type] || _savePending[type] !== undefined) { _scheduleSync(type); return; }
+      const sKey = STORE[type];
+      _base[sKey] = _clone(window._dmStore[sKey] || []);
+      _remoteDirty[type] = false;
+      if (typeof window._dmOnRemoteChange === 'function') window._dmOnRemoteChange(type);
+    }, 400);
+  }
+  const _cmpJSON = r => { const { _updatedAt, ...rest } = r || {}; return JSON.stringify(sanitize(rest)); };
+
+  function _applyRemote(type, payload) {
+    const sKey = STORE[type];
+    const rec = payload.new && Object.keys(payload.new).length ? payload.new : null;
+    const old = payload.old || {};
+    let store = (window._dmStore[sKey] || []).slice();
+    if (payload.eventType === 'DELETE') {
+      const key = type === 'trk' ? (old.container + '\x00' + (old.bl || '')) : String(old.id);
+      if (type === 'bls') {
+        if (!store.some(r => _KEY_FN[type](r) === key)) return; // eco da própria exclusão
+        store = store.filter(r => _KEY_FN[type](r) !== key);
+      } else {
+        // Containers/clientes podem ter cópias por usuário (PK inclui user_id):
+        // a exclusão de UMA cópia não significa que o registro sumiu. Confere.
+        const q = type === 'trk'
+          ? sb.from('containers').select('container, bl, data, updated_at').eq('container', old.container).eq('bl', old.bl || '')
+          : sb.from('clients').select('id, data, updated_at').eq('id', String(old.id));
+        q.order('updated_at', { ascending: false }).limit(1).then(({ data, error }) => {
+          if (error) return;
+          const row = data && data[0];
+          if (row) _applyRemote(type, { eventType: 'UPDATE', new: row, old: {} });
+          else {
+            const cur = window._dmStore[sKey] || [];
+            if (!cur.some(r => _KEY_FN[type](r) === key)) return;
+            window._dmStore[sKey] = cur.filter(r => _KEY_FN[type](r) !== key);
+            _scheduleSync(type);
+          }
+        });
+        return;
+      }
+    } else if (rec) {
+      let obj = rec.data || {};
+      if (type === 'trk') obj = { ...obj, container: rec.container, bl: rec.bl || '', _updatedAt: rec.updated_at };
+      if (type === 'clients') obj = { ...obj, id: rec.id, _updatedAt: rec.updated_at };
+      const key = _KEY_FN[type](obj);
+      const idx = store.findIndex(r => _KEY_FN[type](r) === key);
+      // Eco do próprio save (ou nada mudou): não mexe na tela.
+      if (idx >= 0 && _cmpJSON(store[idx]) === _cmpJSON(obj)) return;
+      if (idx >= 0) store[idx] = obj; else store.push(obj);
+    } else return;
+    window._dmStore[sKey] = type === 'trk' ? deduplicateTrkList(store) : type === 'clients' ? deduplicateClientsList(store) : store;
+    _scheduleSync(type);
+  }
+  try {
+    const ch = sb.channel && sb.channel('dm-sync');
+    if (ch) {
+      ch.on('postgres_changes', { event: '*', schema: 'public', table: 'bls' },        p => _applyRemote('bls', p))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'containers' }, p => _applyRemote('trk', p))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' },    p => _applyRemote('clients', p))
+        .subscribe();
+    }
+  } catch (e) { console.warn('[DB] realtime indisponível:', e); }
 
   console.log('[DB] ✓ Supabase inicializado — usuário:', user.email);
 
-  // Aguarda o app estar pronto e inicializa a UI
-  // FIX: timeout de 15s com mensagem de erro em vez de polling infinito (tela branca)
   let _waitAttempts = 0;
-  const _WAIT_MAX   = 300; // 300 × 50ms = 15 segundos
-
   function waitForAppReady() {
-    if (window._dmOnReady) {
-      console.log('[DB] Chamando _dmOnReady...');
-      window._dmOnReady();
-    } else if (++_waitAttempts > _WAIT_MAX) {
+    if (window._dmOnReady) { window._dmOnReady(); }
+    else if (++_waitAttempts > 300) {
       console.error('[DB] Timeout aguardando _dmOnReady — scripts podem ter falhado ao carregar.');
-      const el = document.getElementById('loading-overlay') || document.body;
-      el.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:Inter,sans-serif;color:#64748b;gap:16px;padding:24px;text-align:center">'
-        + '<div style="font-size:24px;font-weight:600;color:#ef4444">Erro ao carregar</div>'
-        + '<div>Alguns scripts não carregaram corretamente.<br>Verifique sua conexão e tente novamente.</div>'
-        + '<button onclick="location.reload()" style="padding:10px 24px;border-radius:8px;border:none;background:#3b82f6;color:#fff;font-size:14px;cursor:pointer">Recarregar</button>'
-        + '</div>';
-    } else {
-      setTimeout(waitForAppReady, 50);
-    }
+      fatalScreen('Erro ao carregar', 'Alguns scripts não carregaram corretamente. Verifique sua conexão e tente novamente.');
+    } else { setTimeout(waitForAppReady, 50); }
   }
-
   waitForAppReady();
 })();
