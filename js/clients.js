@@ -246,8 +246,10 @@ function autoRegisterClient(cnpj, name, email) {
   upsertClient(cnpj, name, emails);
 }
 
-function syncBLEmails(cnpjNorm, emails) {
-  if (!emails || !emails.length) return; // nunca apaga e-mails dos BLs por um cadastro vazio
+// allowEmpty: só a edição explícita do cadastro (usuário apagou os e-mails)
+// propaga lista vazia; importações nunca apagam e-mails dos BLs.
+function syncBLEmails(cnpjNorm, emails, allowEmpty) {
+  if (!emails || (!emails.length && !allowEmpty)) return;
   let changed = false;
   bls.forEach(b => {
     if (normalizeCnpj(b.cnpj) === cnpjNorm) {
@@ -332,7 +334,7 @@ function saveClient() {
     }
   }
 
-  syncBLEmails(norm, emails);
+  syncBLEmails(norm, emails, true);
   cliSave(clients);
   logAuditAction('edicao_cliente', { cnpj: norm, name, acao: editingClientId ? 'edicao' : 'criacao' });
   closeModal('modal-client');

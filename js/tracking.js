@@ -42,7 +42,7 @@ let trkImportRaw = null;
 
 function trkParseDate(val) {
   if (!val) return null;
-  if (val instanceof Date) return isoLocal(val);
+  if (val instanceof Date) return localDateParts(val);
   if (typeof val === 'number') {
     // Excel serial
     const d = new Date((val - 25569) * 86400 * 1000);
@@ -413,7 +413,7 @@ function trkRowUSD(r) {
   if (dc === null || dc <= 0) return 0;
   // Reutiliza getRateForBL passando objeto com freeTime do container
   const rate = (typeof getRateForBL === 'function')
-    ? getRateForBL({ freeTime: r.freeTime || null }, r.type)
+    ? getRateForBL({ freeTime: trkFreeTime(r) }, r.type)
     : (typeof getRate === 'function' ? getRate(r.type) : null);
   if (!rate) return 0;
   return calcUSD(dc, rate, null, null).totalUSD;

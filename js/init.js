@@ -1580,6 +1580,9 @@ function renderTrkGroupedByBL(filtered) {
 window._dmOnReady = async function() {
   // ── Reload all global arrays from Firestore ──
   bls = load();              // ← critical: reatribui bls com dados do Supabase
+  // Taxas configuradas ANTES da limpeza de containers (o free time padrão
+  // do tipo vem delas; com o padrão errado, um container cobrável seria apagado).
+  await loadCfgRatesFromFirestore();
 
   // FIX-QUOTA: Todas as migrações de startup em UMA passagem, com 1 save consolidado
   // (antes: _backfillVenc + migrateDotcnum + backfillMigratedAt = até 3 saves separados)
@@ -1668,7 +1671,6 @@ window._dmOnReady = async function() {
   // MELHORIA #1: aplicar alertas visuais nos containers críticos
   setTimeout(applyContainerAlerts, 500);
   // Carrega taxas do Supabase (compartilhadas) com fallback localStorage
-  await loadCfgRatesFromFirestore();
   switchModule('dashboard');
   // Exibe nome do usuário no header (nome completo ou e-mail como fallback)
   (function() {

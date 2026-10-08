@@ -503,6 +503,10 @@ async function printAllInvoices() {
     ? allUnpaid.filter(b => _consSelectedBLs.has(b.id))
     : allUnpaid;
   if (!eligible.length) { toast('Nenhuma fatura selecionada.', 'error'); return; }
+  // Sem PTAX não há valor: aborta antes de montar qualquer fatura (evita PDF
+  // em branco/duplicado e PIX zerado).
+  const semValor = eligible.filter(b => invoiceTotalBRL(b) == null);
+  if (semValor.length) { ptaxMissingAlert(); return; }
   const prevBL=currentBL,prevType=currentType,prevRoe=ovRoe,prevTot=ovTotal;
   const invoiceData = eligible.map(b => {
     currentBL=b;currentType='invoice';ovRoe=null;ovTotal=null;

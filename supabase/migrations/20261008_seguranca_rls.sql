@@ -38,7 +38,28 @@ revoke all on function public.auth_is_active() from public;
 grant execute on function public.auth_is_admin()  to authenticated;
 grant execute on function public.auth_is_active() to authenticated;
 
--- ── BLs: colaborativo para ativos; excluir fatura emitida/paga só admin ──
+-- ── BLs: marca permanente de fatura emitida ──
+-- Proteger a exclusão olhando data.billed/paid não basta: qualquer usuário
+-- pode desfazer o faturamento (fluxo normal) e depois excluir. `ja_emitida`
+-- é ligada por trigger quando o BL é faturado/pago e NUNCA volta a false.
+alter table bls add column if not exists ja_emitida boolean not null default false;
+create or replace function public.bls_marca_emitida()
+returns trigger language plpgsql as $$
+begin
+  new.ja_emitida := coalesce(old.ja_emitida, false) and tg_op = 'UPDATE'
+    or coalesce((new.data->>'billed')::boolean, false)
+    or coalesce((new.data->>'paid')::boolean, false)
+    or coalesce(new.data->>'firstBilledAt', '') <> '';
+  return new;
+end $$;
+drop trigger if exists trg_bls_marca_emitida on bls;
+create trigger trg_bls_marca_emitida before insert or update on bls
+  for each row execute function public.bls_marca_emitida();
+update bls set ja_emitida = true
+  where coalesce((data->>'billed')::boolean, false) or coalesce((data->>'paid')::boolean, false)
+     or coalesce(data->>'firstBilledAt', '') <> '';
+
+-- ── BLs: colaborativo para ativos; excluir fatura já emitida só admin ──
 drop policy if exists "authenticated_rw" on bls;
 drop policy if exists "bls_select" on bls;
 drop policy if exists "bls_insert" on bls;
@@ -48,10 +69,7 @@ create policy "bls_select" on bls for select to authenticated using (auth_is_act
 create policy "bls_insert" on bls for insert to authenticated with check (auth_is_active());
 create policy "bls_update" on bls for update to authenticated using (auth_is_active()) with check (auth_is_active());
 create policy "bls_delete" on bls for delete to authenticated using (
-  auth_is_active() and (
-    auth_is_admin()
-    or (coalesce((data->>'billed')::boolean, false) = false and coalesce((data->>'paid')::boolean, false) = false)
-  )
+  auth_is_active() and (auth_is_admin() or not ja_emitida)
 );
 
 -- ── Containers e clientes: colaborativos para ativos ──
@@ -91,7 +109,7 @@ drop policy if exists "logs_insert" on logs;
 drop policy if exists "logs_select" on logs;
 drop policy if exists "logs_delete_admin" on logs;
 create policy "logs_insert" on logs for insert to authenticated
-  with check (auth.uid() is not null and user_id = auth.uid());
+  with check (auth_is_active() and user_id = auth.uid());
 create policy "logs_select" on logs for select to authenticated using (auth_is_active());
 -- (sem policy de update/delete = proibido para todos os clientes)
 

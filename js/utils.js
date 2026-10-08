@@ -32,6 +32,11 @@ const APP_TZ = 'America/Sao_Paulo';
 function isoLocal(d) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: APP_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 }
+// Datas de planilha são de calendário (sem fuso): usa os componentes locais
+// do Date, sem converter para o fuso da aplicação.
+function localDateParts(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 function todayISO() { return isoLocal(new Date()); }
 function addDaysISO(iso, n) {
   const [y, m, d] = iso.split('-').map(Number);
@@ -117,7 +122,7 @@ function fmtDate(s) { return s ? new Date(String(s).slice(0,10)+'T12:00:00').toL
 function fmtBRL(v) { return 'R$ '+(Number(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function parseDs(v) {
   if (!v) return '';
-  if (v instanceof Date) return isoLocal(v);
+  if (v instanceof Date) return localDateParts(v);
   if (typeof v==='number') { const d=new Date((v-25569)*86400000); return d.toISOString().slice(0,10); }
   const p=String(v).match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
   if (p) { const y=p[3].length===2?'20'+p[3]:p[3]; return `${y}-${p[2].padStart(2,'0')}-${p[1].padStart(2,'0')}`; }

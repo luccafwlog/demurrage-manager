@@ -980,7 +980,8 @@ function exportReport() {
         '1º FATURAMENTO':   (b.firstBilledAt || b.billedAt) ? new Date((b.firstBilledAt || b.billedAt)+'T12:00:00') : '—',
         'ÚLT. FATURAMENTO': b.billedAt ? new Date(b.billedAt+'T12:00:00') : '—',
         'DATA PAGAMENTO':   b.paid && b.paidAt ? new Date(b.paidAt+'T12:00:00') : '—',
-        'VALOR PAGO (BRL)': b.paid ? parseFloat(totalBRLWithDiscount.toFixed(2)) : '—',
+        // Valor efetivamente recebido (paidAmount), rateado pelos containers.
+        'VALOR PAGO (BRL)': b.paid ? parseFloat(((b.paidAmount != null && finalTotal > 0 ? b.paidAmount * (totalBRLWithDiscount / finalTotal) : totalBRLWithDiscount)).toFixed(2)) : '—',
       });
       discountModes.push(b.discount && b.discount.value > 0 ? b.discount.mode : null);
     });
@@ -1595,8 +1596,9 @@ async function deleteBL(id) {
     toast('BL excluído.');
   };
   // Registro financeiro (faturado/pago): só admin, com confirmação forte.
-  if (bl.paid || bl.billed) {
-    if (!requireAdmin('excluir faturas emitidas ou pagas')) return;
+  // Mesmo regra do servidor (bls.ja_emitida): BL já faturado alguma vez só admin exclui.
+  if (bl.paid || bl.billed || bl.firstBilledAt) {
+    if (!requireAdmin('excluir faturas já emitidas')) return;
     showDoubleConfirmation('Excluir fatura emitida?',
       `O BL ${bl.bl} está ${bl.paid ? 'PAGO' : 'FATURADO'} (${bl.docnum || '—'}). Excluir apaga o registro financeiro.`, 1, doDelete);
     return;
@@ -1938,8 +1940,9 @@ function applyEditVal() {
   const roeIn = parseFloat(document.getElementById('edit-roe-input').value);
   const valIn = parseFloat(document.getElementById('edit-val-input').value);
   const before = { manualTotal: b.manualTotal ?? null, roe: b.roeManual ? b.roe : null };
+  // Vazio ou igual à PTAX oficial = volta a acompanhar a PTAX.
   if (roeIn > 0 && Math.abs(roeIn - (ptaxState.roe || 0)) > 0.00005) { b.roe = roeIn; b.roeManual = true; }
-  else if (!(roeIn > 0)) { b.roe = null; b.roeManual = false; }
+  else { b.roe = null; b.roeManual = false; }
   const calc = effectiveROE(b) ? blTotal(b, effectiveROE(b)) : null;
   if (valIn >= 0 && (calc == null || Math.abs(valIn - calc) >= 0.005)) b.manualTotal = parseFloat(valIn.toFixed(2));
   else delete b.manualTotal;
