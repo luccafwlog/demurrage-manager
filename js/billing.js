@@ -436,10 +436,11 @@ function attachDiscountListeners() {
 // AUDIT LOGGING
 // ============================================================
 // FIX-QUOTA #E: só loga ações críticas no Firestore (evita writes por edições rotineiras)
-// Ações de alta frequência (edicao_bl, criacao_bl, exportacao_relatorio) vão apenas ao console.
+// Ações de alta frequência (criacao_bl, exportacao_relatorio) vão apenas ao console.
+// edicao_bl é persistida: altera valores de faturas (tipo, desconto, datas) e precisa de rastro.
 const _AUDIT_FIRESTORE_ACTIONS = new Set([
   // BLs
-  'exclusao_bl', 'exclusao_todos_bls', 'exclusao_em_massa_bls',
+  'edicao_bl', 'exclusao_bl', 'exclusao_todos_bls', 'exclusao_em_massa_bls',
   'marcacao_pagamento', 'marcacao_fatura',
   'envio_email', 'importacao_planilha',
   // Containers
@@ -741,10 +742,14 @@ function addContainerRow(c={}) {
     '40FR','40OT',                          // 40 pés FR/OT
     '20R1','20RF',                          // 20 pés Reefer
     '40R1','40RF','45R1',                   // 40/45 pés Reefer
+    '40FH_45P3','40FR_42P3',                // variações ISO vindas do rastreamento
   ];
+  // Tipo fora da lista vira <option> própria: sem isso o <select> cai na 1ª
+  // opção (20G1) e o salvar regrava o container com a tarifa errada.
+  if (c.type && !types.includes(c.type)) types.unshift(c.type);
   tr.innerHTML = `
     <td><input type="text" value="${c.container||''}" placeholder="FFAU0000000" style="width:130px" oninput="updateRow(this)"></td>
-    <td><select style="width:80px" onchange="updateRow(this)">${types.map(t=>`<option value="${t}"${c.type===t?' selected':''}>${t}</option>`).join('')}</select></td>
+    <td><select style="width:100px" onchange="updateRow(this)">${types.map(t=>`<option value="${t}"${c.type===t?' selected':''}>${t}</option>`).join('')}</select></td>
     <td><input type="date" value="${c.discharge||''}" style="width:140px" onchange="updateRow(this)"></td>
     <td><input type="date" value="${c.emptyReturn||''}" style="width:140px" onchange="updateRow(this)"></td>
     <td class="calc-cell" data-dc>—</td>
@@ -877,7 +882,7 @@ function saveBL() {
   if (editingId) {
     const i=bls.findIndex(x=>x.id===editingId);
     bls[i]=obj;
-    logAuditAction('edicao_bl', {blId: obj.id, bl: obj.bl, hasDiscount: !!obj.discount, hasDispute: obj.dispute?.open});
+    logAuditAction('edicao_bl', {blId: obj.id, bl: obj.bl, hasDiscount: !!obj.discount, hasDispute: obj.dispute?.open, containers: obj.containers.map(c => c.container + ':' + c.type)});
     toast('BL atualizado!','success');
   } else {
     bls.unshift(obj);
