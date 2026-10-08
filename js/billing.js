@@ -845,10 +845,20 @@ function saveBL() {
   } : null;
 
   const prevBL = editingId ? bls.find(x => x.id === editingId) : null;
-  if (prevBL && prevBL.complementOf && discount && (!discountApprover || !discountJustification)) {
-    toast('Desconto em fatura complementar exige aprovador e justificativa.', 'error');
+  // Desconto novo ou alterado exige aprovador e justificativa. Um desconto que
+  // já existia e não mudou (mesmo tipo, valor e modo) é aceito como está: os
+  // aplicados antes desta regra continuam válidos e mantêm a data original.
+  const prevDiscount = prevBL && prevBL.discount && prevBL.discount.value > 0 ? prevBL.discount : null;
+  const discountUnchanged = !!(discount && prevDiscount
+    && prevDiscount.type === discount.type
+    && prevDiscount.value === discount.value
+    && prevDiscount.mode === discount.mode);
+  if (discount && !discountUnchanged && (!discountApprover || !discountJustification)) {
+    toast('Desconto novo ou alterado exige aprovador e justificativa.', 'error');
+    document.getElementById(discountApprover ? 'f-discount-justification' : 'f-discount-approver').focus();
     return;
   }
+  if (discountUnchanged && prevDiscount.appliedAt) discount.appliedAt = prevDiscount.appliedAt;
 
   // Collect dispute fields
   const disputeOpen = document.getElementById('f-dispute-open').checked;
@@ -896,34 +906,37 @@ function saveBL() {
     dispute: dispute,
     createdAt: editingId?(bls.find(x=>x.id===editingId)?.createdAt||Date.now()):Date.now(),
   };
-  // Fatura complementar: o formulário não conhece o vínculo com a original nem
-  // o valor já cobrado de cada container. Sem repor os dois, salvar a
-  // complementar a transformaria em cobrança cheia do BL.
-  if (prevBL && prevBL.complementOf) {
-    obj.complementOf       = prevBL.complementOf;
-    obj.complementOfDocnum = prevBL.complementOfDocnum;
-    obj.complementReason   = prevBL.complementReason;
+  // Edição parte do registro anterior: o formulário só conhece parte dos
+  // campos, e substituir o registro apagava o resto (migratedFromTracking,
+  // firstBilledAt, vínculo e créditos de fatura complementar...).
+  // Containers mesclam pelo número, para manter creditUSD/billedType.
+  if (prevBL) {
     obj.containers = obj.containers.map(c => {
       const old = (prevBL.containers || []).find(p => p.container === c.container);
-      return old && old.creditUSD != null ? { ...c, creditUSD: old.creditUSD, billedType: old.billedType } : c;
+      return old ? { ...old, ...c } : c;
     });
+    if (obj.dispute && prevBL.dispute && prevBL.dispute.open) {
+      obj.dispute.openedAt  = prevBL.dispute.openedAt || obj.dispute.openedAt;
+      obj.dispute.historico = prevBL.dispute.historico || [];
+    }
   }
+  const rec = prevBL ? { ...prevBL, ...obj } : obj;
   // Computa readyAt (data em que todos os containers foram devolvidos)
-  obj.readyAt = computeReadyAt(obj);
+  rec.readyAt = computeReadyAt(rec);
   if (editingId) {
     const i=bls.findIndex(x=>x.id===editingId);
-    bls[i]=obj;
-    logAuditAction('edicao_bl', {blId: obj.id, bl: obj.bl, hasDiscount: !!obj.discount, hasDispute: obj.dispute?.open, containers: obj.containers.map(c => c.container + ':' + c.type)});
+    bls[i]=rec;
+    logAuditAction('edicao_bl', {blId: rec.id, bl: rec.bl, hasDiscount: !!rec.discount, hasDispute: rec.dispute?.open, containers: rec.containers.map(c => c.container + ':' + c.type)});
     toast('BL atualizado!','success');
   } else {
-    bls.unshift(obj);
-    logAuditAction('criacao_bl', {blId: obj.id, bl: obj.bl, hasDiscount: !!obj.discount});
+    bls.unshift(rec);
+    logAuditAction('criacao_bl', {blId: rec.id, bl: rec.bl, hasDiscount: !!rec.discount});
     toast('BL criado!','success');
   }
   // FIX-QUOTA #G: salva apenas o BL criado/editado (1 write)
-  saveOne(obj);
+  saveOne(rec);
   // Auto-register client in client registry if CNPJ provided
-  if (obj.cnpj) autoRegisterClient(obj.cnpj, obj.client, obj.email);
+  if (rec.cnpj) autoRegisterClient(rec.cnpj, rec.client, rec.email);
   closeModal('modal-bl'); renderList();
 }
 
@@ -938,39 +951,37 @@ function exportReport() {
   bls.forEach(b => {
     const roe = (b.paid || b.billed) && b.frozenRoe != null ? b.frozenRoe : effectiveROE(b);
     const frozenTotal = (b.paid || b.billed) && b.frozenTotal != null ? b.frozenTotal : null;
-    let blBRL = 0;
-
     // Only containers that generated demurrage
-    const billable = (b.containers || []).filter(c => {
-      const dc = daysBetween(c.discharge, c.emptyReturn);
-      return calcContainer(b, c).totalUSD > 0;
-    });
-
+    const billable = (b.containers || []).filter(c => calcContainer(b, c).totalUSD > 0);
     if (!billable.length) return; // skip BLs with no demurrage at all
 
-    billable.forEach((c, idx) => {
-      const dc = daysBetween(c.discharge, c.emptyReturn);
+    const lines = billable.map(c => {
       const calc = calcContainer(b, c);
-      const brl = calc.totalUSD * roe;
-      blBRL += brl;
+      return { c, calc, dc: daysBetween(c.discharge, c.emptyReturn), gross: calc.totalUSD * roe };
+    });
+    const grossSum = lines.reduce((s, l) => s + l.gross, 0);
+    // Desconto é do BL: rateado pelos containers na proporção do valor bruto
+    // (antes era aplicado de novo sobre o total congelado, que já o inclui, e o
+    // desconto fixo era descontado inteiro em cada container).
+    let discTotal = 0;
+    if (b.discount && b.discount.value > 0) {
+      discTotal = b.discount.mode === 'percent'
+        ? grossSum * (b.discount.value / 100)
+        : Math.min(b.discount.value, grossSum);
+    }
+    // Fatura congelada: o total final é o congelado. A soma das linhas bate com
+    // ele; a sobra de arredondamento fica na última linha.
+    const finalTotal = frozenTotal !== null ? frozenTotal : grossSum - discTotal;
+    let accFinal = 0;
 
-      // For frozen totals, distribute proportionally across containers
-      const totalBRL = frozenTotal !== null
-        ? (idx === billable.length - 1
-            ? parseFloat((frozenTotal - (blBRL - brl)).toFixed(2))
-            : parseFloat(brl.toFixed(2)))
-        : parseFloat(brl.toFixed(2));
-
-      // Calculate discount for this BL if present
-      let discountAmt = 0;
-      if (b.discount && b.discount.value > 0) {
-        if (b.discount.mode === 'percent') {
-          discountAmt = totalBRL * (b.discount.value / 100);
-        } else {
-          discountAmt = b.discount.value;
-        }
-      }
-      const totalBRLWithDiscount = Math.max(0, totalBRL - discountAmt);
+    lines.forEach(({ c, calc, dc, gross }, idx) => {
+      const share = grossSum > 0 ? gross / grossSum : 1 / lines.length;
+      const totalBRL = parseFloat(gross.toFixed(2));
+      const totalBRLWithDiscount = idx === lines.length - 1
+        ? parseFloat((finalTotal - accFinal).toFixed(2))
+        : parseFloat((finalTotal * share).toFixed(2));
+      accFinal += totalBRLWithDiscount;
+      const discountAmt = totalBRL - totalBRLWithDiscount;
 
       rows.push({
         'Nº FATURA':      (b.docnum || genDocnum(b.bl)) + (b.complementOf ? ` (compl. de ${b.complementOfDocnum || '—'})` : ''),
