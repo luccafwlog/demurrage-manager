@@ -24,7 +24,23 @@ jobs:
           DEPLOY_DATE=$(TZ='America/Sao_Paulo' date '+%d/%m/%Y %H:%M')
           sed -i "s|__DEPLOY_DATE__|${DEPLOY_DATE}|g" app.html
 
+      # Versão fixa: com @latest, uma release nova do firebase-tools podia
+      # quebrar o deploy sem nenhuma mudança no repositório.
+      # Autenticação: service account (FIREBASE_SERVICE_ACCOUNT, JSON da chave)
+      # quando o secret existir; senão o FIREBASE_TOKEN legado (--token,
+      # descontinuado pelo Firebase). Depois de criar o secret novo, o
+      # FIREBASE_TOKEN pode ser apagado.
       - name: 🔥 Deploy para Firebase Hosting
-        run: npx -y firebase-tools@latest deploy --only hosting --project demurragemanager --token "$FIREBASE_TOKEN"
         env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          if [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "Autenticando com service account"
+            printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
+            export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+            npx -y firebase-tools@15.30.2 deploy --only hosting --project demurragemanager --non-interactive
+          else
+            echo "::warning::Usando FIREBASE_TOKEN (descontinuado). Configure o secret FIREBASE_SERVICE_ACCOUNT."
+            npx -y firebase-tools@15.30.2 deploy --only hosting --project demurragemanager --non-interactive --token "$FIREBASE_TOKEN"
+          fi

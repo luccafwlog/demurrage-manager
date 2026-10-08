@@ -30,7 +30,17 @@ Você edita um arquivo → Salva → Git push → GitHub Actions → Firebase Ho
 
 ## ⚠️ Segurança
 
-O token do Firebase (`FIREBASE_TOKEN`) está armazenado de forma segura nos **GitHub Actions Secrets** e nunca fica exposto no código.
+As credenciais ficam nos **GitHub Actions Secrets** e nunca no código. O workflow usa a service account (`FIREBASE_SERVICE_ACCOUNT`) quando o secret existe e, se não existir, o token legado (`FIREBASE_TOKEN`, autenticação descontinuada pelo Firebase).
+
+### Migrar para service account
+
+1. Google Cloud Console do projeto `demurragemanager` → **IAM e administrador → Contas de serviço → Criar conta de serviço**.
+2. Papel: **Administrador do Firebase Hosting** (`roles/firebasehosting.admin`).
+3. Na conta criada: **Chaves → Adicionar chave → JSON**. O arquivo é baixado uma única vez.
+4. GitHub → **Settings → Secrets and variables → Actions → New repository secret**: nome `FIREBASE_SERVICE_ACCOUNT`, valor = conteúdo inteiro do JSON.
+5. Depois de um deploy com sucesso (o log mostra "Autenticando com service account"), apague o secret `FIREBASE_TOKEN` e o arquivo JSON do seu computador.
+
+A versão do `firebase-tools` é fixa no workflow. Para atualizar, troque o número nas duas linhas `firebase-tools@…` do `firebase-deploy.yml`.
 
 ---
 *Configurado em 24/03/2026 — Deploy automático via GitHub Actions*
