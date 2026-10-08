@@ -130,3 +130,12 @@ function daysBetween(d1, d2) {
 }
 
 
+
+// Free time de um container do rastreamento: o da planilha, se informado;
+// senão o padrão da tabela para o TIPO (Reefer = 10 dias, demais = 21).
+// Antes o padrão era 21 para tudo, e reefers eram cobrados com 11 dias a menos.
+function trkFreeTime(r) {
+  const v = r ? parseInt(r.freeTime, 10) : NaN;
+  if (!isNaN(v) && v >= 0) return v;
+  return getRate(r && r.type).freeUntil;
+}

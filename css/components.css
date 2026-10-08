@@ -445,3 +445,50 @@ div.invoice { border: 1px solid #ccc; padding: 36px 40px; font-size: 13px; color
   .cfg-backup-grid { grid-template-columns:1fr; }
   .cfg-subtab { padding:8px 12px;font-size:12px; }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   Revisão 2026-10 — correções visuais e responsivas
+   ══════════════════════════════════════════════════════════════════ */
+
+/* Fatura FATURADA (aguardando pagamento) tem cor própria — antes herdava o
+   verde de "paga" e as duas se confundiam. */
+.bl-card.is-billed { border-left: 4px solid #3b82f6; background: #f8fbff; }
+.bl-card.is-billed .bl-number { color: #1e40af; }
+
+/* Grade financeira do painel (antes estava inline e ignorava o mobile) */
+.dash-kpi4.dash-kpi-money { grid-template-columns: 2fr 1.2fr 1fr; }
+@media (max-width: 1000px) { .dash-kpi4.dash-kpi-money { grid-template-columns: 1fr 1fr; } .dash-kpi4.dash-kpi-money > :first-child { grid-column: 1 / -1; } }
+@media (max-width: 560px)  { .dash-kpi4, .dash-kpi4.dash-kpi-money { grid-template-columns: 1fr 1fr; } }
+.dk-money-val { overflow-wrap: anywhere; }
+
+/* Formulários em modal: colunas nunca estouram a largura */
+.form-grid > * { min-width: 0; }
+.form-grid input, .form-grid select, .form-grid textarea { width: 100%; max-width: 100%; box-sizing: border-box; }
+@media (max-width: 900px) { .form-grid.cols4 { grid-template-columns: 1fr 1fr; } .form-grid.cols3 { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .form-grid, .form-grid.cols3, .form-grid.cols4 { grid-template-columns: 1fr; } }
+.ctable-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.ctable { min-width: 720px; }
+
+/* Cabeçalho e navegação em telas estreitas */
+@media (max-width: 768px) {
+  .header { height: auto; min-height: 56px; flex-wrap: wrap; gap: 8px; padding: 8px 12px; }
+  .header-brand > div { display: none; }
+  .header-right { gap: 6px; flex-wrap: wrap; }
+  .header-rate-link { font-size: 11px; padding: 5px 8px; }
+  #header-user-name { max-width: 90px !important; }
+  .ptax-banner { flex-wrap: wrap; gap: 6px; }
+  .toolbar { flex-wrap: wrap; }
+  .toolbar .search-wrap { max-width: none !important; flex-basis: 100%; }
+  .bl-card { flex-wrap: wrap; }
+  .bl-actions { flex-wrap: wrap; width: 100%; }
+}
+
+/* Foco visível para navegação por teclado */
+[role="button"]:focus-visible, button:focus-visible, .act-btn:focus-visible, a:focus-visible,
+input:focus-visible, select:focus-visible { outline: 2px solid #f59e0b; outline-offset: 2px; }
+
+/* Tabela de containers: CNPJ legível */
+.trk-table td:nth-child(4) { font-size: 10px; white-space: nowrap; }
+/* Avisos aparecem acima de modais e quebram linha em mensagens longas */
+.toast { z-index: 10050; max-width: min(520px, calc(100vw - 32px)); line-height: 1.4; }
+@media (max-width: 560px) { .dash-kpi4.dash-kpi-money { grid-template-columns: 1fr; } }

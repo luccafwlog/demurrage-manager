@@ -106,6 +106,9 @@ as $$
   );
 $$;
 
+-- ⚠️ As policies abaixo são o estado ANTIGO (qualquer autenticado escreve tudo,
+-- inclusive usuarios.admin e os logs). O estado atual de produção deve ser o de
+-- supabase/migrations/20261008_seguranca_rls.sql — aplique-a depois deste arquivo.
 -- ──────────────────────────────────────────
 -- 3. ROW LEVEL SECURITY (RLS) — MODELO COLABORATIVO
 -- ──────────────────────────────────────────

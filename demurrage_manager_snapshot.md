@@ -377,8 +377,8 @@ items.forEach(item => {
 
 ## 7. ⚠️ Riscos Técnicos e Pontos de Atenção
 
-### [ALTO] RLS não isola dados por usuário
-Todos os autenticados leem/escrevem todos os dados. Intencionalmente colaborativo hoje, mas impede multitenancy futuro sem migração de RLS.
+### [RESOLVIDO v4.0] RLS por função
+Colaborativo entre usuários ATIVOS; admin, auditoria e taxas protegidos no servidor (ver migração 20261008).
 
 ### [ALTO] bls e clients sem paginação
 `db.js` carrega `bls` e `clients` em query única sem `.range()`. Se ultrapassarem `max_rows` do PostgREST, serão truncados silenciosamente. Monitorar crescimento; adicionar paginação quando necessário.
@@ -438,6 +438,41 @@ git push origin main
 ---
 
 ## 10. Changelog Recente
+
+### v4.0 — 2026-10-08 — revisão completa: segurança, integridade financeira e UI
+
+**Segurança**
+- `supabase/migrations/20261008_seguranca_rls.sql`: RLS por função — usuário inativo sem acesso no servidor; só admin escreve em `usuarios`, `rates` e apaga checkpoints/faturas emitidas; `logs` somente-inclusão; índice único por nº de BL.
+- `esc()`/`escJs()` (utils.js) aplicados em toda interpolação de dados em HTML (antes uma planilha com `<img onerror>` executava script).
+- `db.js` bloqueia usuário `ativo=false`; login/logout auditados; recuperação de senha pede a nova senha.
+- Hosting não publica mais `.md`/`.sql`; Supabase JS com versão fixa.
+
+**Dados**
+- Erro de gravação não marca mais o store como salvo (antes os dados se perdiam ao recarregar).
+- Exclusões sem filtro de `user_id` (registros de outros usuários "ressuscitavam").
+- Carga inicial com erro aborta em vez de abrir com dados parciais.
+- Backup/checkpoint: `_dmFireReplaceAll` grava tudo antes de remover; checkpoint de segurança automático; só admin.
+- Sincronização em tempo real entre usuários (`postgres_changes` → `_dmOnRemoteChange`).
+
+**Faturamento**
+- Fonte única de valor: `invoiceTotalBRL(b)` (painel, KPIs, relatório, e-mails, PIX, consolidada).
+- Não congela com PTAX indisponível (antes congelava R$ 0,00); valores congelados em centavos.
+- Congelamento usa o valor EMITIDO (impressão/e-mail: `emittedRoe/emittedTotal`).
+- "Editar Valor" persistido (`manualTotal`) e auditado.
+- Desfazer pagamento de BL faturado mantém o valor congelado; pagamento registra valor recebido (`paidAmount`).
+- Conciliação PIX confere valor (divergência desmarcada e confirmada); uma transação por fatura.
+- Consolidada não aceita BL já faturado; BL duplicado bloqueado; exclusão de fatura emitida só admin.
+- Datas no fuso de Brasília + feriados nacionais em `nextBusinessDay`.
+
+**Rastreamento**
+- Free time padrão por tipo (`trkFreeTime`: reefer 10d, demais 21d) — antes 21 para todos.
+- "Migrar para Faturamento" salva de fato; "Atenção" usa a mesma janela de alerta do painel.
+- Reimportação não sobrescreve containers editados manualmente no BL.
+
+**UI**
+- Painel/cabeçalho/modais responsivos; faturado com cor própria; botões de ação com rótulo de ação; foco de teclado; avisos de erro ficam 8s.
+
+> ⚠️ Containers importados ANTES desta versão sem FREE TIME na planilha ficaram gravados com 21 dias, inclusive reefers. Revise-os (filtro por tipo RF) e corrija pelo modal de edição.
 
 ### v3.18 — 2026-04-11 — fix: firstBilledAt backfill em BLs existentes + proteção na reversão
 

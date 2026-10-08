@@ -201,7 +201,7 @@ function normalizeCnpj(cnpj) {
 
 function formatCnpj(cnpj) {
   const d = normalizeCnpj(cnpj);
-  if (d.length !== 14) return d || cnpj;
+  if (d.length !== 14) return d; // só dígitos — nunca devolve texto bruto
   return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
 }
 
@@ -247,6 +247,7 @@ function autoRegisterClient(cnpj, name, email) {
 }
 
 function syncBLEmails(cnpjNorm, emails) {
+  if (!emails || !emails.length) return; // nunca apaga e-mails dos BLs por um cadastro vazio
   let changed = false;
   bls.forEach(b => {
     if (normalizeCnpj(b.cnpj) === cnpjNorm) {
@@ -339,7 +340,11 @@ function saveClient() {
 }
 
 function deleteClient(id) {
-  if (!confirm('Excluir este cliente?')) return;
+  const c = clients.find(x => x.id === id);
+  if (!c) return;
+  const nBLs = bls.filter(b => normalizeCnpj(b.cnpj) === normalizeCnpj(c.cnpj)).length;
+  if (!confirm(`Excluir o cliente ${c.name || formatCnpj(c.cnpj)}?${nBLs ? `\n\n${nBLs} BL(s) usam este CNPJ — eles continuam existindo, mas perdem os e-mails do cadastro.` : ''}`)) return;
+  logAuditAction('exclusao_cliente', { cnpj: c.cnpj, nome: c.name });
   clients = clients.filter(x => x.id !== id);
   cliSave(clients);
   renderClients();
@@ -347,6 +352,7 @@ function deleteClient(id) {
 }
 
 function clearClients() {
+  if (!requireAdmin('excluir todos os clientes')) return;
   showDoubleConfirmation(
     'Excluir todos os Clientes?',
     'Você está prestes a excluir permanentemente TODOS os clientes cadastrados no sistema. Informações de contato, histórico e configurações associadas também serão removidas.',
@@ -423,16 +429,16 @@ function renderClients() {
   tbody.innerHTML = filtered.map(c => {
     const blCount = bls.filter(b => normalizeCnpj(b.cnpj) === normalizeCnpj(c.cnpj)).length;
     const emailsHtml = (c.emails||[]).length
-      ? c.emails.map(e => `<span style="display:inline-block;background:#dbeafe;color:#1e40af;border-radius:4px;padding:1px 7px;font-size:11px;margin:1px;">${e}</span>`).join(' ')
+      ? c.emails.map(e => `<span style="display:inline-block;background:#dbeafe;color:#1e40af;border-radius:4px;padding:1px 7px;font-size:11px;margin:1px;">${esc(e)}</span>`).join(' ')
       : '<span style="color:var(--muted);font-size:11px;">—</span>';
     return `<tr>
       <td style="font-family:monospace;font-weight:600">${formatCnpj(c.cnpj)}</td>
-      <td style="text-align:left">${c.name||'—'}</td>
+      <td style="text-align:left">${esc(c.name||'—')}</td>
       <td style="text-align:left">${emailsHtml}</td>
       <td>${blCount > 0 ? `<span style="font-weight:600;color:var(--blue)">${blCount}</span>` : '—'}</td>
       <td>
-        <button class="act-btn edit" onclick="openEditClient('${c.id}')" style="padding:4px 10px;font-size:12px;">Editar</button>
-        <button class="act-btn del"  onclick="deleteClient('${c.id}')"  style="padding:4px 10px;font-size:12px;" aria-label="Excluir cliente ${c.name||c.id}">Excluir</button>
+        <button class="act-btn edit" onclick="openEditClient('${escJs(c.id)}')" style="padding:4px 10px;font-size:12px;">Editar</button>
+        <button class="act-btn del"  onclick="deleteClient('${escJs(c.id)}')"  style="padding:4px 10px;font-size:12px;" aria-label="Excluir cliente ${esc(c.name||c.id)}">Excluir</button>
       </td>
     </tr>`;
   }).join('');

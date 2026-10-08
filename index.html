@@ -21,9 +21,9 @@
   --surface: #161c2a;
   --border:  rgba(255,255,255,.07);
   --accent:  #1d8cf8;
-  --muted:   #4a5568;
+  --muted:   #8a94a6; /* contraste ≥ 4.5:1 sobre o fundo */
   --text:    #e2e8f0;
-  --subtext: #64748b;
+  --subtext: #94a3b8;
   --error:   #f87171;
   --success: #34d399;
 }
@@ -433,25 +433,27 @@ body {
   </div>
   <div class="form-title">Acesso</div>
   <div class="form-sub">Entre com sua conta corporativa</div>
+  <form id="login-form" onsubmit="event.preventDefault(); doLogin();" novalidate>
   <div class="field">
-    <label>E-mail</label>
+    <label for="email">E-mail</label>
     <div class="field-line">
-      <span class="field-icon">@</span>
-      <input type="email" id="email" placeholder="usuario@transhipping.com.br" autocomplete="email">
+      <span class="field-icon" aria-hidden="true">@</span>
+      <input type="email" id="email" name="email" required placeholder="usuario@transhipping.com.br" autocomplete="email">
     </div>
   </div>
   <div class="field">
-    <label>Senha</label>
+    <label for="password">Senha</label>
     <div class="field-line">
-      <span class="field-icon">#</span>
-      <input type="password" id="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password">
+      <span class="field-icon" aria-hidden="true">#</span>
+      <input type="password" id="password" name="password" required placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password">
     </div>
   </div>
-  <button class="btn-login" id="btn-login" onclick="doLogin()">Entrar no sistema</button>
-  <div class="alert alert-error" id="error-msg"></div>
-  <div class="alert alert-success" id="reset-success">E-mail de redefinicao enviado &mdash; verifique sua caixa de entrada.</div>
+  <button type="submit" class="btn-login" id="btn-login">Entrar no sistema</button>
+  </form>
+  <div class="alert alert-error" id="error-msg" role="alert"></div>
+  <div class="alert alert-success" id="reset-success" role="status">E-mail de redefinicao enviado &mdash; verifique sua caixa de entrada.</div>
   <div class="form-footer">
-    <button class="forgot-link" onclick="doReset()">Esqueci minha senha</button>
+    <button type="button" class="forgot-link" onclick="doReset()">Esqueci minha senha</button>
   </div>
   <div class="page-footer">
     <span class="page-footer-text">&copy; TRANSHIPPING</span>
@@ -459,7 +461,7 @@ body {
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
   // ── CONFIGURAÇÃO SUPABASE — mesmos valores de js/db.js ────────────────────
   const SUPABASE_URL  = 'https://vcdivphwlspsymgibfri.supabase.co';
@@ -467,16 +469,28 @@ body {
 
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
+  // Link de recuperação de senha: pede a nova senha antes de entrar.
+  // (Antes o link logava direto no sistema, sem trocar a senha.)
+  const isRecovery = location.hash.includes('type=recovery') || new URLSearchParams(location.search).get('recuperar');
+  sb.auth.onAuthStateChange(async (event) => {
+    if (event === 'PASSWORD_RECOVERY') {
+      const nova = prompt('Digite a nova senha (mínimo 8 caracteres):');
+      if (!nova || nova.length < 8) { alert('Senha não alterada (mínimo 8 caracteres).'); return; }
+      const { error } = await sb.auth.updateUser({ password: nova });
+      alert(error ? 'Erro ao trocar a senha: ' + error.message : 'Senha alterada! Entrando...');
+      if (!error) window.location.href = 'app.html';
+    }
+  });
   // Redireciona se já logado
   sb.auth.getSession().then(({ data: { session } }) => {
-    if (session) window.location.href = 'app.html';
+    if (session && !isRecovery) window.location.href = 'app.html';
   });
 
   const msgs = {
     'Invalid login credentials': 'E-mail ou senha incorretos.',
     'Email not confirmed':        'E-mail não confirmado. Verifique sua caixa de entrada.',
     'Too many requests':          'Muitas tentativas. Aguarde alguns minutos.',
-    'User not found':             'Usuário não encontrado.',
+    'User not found':             'E-mail ou senha incorretos.',
   };
 
   function _errMsg(e) {
@@ -512,13 +526,18 @@ body {
     const ok    = document.getElementById('reset-success');
     err.classList.remove('visible'); ok.classList.remove('visible');
     if (!email) { err.textContent = 'Digite seu e-mail acima.'; err.classList.add('visible'); return; }
-    const { error } = await sb.auth.resetPasswordForEmail(email);
+    // Mesma mensagem com ou sem conta: não revela quais e-mails existem.
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + '/index.html?recuperar=1' });
     if (error) { err.textContent = _errMsg(error); err.classList.add('visible'); }
     else        { ok.classList.add('visible'); }
   };
 
-  document.getElementById('password').addEventListener('keydown', e => { if (e.key === 'Enter') window.doLogin(); });
-  document.getElementById('email').addEventListener('keydown',    e => { if (e.key === 'Enter') document.getElementById('password').focus(); });
+  // Usuário desativado pelo administrador volta para cá com ?inativo=1
+  if (new URLSearchParams(location.search).get('inativo')) {
+    const err = document.getElementById('error-msg');
+    err.textContent = 'Seu acesso está desativado. Fale com o administrador do sistema.';
+    err.classList.add('visible');
+  }
 </script>
 </body>
 </html>

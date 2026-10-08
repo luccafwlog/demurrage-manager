@@ -30,7 +30,7 @@ let trkData = (() => {
   const clean = raw.filter(r => {
     if (r.emptyReturn && r.discharge) {
       const used = trkDaysBetween(r.discharge, r.emptyReturn);
-      const ft   = r.freeTime || 21;
+      const ft   = trkFreeTime(r);
       if (used !== null && used <= ft) return false;
     }
     return true;
@@ -42,7 +42,7 @@ let trkImportRaw = null;
 
 function trkParseDate(val) {
   if (!val) return null;
-  if (val instanceof Date) return val.toISOString().slice(0,10);
+  if (val instanceof Date) return isoLocal(val);
   if (typeof val === 'number') {
     // Excel serial
     const d = new Date((val - 25569) * 86400 * 1000);
@@ -86,7 +86,7 @@ function trkDaysElapsed(discharge) {
 }
 
 function trkStatus(row) {
-  const ft = row.freeTime || 21;
+  const ft = trkFreeTime(row);
   if (row.emptyReturn) {
     // Container devolvido — verificar se gerou demurrage
     const usedDays = trkDaysBetween(row.discharge, row.emptyReturn);
@@ -97,7 +97,9 @@ function trkStatus(row) {
   if (elapsed === null) return 'none';
   const daysOver = elapsed - ft;
   if (daysOver > 0) return 'dd_open';        // gerando demurrage
-  if (daysOver >= -1) return 'grace';         // vence hoje ou amanhã
+  // "Atenção" = mesma janela dos alertas do painel (Configurações → dias de alerta).
+  const alertDays = (typeof getAlertDays === 'function') ? getAlertDays() : 5;
+  if (-daysOver <= alertDays) return 'grace';
   return 'free';
 }
 
@@ -139,7 +141,7 @@ function processTrkFile(file) {
       document.getElementById('trk-import-btn').disabled = true;
       document.getElementById('trk-drop-zone').innerHTML = `
         <div class="drop-icon">❌</div>
-        <p><strong>${file.name}</strong></p>
+        <p><strong>${esc(file.name)}</strong></p>
         <p>${rows.length} linha(s) encontrada(s) — <span style="color:#dc2626;font-weight:700;">${semCnpj.length} sem CNPJ válido</span></p>
         <p style="color:#dc2626;font-size:12px;margin-top:4px;">Preencha o CNPJ (14 dígitos) de todos os containers e importe novamente.</p>`;
       toast(`${semCnpj.length} container(s) sem CNPJ válido. Corrija a planilha.`, 'error');
@@ -148,7 +150,7 @@ function processTrkFile(file) {
 
     trkImportRaw = rows;
     document.getElementById('trk-import-btn').disabled = false;
-    document.getElementById('trk-drop-zone').innerHTML = `<div class="drop-icon">✅</div><p><strong>${file.name}</strong></p><p>${rows.length} linha(s) encontrada(s) — todos os CNPJs OK</p>`;
+    document.getElementById('trk-drop-zone').innerHTML = `<div class="drop-icon">✅</div><p><strong>${esc(file.name)}</strong></p><p>${rows.length} linha(s) encontrada(s) — todos os CNPJs OK</p>`;
     toast(`${rows.length} linha(s) lidas.`, 'success');
   };
   reader.readAsArrayBuffer(file);
@@ -160,7 +162,10 @@ function doTrkImport() {
     const n = {};
     Object.entries(row).forEach(([k,v]) => { n[trkNk(k)] = v; });
     const discharge = trkParseDate(n['DISCHARGE_DATE'] || n['DISCHARGE'] || n['DATA_DESCARGA'] || '');
-    const freeTime  = parseInt(n['FREE_TIME'] || n['FREE TIME'] || 21) || 21;
+    const type      = String(n['TYPE'] || n['TIPO'] || '').trim();
+    const ftRaw     = parseInt(n['FREE_TIME'] || n['FREE TIME'], 10);
+    // Sem FREE TIME na planilha: padrão da tabela para o tipo (reefer = 10d).
+    const freeTime  = !isNaN(ftRaw) && ftRaw >= 0 ? ftRaw : getRate(type).freeUntil;
     const emptyReturnRaw = trkParseDate(n['EMPTY_RETURN'] || n['EMPTY RETURN'] || n['DEVOLUCAO'] || '');
     // Deadline = discharge + freeTime
     const deadline  = trkParseDate(n['DEADLINE_FREE_TIME'] || n['DEADLINE FREE TIME'] || '') || trkAddDays(discharge, freeTime);
@@ -171,7 +176,7 @@ function doTrkImport() {
       container:   String(n['CONTAINER'] || n['CTR'] || '').trim().toUpperCase(),
       bl:          String(n['BL'] || n['B/L'] || n['B_L'] || '').trim().toUpperCase(),
       cnee:        String(n['CNEE'] || n['CLIENTE'] || '').trim(),
-      type:        String(n['TYPE'] || n['TIPO'] || '').trim(),
+      type,
       pol:         String(n['POL'] || '').trim(),
       pod:         String(n['POD'] || '').trim(),
       vessel:      String(n['VESSEL'] || n['NAVIO'] || '').trim(),
@@ -188,7 +193,7 @@ function doTrkImport() {
     if (!r.container) return false;
     if (r.emptyReturn && r.discharge) {
       const used = trkDaysBetween(r.discharge, r.emptyReturn);
-      const ft   = r.freeTime || 21;
+      const ft   = trkFreeTime(r);
       // Só ignora se for NOVO (não existe ainda no sistema).
       // Containers já cadastrados sempre recebem a atualização da data de devolução,
       // mesmo que a devolução tenha ocorrido dentro do free time.
@@ -201,7 +206,7 @@ function doTrkImport() {
   let added = 0, updated = 0;
   imported.forEach(imp => {
     const idx = trkData.findIndex(x => x.container === imp.container && x.bl === imp.bl);
-    if (idx >= 0) { trkData[idx] = imp; updated++; }
+    if (idx >= 0) { trkData[idx] = { ...trkData[idx], ...imp }; updated++; }
     else { trkData.push(imp); added++; }
   });
   trkSave(trkData);
@@ -286,6 +291,16 @@ function doTrkImport() {
   toast(msg, 'success');
 }
 
+// Free time do BL migrado: só fixa um valor quando todos os containers têm o
+// mesmo free time e ele difere do padrão do tipo (negociado). Caso contrário
+// fica null e cada container usa o padrão da tabela do seu tipo.
+function blFreeTimeFromContainers(containers) {
+  const fts = [...new Set(containers.map(trkFreeTime))];
+  if (fts.length !== 1) return null;
+  const allDefault = containers.every(c => getRate(c.type).freeUntil === fts[0]);
+  return allDefault ? null : fts[0];
+}
+
 function checkAndMigrateBLs() {
   // Group trkData by BL
   const byBL = {};
@@ -309,11 +324,12 @@ function checkAndMigrateBLs() {
 
     // Check if already migrated (BL already exists in billing module)
     // Fatura complementar tem o mesmo nº de BL mas não é o processo migrado.
-    const existingBL = bls.find(b => b.bl === blNum && !b.complementOf);
+    const existingBL = bls.find(b => String(b.bl||'').toUpperCase() === String(blNum).toUpperCase() && !b.complementOf);
     if (existingBL) {
       // FIX: atualiza lista de containers do BL já migrado se novos foram adicionados
       // (reimportação com containers adicionais deve refletir no faturamento)
-      if (!existingBL.paid && !existingBL.billed) {
+      // Não sobrescreve BL emitido nem containers corrigidos manualmente no BL.
+      if (!existingBL.paid && !existingBL.billed && !existingBL.containersEditedManually) {
         const freshContainers = containers.map(c => ({
           container:   c.container,
           type:        c.type || '40G1',
@@ -356,7 +372,7 @@ function checkAndMigrateBLs() {
       cnpj: cnpjRaw,
       phone: '',
       email: resolvedEmail,
-      freeTime: first.freeTime || 21,
+      freeTime: blFreeTimeFromContainers(containers),
       roe: null,
       roeManual: false,
       ov1: null,
@@ -364,7 +380,8 @@ function checkAndMigrateBLs() {
       venc: nextBusinessDay(null),
       docnum: genDocnum(blNum),
       migratedFromTracking: true,
-      migratedAt: new Date().toISOString().slice(0,10),
+      migratedAt: todayISO(),
+      readyAt: containers.reduce((m, c) => (c.emptyReturn > m ? c.emptyReturn : m), ''),
       containers: containers.map(c => ({
         container: c.container,
         type: c.type || '40G1',
@@ -459,11 +476,11 @@ function renderTracking() {
   const filtered = trkData.filter(r => {
     if (r.emptyReturn && r.discharge) {
       const used = trkDaysBetween(r.discharge, r.emptyReturn);
-      if (used !== null && used <= (r.freeTime || 21)) return false;
+      if (used !== null && used <= (trkFreeTime(r))) return false;
     }
     const status = trkStatus(r);
     const elapsed = trkDaysElapsed(r.discharge);
-    const ft = r.freeTime || 21;
+    const ft = trkFreeTime(r);
     const useDays = r.useDays !== null && r.useDays !== undefined
       ? r.useDays
       : (r.emptyReturn ? trkDaysBetween(r.discharge, r.emptyReturn) : (elapsed !== null ? elapsed : null));
@@ -541,7 +558,7 @@ function renderTracking() {
     tbody.innerHTML = filtered.map(r => {
     const status = trkStatus(r);
     const elapsed = trkDaysElapsed(r.discharge);
-    const ft = r.freeTime || 21;
+    const ft = trkFreeTime(r);
     const daysOver = elapsed !== null ? elapsed - ft : null;
     const useDays = r.useDays !== null && r.useDays !== undefined
       ? r.useDays
@@ -583,7 +600,7 @@ function renderTracking() {
       } else if (ms.allReturned && ms.hasDemurrage) {
         blBadge = `<br><span class="pill pill-grace" style="margin-top:3px;font-size:10px;">⚡ Pronto p/ faturar</span>`;
       } else if (!ms.allReturned) {
-        blBadge = `<br><span style="font-size:10px;color:var(--muted);">${ms.returned}/${ms.total} devolvidos</span>`;
+        blBadge = `<br><span style="font-size:10px;color:var(--muted);">${esc(ms.returned)}/${esc(ms.total)} devolvidos</span>`;
       }
     }
 
@@ -598,9 +615,9 @@ function renderTracking() {
       ? `<span style="font-family:monospace;font-size:10px;color:var(--muted);">${formatCnpj(r.cnpj)}</span>`
       : `<span style="color:#dc2626;font-size:10px;" title="CNPJ não vinculado">—</span>`;
     return `<tr class="${rowClass}">
-      <td style="font-weight:600;white-space:normal;word-break:break-all;">${r.container}</td>
-      <td style="text-align:left;white-space:normal;word-break:break-all;font-weight:600;">${r.bl||'—'}${blBadge}</td>
-      <td style="text-align:left;overflow:hidden;text-overflow:ellipsis;" title="${r.cnee||''}">${r.cnee||'—'}</td>
+      <td style="font-weight:600;white-space:normal;word-break:break-all;">${esc(r.container)}</td>
+      <td style="text-align:left;white-space:normal;word-break:break-all;font-weight:600;">${esc(r.bl||'—')}${blBadge}</td>
+      <td style="text-align:left;overflow:hidden;text-overflow:ellipsis;" title="${esc(r.cnee||'')}">${esc(r.cnee||'—')}</td>
       <td>${cnpjDisplay}</td>
       <td>${trkFmtDate(r.emptyReturn)}</td>
       <td>${useDays !== null ? useDays : '—'}</td>
@@ -609,8 +626,8 @@ function renderTracking() {
       <td>${pillHtml}</td>
       <td>${migratedAtCell}</td>
       <td style="white-space:nowrap;">
-        <button class="act-btn edit" onclick="openEditContainer('${safeKey}')" style="padding:3px 8px;font-size:11px;" title="Editar">✏️</button>
-        <button class="act-btn del"  onclick="confirmDeleteContainer('${safeKey}')" style="padding:3px 8px;font-size:11px;" title="Excluir">🗑️</button>
+        <button class="act-btn edit" onclick="openEditContainer('${escJs(safeKey)}')" style="padding:3px 8px;font-size:11px;" title="Editar">✏️</button>
+        <button class="act-btn del"  onclick="confirmDeleteContainer('${escJs(safeKey)}')" style="padding:3px 8px;font-size:11px;" title="Excluir">🗑️</button>
       </td>
     </tr>`;
   }).join('');
@@ -630,7 +647,7 @@ function openEditContainer(safeKey) {
   document.getElementById('te-cnee').value        = r.cnee || '';
   document.getElementById('te-cnpj').value        = r.cnpj ? formatCnpj(r.cnpj) : '';
   document.getElementById('te-type').value        = r.type || '';
-  document.getElementById('te-freetime').value    = r.freeTime || 21;
+  document.getElementById('te-freetime').value    = trkFreeTime(r);
   document.getElementById('te-pol').value         = r.pol || '';
   document.getElementById('te-pod').value         = r.pod || '';
   document.getElementById('te-vessel').value      = r.vessel || '';
@@ -658,7 +675,8 @@ function saveEditContainer() {
   const newCnpjRaw    = document.getElementById('te-cnpj').value.replace(/\D/g,'');
   const newCnpj       = newCnpjRaw.length === 13 ? '0'+newCnpjRaw : newCnpjRaw;
   const newType       = document.getElementById('te-type').value.trim();
-  const newFreeTime   = parseInt(document.getElementById('te-freetime').value) || 21;
+  const ftIn = parseInt(document.getElementById('te-freetime').value, 10);
+  const newFreeTime   = !isNaN(ftIn) && ftIn >= 0 ? ftIn : getRate(document.getElementById('te-type').value.trim()).freeUntil;
   const newPol        = document.getElementById('te-pol').value.trim();
   const newPod        = document.getElementById('te-pod').value.trim();
   const newVessel     = document.getElementById('te-vessel').value.trim();
@@ -681,17 +699,22 @@ function saveEditContainer() {
 
   // Atualiza o container correspondente no BL de faturamento (se existir e não estiver congelado)
   const linkedBL = bls.find(b => b.bl === oldBL && !b.complementOf);
-  if (linkedBL && !linkedBL.billed) {
+  if (linkedBL && !linkedBL.billed && !linkedBL.paid) {
     const cIdx = (linkedBL.containers||[]).findIndex(c => c.container === oldContainer);
     if (cIdx >= 0) {
       linkedBL.containers[cIdx] = {
+        ...linkedBL.containers[cIdx],
         container:   newContainer,
         type:        newType,
         discharge:   newDischarge,
         emptyReturn: newEmptyRet,
       };
-      // Se o BL mudou também, atualiza o bl referenciado
-      if (newBL !== oldBL) linkedBL.bl = newBL;
+      // Renomear o BL só é seguro se ele não tiver outros containers no rastreamento.
+      if (newBL !== oldBL) {
+        const others = trkData.filter(x => (x.bl||'') === oldBL);
+        if (!others.length) linkedBL.bl = newBL;
+        else linkedBL.containers.splice(cIdx, 1);
+      }
       if (typeof save === 'function') save(bls);
     }
   }
@@ -709,7 +732,7 @@ function confirmDeleteContainer(safeKey) {
   if (!r) return;
 
   const linkedBL = bls.find(b => b.bl === r.bl && !b.complementOf);
-  const billedWarn = linkedBL && linkedBL.billed ? '\n\nAtenção: o BL vinculado já foi faturado (congelado). O container será removido do rastreamento mas NÃO da fatura.' : '';
+  const billedWarn = linkedBL && (linkedBL.billed || linkedBL.paid) ? '\n\nAtenção: o BL vinculado já foi faturado (congelado). O container será removido do rastreamento mas NÃO da fatura.' : '';
   const msg = `Excluir container "${container}" do BL "${bl||'—'}"?${billedWarn}\n\nEsta ação não pode ser desfeita.`;
   if (!confirm(msg)) return;
 
@@ -718,7 +741,7 @@ function confirmDeleteContainer(safeKey) {
   trkSave(trkData);
 
   // Remove do BL de faturamento se existir e não estiver congelado
-  if (linkedBL && !linkedBL.billed) {
+  if (linkedBL && !linkedBL.billed && !linkedBL.paid) {
     linkedBL.containers = (linkedBL.containers||[]).filter(c => c.container !== container);
     if (typeof save === 'function') save(bls);
   }
@@ -757,19 +780,22 @@ function clearTrkFilters() {
 }
 
 function manualMigrate() {
-  const migrated = checkAndMigrateBLs();
-  if (migrated > 0) {
-    // FIX: checkAndMigrateBLs não faz save — precisamos persistir os BLs migrados
+  // checkAndMigrateBLs devolve { newBLs, updatedContainers } — antes era
+  // comparado com "> 0" como número e os BLs migrados nunca eram salvos.
+  const { newBLs, updatedContainers } = checkAndMigrateBLs();
+  if (newBLs > 0 || updatedContainers > 0) {
     save(bls);
     renderTracking();
     renderList();
-    toast(`${migrated} BL(s) migrado(s) para Faturamento com sucesso!`, 'success');
+    logAuditAction('migracao_faturamento', { novos: newBLs, atualizados: updatedContainers });
+    toast(`${newBLs} BL(s) migrado(s) para Faturamento${updatedContainers ? `, ${updatedContainers} atualizado(s)` : ''}.`, 'success');
   } else {
     toast('Nenhum BL novo elegível para migração.', '');
   }
 }
 
 function clearTracking() {
+  if (!requireAdmin('excluir containers em massa')) return;
   // Abre o modal unificado de limpeza / exclusão em massa
   _openClearModal();
 }
@@ -806,6 +832,7 @@ function _switchClearTab(tabId) {
 }
 
 function _execClearAll() {
+  if (!requireAdmin('excluir todos os containers')) return;
   closeModal('modal-trk-clear');
   showDoubleConfirmation(
     'Excluir TODOS os Containers?',
@@ -933,9 +960,9 @@ function _validateBulkDelete(pairs) {
             <th style="padding:5px 8px;border-bottom:1px solid #fde68a;">Descarga</th>
           </tr></thead>
           <tbody>${found.map(r => `<tr style="border-bottom:1px solid #f3f4f6;">
-            <td style="padding:5px 8px;font-weight:700;">${r.container||'—'}</td>
-            <td style="padding:5px 8px;color:#6b7280;font-size:11px;">${r.bl||'—'}</td>
-            <td style="padding:5px 8px;color:#6b7280;font-size:11px;">${r.cnee||r.client||'—'}</td>
+            <td style="padding:5px 8px;font-weight:700;">${esc(r.container||'—')}</td>
+            <td style="padding:5px 8px;color:#6b7280;font-size:11px;">${esc(r.bl||'—')}</td>
+            <td style="padding:5px 8px;color:#6b7280;font-size:11px;">${esc(r.cnee||r.client||'—')}</td>
             <td style="padding:5px 8px;">${stLabel[trkStatus(r)]||trkStatus(r)}</td>
             <td style="padding:5px 8px;color:#6b7280;font-size:11px;">${r.discharge ? trkFmtDate(r.discharge) : '—'}</td>
           </tr>`).join('')}</tbody>
@@ -1010,7 +1037,7 @@ function exportTrkReport() {
   const rows = trkData.map(r => {
     const status = trkStatus(r);
     const elapsed = trkDaysElapsed(r.discharge);
-    const ft = r.freeTime || 21;
+    const ft = trkFreeTime(r);
     const useDays = r.useDays !== null && r.useDays !== undefined
       ? r.useDays
       : (r.emptyReturn ? trkDaysBetween(r.discharge, r.emptyReturn) : (elapsed !== null ? elapsed : null));
@@ -1037,7 +1064,7 @@ function exportTrkReport() {
   ws['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:headers.length-1}}];
   ws['!ref'] = `A1:${XLSX.utils.encode_cell({r:rows.length+1, c:headers.length-1})}`;
   XLSX.utils.book_append_sheet(wb, ws, 'Controle');
-  const stamp = new Date().toISOString().slice(0,10);
+  const stamp = todayISO();
   XLSX.writeFile(wb, `Controle_Containers_${stamp}.xlsx`);
   toast('Relatório exportado!', 'success');
 }
@@ -1057,7 +1084,7 @@ function exportCoscoReport() {
   trkData.forEach(r => {
     const status = trkStatus(r);
     if (status !== 'dd_open' && status !== 'dd_returned') return;
-    const ft = r.freeTime || 21;
+    const ft = trkFreeTime(r);
     const dc = r.emptyReturn ? trkDaysBetween(r.discharge, r.emptyReturn) : trkDaysElapsed(r.discharge);
     if (!dc || dc <= ft) return;
     const rate = getRateForBL({ freeTime: ft }, r.type);
@@ -1073,7 +1100,7 @@ function exportCoscoReport() {
     const status = trkStatus(r);
     if (status !== 'dd_open' && status !== 'dd_returned') return;
 
-    const ft = r.freeTime || 21;
+    const ft = trkFreeTime(r);
     const dc = r.emptyReturn
       ? trkDaysBetween(r.discharge, r.emptyReturn)
       : trkDaysElapsed(r.discharge);

@@ -113,8 +113,8 @@ var MiniZip = (function() {
 
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/base.css">
-<link rel="stylesheet" href="css/components.css?v=4">
+<link rel="stylesheet" href="css/base.css?v=2">
+<link rel="stylesheet" href="css/components.css?v=5">
 </head>
 <body>
 
@@ -125,7 +125,7 @@ var MiniZip = (function() {
   gap:16px;font-family:'Inter',system-ui,sans-serif;">
   <div style="width:44px;height:44px;border:3px solid #334155;border-top-color:#3b82f6;
     border-radius:50%;animation:spin 0.8s linear infinite;"></div>
-  <div style="color:#94a3b8;font-size:13px;letter-spacing:.3px;">Conectando ao Firebase...</div>
+  <div style="color:#94a3b8;font-size:13px;letter-spacing:.3px;">Carregando dados...</div>
   <style>
     @keyframes spin{to{transform:rotate(360deg)}}
     /* Clear modal sub-tabs — tracking */
@@ -143,7 +143,7 @@ var MiniZip = (function() {
 </div>
 
 <!-- ── SUPABASE SDK + DB MODULE ────────────────────────────────── -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script type="module" src="js/db.js?v=140"></script>
 
 
@@ -162,7 +162,7 @@ var MiniZip = (function() {
     </div>
   </div>
   <header class="header">
-    <div class="header-brand" onclick="switchModule('dashboard')" style="cursor:pointer;">
+    <div class="header-brand" role="button" tabindex="0" onclick="switchModule('dashboard')" style="cursor:pointer;">
       <img id="header-logo-img" src="data:image/jpeg;base64,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fW+nW6DI8rsMxuUssjRmW2WGr3MQ222kJShIfWAkAdgAO2q3rwzZbOZ5BxjC3bZYJtpuV5aRJEyzx5DqkuKSlQDi0FYGh6A9qjPLburIMqu9+WwI6rlOemFoK6g2XHFL6d+3XVrderjzI14fnVlyluImYu1TW5aWFL6A4UKB6SrR1vXrqg2DmLM7nkN+m2iXBscWLbri+mOIFpjxVaCikBSm0JKhoe3devwwwodx58xCFcIjEyK9O6XWX2w42sdCuxSexH11oV8nG6Xqdc1Nhoy5Lj5QDvp61FWt+3W6zXFuWOYLyBZ8uahJnLtj/nJjqc6A58kjXVo69fdQa/NAE18AAAOKAA+urE8e45iWTeHSx4xcocKHkF/vM9qzXhSEpUiWyhotMOL1vy3OtSO50FFJ17q5vuea+47rXWoq17tmtnuGZPyuNrJhiYYZFpuMmeiWl09S1PBsdPTrtry9737aCZsixXGMV8O2bYsmBDl5bY5FqevNy6UrUzJkOudURtfsS0htKVEHRWpfuqukRkyJTUdKkpLq0oBUdAbOtmtmsmaSLdgOW4quJ8aOSPwnnZa3j1tKjrcX6aPV1Fw7JI1r21qlBPPKeaOcVZzN49wnHsdYtdkKI0l2fZ2Jci5uBCS448t1KjpSidJSUgDWq1Hn6y2WFc8byKw21u0xcosTF2ctzRPlxXlKWhxLYPcNlTZUkewK16AV7JPKuNZCiJN5B43i5LfozCGDdGrq9CVLQhISj4whAIcUAAOoFJIA2a0vkXMbpnGRm83RuNHCGG4sSJFb6GIkdsabZbT30hI/vJPtoNcpSlApSlB+2HXWH0PsOLadbUFIWhRSpKh3BBHoannDfEteTY0Yxyljtu5BsQ0B8fSBLb9mw4Qeoj3kdX/mFQHSgs1a43hovkwXPEs9y/i67LHyWnfMW237wFp6jr63R9VbXCsVyYZ6bV407aY5Gx8buQQvX1LkE1TqlBbG9Y5g6mnRyB4t7jfIjg/ZoluddfCx7vkuOg/2KwTPJ/AXGp6+NOPJWT3pr9qu+Qq+QhQ9FpR37/Uls/TVa6UG78rcq5xybcRKyu8uSGW1FTEJoeXGY/itjtv2dR2r3mtIpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSgUpSg//9k=" alt="Transhipping" style="height:46px;width:auto;object-fit:contain;mix-blend-mode:screen;">
       <div>
         <div style="font-size:11px;font-weight:600;letter-spacing:1px;opacity:.6;text-transform:uppercase;">Demurrage Manager</div>
@@ -170,21 +170,21 @@ var MiniZip = (function() {
       </div>
     </div>
     <div class="header-right">
-      <div class="header-rate-link" onclick="openModal('modal-rates')">📋 Tabela de Taxas</div>
+      <div class="header-rate-link" role="button" tabindex="0" onclick="openModal('modal-rates')">📋 Tabela de Taxas</div>
       <div id="header-user-info" style="display:flex;align-items:center;gap:7px;padding:5px 12px;background:rgba(255,255,255,0.08);border-radius:20px;cursor:default;user-select:none;" title="Usuário logado">
         <span style="font-size:15px;">👤</span>
         <span id="header-user-name" style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.85);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">—</span>
       </div>
-      <div class="header-logout" id="logout-btn" onclick="if(window._dmLogout){window._dmLogout();}else{window.location.href='index.html';}">Sair</div>
+      <div class="header-logout" id="logout-btn" role="button" tabindex="0" onclick="if(window._dmLogout){window._dmLogout();}else{window.location.href='index.html';}">Sair</div>
     </div>
   </header>
   <div class="mod-tabs">
-    <div class="mod-tab" id="tab-dashboard" onclick="switchModule('dashboard')">🏠 Painel</div>
-    <div class="mod-tab" id="tab-billing" onclick="switchModule('billing')">📄 Faturamento</div>
-    <div class="mod-tab" id="tab-tracking" onclick="switchModule('tracking')">📦 Controle de Containers</div>
-    <div class="mod-tab" id="tab-clients" onclick="switchModule('clients')">👥 Clientes</div>
-    <div class="mod-tab" id="tab-users" onclick="switchModule('users')" style="display:none;">👨‍💼 Usuários</div>
-    <div class="mod-tab" id="tab-settings" onclick="switchModule('settings')">⚙️ Configurações</div>
+    <div class="mod-tab" id="tab-dashboard" role="button" tabindex="0" onclick="switchModule('dashboard')">🏠 Painel</div>
+    <div class="mod-tab" id="tab-billing" role="button" tabindex="0" onclick="switchModule('billing')">📄 Faturamento</div>
+    <div class="mod-tab" id="tab-tracking" role="button" tabindex="0" onclick="switchModule('tracking')">📦 Controle de Containers</div>
+    <div class="mod-tab" id="tab-clients" role="button" tabindex="0" onclick="switchModule('clients')">👥 Clientes</div>
+    <div class="mod-tab" id="tab-users" role="button" tabindex="0" onclick="switchModule('users')" style="display:none;">👨‍💼 Usuários</div>
+    <div class="mod-tab" id="tab-settings" role="button" tabindex="0" onclick="switchModule('settings')">⚙️ Configurações</div>
   </div>
 <!-- DASHBOARD MODULE -->
   <div class="page" id="mod-dashboard" style="display:none;">
@@ -210,27 +210,27 @@ var MiniZip = (function() {
 
           <div class="dash-group-label">Faturamento</div>
           <!-- Linha 1: 4 cards de contagem -->
-          <div class="dash-kpi4" style="grid-template-columns:repeat(4,1fr);">
-            <div class="dk-card dk-slate" onclick="switchModule('billing')" title="Total de BLs cadastrados">
+          <div class="dash-kpi4">
+            <div class="dk-card dk-slate" role="button" tabindex="0" onclick="switchModule('billing')" title="Total de BLs cadastrados">
               <div class="dk-top"><span class="dk-ico">📄</span><span class="dk-val" id="dk-total-bls">—</span></div>
               <div class="dk-lbl">Total de BLs</div>
             </div>
-            <div class="dk-card dk-amber" onclick="switchModule('billing');setBillingSubTab('pendentes')" title="BLs ainda não faturados">
+            <div class="dk-card dk-amber" role="button" tabindex="0" onclick="switchModule('billing');setBillingSubTab('pendentes')" title="BLs ainda não faturados">
               <div class="dk-top"><span class="dk-ico">⏳</span><span class="dk-val" id="dk-pendentes">—</span></div>
               <div class="dk-lbl">Pendentes</div>
             </div>
-            <div class="dk-card dk-blue" onclick="switchModule('billing');setBillingSubTab('faturados')" title="BLs faturados aguardando pagamento">
+            <div class="dk-card dk-blue" role="button" tabindex="0" onclick="switchModule('billing');setBillingSubTab('faturados')" title="BLs faturados aguardando pagamento">
               <div class="dk-top"><span class="dk-ico">🧾</span><span class="dk-val" id="dk-faturados">—</span></div>
               <div class="dk-lbl">Faturados</div>
             </div>
-            <div class="dk-card dk-green" onclick="switchModule('billing');setBillingSubTab('pagos')" title="BLs com pagamento confirmado">
+            <div class="dk-card dk-green" role="button" tabindex="0" onclick="switchModule('billing');setBillingSubTab('pagos')" title="BLs com pagamento confirmado">
               <div class="dk-top"><span class="dk-ico">✅</span><span class="dk-val" id="dk-pagos">—</span></div>
               <div class="dk-lbl">Pagos</div>
             </div>
           </div>
           <!-- Linha 2: 3 cards financeiros — saldo herói + faturado + disputa -->
-          <div class="dash-kpi4" style="grid-template-columns:2fr 1.2fr 1fr;margin-top:14px;">
-            <div class="dk-card dk-navy" onclick="switchModule('billing')" title="Saldo total em aberto">
+          <div class="dash-kpi4 dash-kpi-money" style="margin-top:14px;">
+            <div class="dk-card dk-navy" role="button" tabindex="0" onclick="switchModule('billing')" title="Saldo total em aberto">
               <div style="display:flex;align-items:center;gap:16px;min-width:0;">
                 <span style="font-size:28px;opacity:.85;flex-shrink:0;">💰</span>
                 <div style="min-width:0;overflow:hidden;">
@@ -239,7 +239,7 @@ var MiniZip = (function() {
                 </div>
               </div>
             </div>
-            <div class="dk-card dk-blue" onclick="switchModule('billing');setBillingSubTab('faturados')" style="cursor:pointer;" title="Valor dos BLs faturados aguardando pagamento">
+            <div class="dk-card dk-blue" role="button" tabindex="0" onclick="switchModule('billing');setBillingSubTab('faturados')" style="cursor:pointer;" title="Valor dos BLs faturados aguardando pagamento">
               <div style="display:flex;align-items:center;gap:12px;min-width:0;">
                 <span style="font-size:24px;flex-shrink:0;">📊</span>
                 <div style="min-width:0;overflow:hidden;">
@@ -248,7 +248,7 @@ var MiniZip = (function() {
                 </div>
               </div>
             </div>
-            <div class="dk-card dk-amber" onclick="switchModule('billing');toggleDisputeFilter()" style="cursor:pointer;" title="Valor de BLs com disputas abertas">
+            <div class="dk-card dk-amber" role="button" tabindex="0" onclick="switchModule('billing');toggleDisputeFilter()" style="cursor:pointer;" title="Valor de BLs com disputas abertas">
               <div style="display:flex;align-items:center;gap:12px;min-width:0;">
                 <span style="font-size:24px;flex-shrink:0;">⚖️</span>
                 <div style="min-width:0;overflow:hidden;">
@@ -261,20 +261,20 @@ var MiniZip = (function() {
 
           <div class="dash-group-label" style="margin-top:20px;">Controle de Containers</div>
           <div class="dash-kpi4">
-            <div class="dk-card dk-navy" onclick="switchModule('tracking')">
+            <div class="dk-card dk-navy" role="button" tabindex="0" onclick="switchModule('tracking')">
               <div class="dk-top"><span class="dk-ico">📦</span><span class="dk-val" id="dk-ctrs-total">—</span></div>
               <div class="dk-lbl">Total</div>
             </div>
-            <div class="dk-card dk-red" onclick="switchModule('tracking');document.getElementById('tf-status').value='dd_open';renderTracking()">
+            <div class="dk-card dk-red" role="button" tabindex="0" onclick="switchModule('tracking');document.getElementById('tf-status').value='dd_open';renderTracking()">
               <div class="dk-top"><span class="dk-ico">⛔</span><span class="dk-val" id="dk-ctrs-dd">—</span></div>
               <div class="dk-lbl">Em Demurrage</div>
               <div class="dk-sub" id="dk-dd30-sub"></div>
             </div>
-            <div class="dk-card dk-amber" onclick="switchModule('tracking');openAlertPanel()">
+            <div class="dk-card dk-amber" role="button" tabindex="0" onclick="switchModule('tracking');openAlertPanel()">
               <div class="dk-top"><span class="dk-ico">⚠️</span><span class="dk-val" id="dk-ctrs-alerta">—</span></div>
               <div class="dk-lbl">Em Alerta</div>
             </div>
-            <div class="dk-card dk-green" onclick="switchModule('tracking')">
+            <div class="dk-card dk-green" role="button" tabindex="0" onclick="switchModule('tracking')">
               <div class="dk-top"><span class="dk-ico">✅</span><span class="dk-val" id="dk-ctrs-livres">—</span></div>
               <div class="dk-lbl">No Free Time</div>
             </div>
@@ -347,15 +347,15 @@ var MiniZip = (function() {
 
     <!-- Sub-tabs -->
     <div class="billing-subtabs">
-      <div class="billing-subtab" id="subtab-pendentes" onclick="setBillingSubTab('pendentes')">
+      <div class="billing-subtab" id="subtab-pendentes" role="button" tabindex="0" onclick="setBillingSubTab('pendentes')">
         ⏳ Pendentes
         <span class="billing-subtab-badge" id="badge-pendentes"></span>
       </div>
-      <div class="billing-subtab active" id="subtab-faturados" onclick="setBillingSubTab('faturados')">
+      <div class="billing-subtab active" id="subtab-faturados" role="button" tabindex="0" onclick="setBillingSubTab('faturados')">
         📄 Faturados
         <span class="billing-subtab-badge" id="badge-faturados"></span>
       </div>
-      <div class="billing-subtab" id="subtab-pagos" onclick="setBillingSubTab('pagos')">
+      <div class="billing-subtab" id="subtab-pagos" role="button" tabindex="0" onclick="setBillingSubTab('pagos')">
         ✔ Pagos
         <span class="billing-subtab-badge" id="badge-pagos"></span>
       </div>
@@ -908,12 +908,12 @@ var MiniZip = (function() {
         </div>
         <div class="form-grid cols3" style="margin-top:12px">
           <div class="form-group"><label>POD (Destino)</label><input type="text" id="f-pod" placeholder="VITÓRIA"></div>
-          <div class="form-group"><label>Free Time (dias)</label><input type="number" id="f-freetime" value="21" min="0"><span class="field-hint muted">Padrão: 21 dias corridos</span></div>
+          <div class="form-group"><label>Free Time (dias)</label><input type="number" id="f-freetime" value="" min="0" placeholder="tabela" oninput="document.querySelectorAll('#containers-body tr').forEach(tr=>updateRow(tr.querySelector('input')))"><span class="field-hint muted">Vazio = padrão da tabela por tipo (GP/FR 21d · Reefer 10d)</span></div>
           <div class="form-group"><label>ROE (PTAX+6,5%)</label><input type="number" id="f-roe" step="0.0001" placeholder="ex: 5.5434"></div>
         </div>
         <div class="form-grid cols4" style="margin-top:12px">
-          <div class="form-group"><label>USD/Dia — 1º Per. (sobrescrever)</label><input type="number" id="f-usd1" step="0.01" placeholder="auto"><span class="field-hint" id="f-usd1-hint"></span></div>
-          <div class="form-group"><label>USD/Dia — 2º Per. (sobrescrever)</label><input type="number" id="f-usd2" step="0.01" placeholder="auto"><span class="field-hint" id="f-usd2-hint"></span></div>
+          <div class="form-group"><label>USD/Dia — 1º Per. (sobrescrever)</label><input type="number" id="f-usd1" step="0.01" placeholder="auto" oninput="document.querySelectorAll('#containers-body tr').forEach(tr=>updateRow(tr.querySelector('input')))"><span class="field-hint" id="f-usd1-hint"></span></div>
+          <div class="form-group"><label>USD/Dia — 2º Per. (sobrescrever)</label><input type="number" id="f-usd2" step="0.01" placeholder="auto" oninput="document.querySelectorAll('#containers-body tr').forEach(tr=>updateRow(tr.querySelector('input')))"><span class="field-hint" id="f-usd2-hint"></span></div>
           <div class="form-group"><label>Vencimento</label><input type="date" id="f-venc"></div>
           <div class="form-group"><label>Nº Documento <span style="font-weight:400;color:#9ca3af">(gerado automaticamente)</span></label><input type="text" id="f-docnum" placeholder="automático" style="color:var(--muted);background:#f9fafb"></div>
           <div class="form-group"><label>Data da Fatura / Recibo</label><input type="date" id="f-docdate"></div>
@@ -934,7 +934,7 @@ var MiniZip = (function() {
           <div class="section-label" style="margin-bottom:0">Contêineres</div>
           <button class="btn btn-outline btn-sm" onclick="addContainerRow()">+ Adicionar</button>
         </div>
-        <table class="ctable">
+        <div class="ctable-wrap"><table class="ctable">
           <thead><tr>
             <th>Container</th><th>Tipo</th><th>Descarga</th><th>Retorno</th>
             <th style="text-align:center">Dias Corridos</th>
@@ -943,7 +943,7 @@ var MiniZip = (function() {
             <th></th>
           </tr></thead>
           <tbody id="containers-body"></tbody>
-        </table>
+        </table></div>
       </div>
       <div class="form-section" id="discount-section">
         <div class="section-label">💚 Desconto (opcional)</div>
@@ -1452,7 +1452,6 @@ function downloadTemplate() {
         <span style="font-size:12px;color:var(--muted);">até</span>
         <input type="date" id="log-filter-to" onchange="renderLogs()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
         <button class="btn btn-outline btn-sm" onclick="clearLogFilters()">✕ Limpar filtros</button>
-        <button class="btn btn-danger btn-sm" onclick="confirmClearOldLogs()">🗑️ Limpar logs antigos</button>
       </div>
       <div id="log-table-wrap" style="overflow-x:auto;max-height:420px;overflow-y:auto;">
         <table class="trk-table" style="min-width:700px;">
