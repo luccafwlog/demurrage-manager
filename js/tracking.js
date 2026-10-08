@@ -234,7 +234,7 @@ function doTrkImport() {
 
     // Update CNPJ + email on any existing billing BL with same BL number
     bls.forEach(b => {
-      if (b.bl === blNum && !b.cnpj) {
+      if (b.bl === blNum && !b.cnpj && !b.complementOf) {
         b.cnpj = cnpj;
         const clientRec = getClientByCnpj(cnpj);
         if (clientRec) {
@@ -308,7 +308,8 @@ function checkAndMigrateBLs() {
     if (!hasDemurrage) return;
 
     // Check if already migrated (BL already exists in billing module)
-    const existingBL = bls.find(b => b.bl === blNum);
+    // Fatura complementar tem o mesmo nº de BL mas não é o processo migrado.
+    const existingBL = bls.find(b => b.bl === blNum && !b.complementOf);
     if (existingBL) {
       // FIX: atualiza lista de containers do BL já migrado se novos foram adicionados
       // (reimportação com containers adicionais deve refletir no faturamento)
@@ -637,7 +638,7 @@ function openEditContainer(safeKey) {
   document.getElementById('te-emptyreturn').value = r.emptyReturn || '';
 
   // Verifica se existe fatura vinculada
-  const linkedBL = bls.find(b => b.bl === r.bl);
+  const linkedBL = bls.find(b => b.bl === r.bl && !b.complementOf);
   const warnEl = document.getElementById('te-billing-warn');
   if (warnEl) warnEl.style.display = linkedBL ? '' : 'none';
 
@@ -679,7 +680,7 @@ function saveEditContainer() {
   trkSave(trkData);
 
   // Atualiza o container correspondente no BL de faturamento (se existir e não estiver congelado)
-  const linkedBL = bls.find(b => b.bl === oldBL);
+  const linkedBL = bls.find(b => b.bl === oldBL && !b.complementOf);
   if (linkedBL && !linkedBL.billed) {
     const cIdx = (linkedBL.containers||[]).findIndex(c => c.container === oldContainer);
     if (cIdx >= 0) {
@@ -707,7 +708,7 @@ function confirmDeleteContainer(safeKey) {
   const r = trkData.find(x => x.container === container && (x.bl||'') === (bl||''));
   if (!r) return;
 
-  const linkedBL = bls.find(b => b.bl === r.bl);
+  const linkedBL = bls.find(b => b.bl === r.bl && !b.complementOf);
   const billedWarn = linkedBL && linkedBL.billed ? '\n\nAtenção: o BL vinculado já foi faturado (congelado). O container será removido do rastreamento mas NÃO da fatura.' : '';
   const msg = `Excluir container "${container}" do BL "${bl||'—'}"?${billedWarn}\n\nEsta ação não pode ser desfeita.`;
   if (!confirm(msg)) return;
@@ -1048,7 +1049,7 @@ function exportCoscoReport() {
   // Build a lookup map from BL number → billing record
   const blMap = {};
   if (typeof bls !== 'undefined' && Array.isArray(bls)) {
-    bls.forEach(b => { if (b.bl) blMap[b.bl] = b; });
+    bls.forEach(b => { if (b.bl && !b.complementOf) blMap[b.bl] = b; });
   }
 
   // Pre-compute raw USD total per BL (needed for proportional fixed-discount allocation)

@@ -91,7 +91,7 @@ function blTotal(b, roeOv) {
   let t = 0;
   (b.containers||[]).forEach(c => {
     const dc = daysBetween(c.discharge, c.emptyReturn);
-    const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null);
+    const calc = calcContainer(b, c);
     t += calc.totalUSD * roe;
   });
   // Apply discount if present

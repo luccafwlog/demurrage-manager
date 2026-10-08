@@ -70,7 +70,7 @@ function issueConsolidatedInvoice() {
     return;
   }
 
-  const allUnpaid = bls.filter(b => b.cnpj === cnpj && !b.paid);
+  const allUnpaid = bls.filter(b => b.cnpj === cnpj && !b.paid && !b.complementOf);
   const selected = (typeof _consSelectedBLs !== 'undefined' && _consSelectedBLs.size > 0)
     ? allUnpaid.filter(b => _consSelectedBLs.has(b.id))
     : [];
@@ -157,8 +157,7 @@ function _buildConsolidatedInvoiceHTML(group, docnum) {
   group.forEach((b, idx) => {
     const billable = (b.containers || []).map(c => {
       const dc   = daysBetween(c.discharge, c.emptyReturn);
-      const rate = getRateForBL(b, c.type);
-      const calc = calcUSD(dc, rate, b.ov1 || null, b.ov2 || null);
+      const calc = calcContainer(b, c);
       return { c, calc, brl: calc.totalUSD * roe };
     }).filter(({ calc }) => calc.totalUSD > 0);
 
