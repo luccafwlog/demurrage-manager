@@ -94,7 +94,7 @@ function issueConsolidatedInvoice() {
     return;
   }
 
-  const slices = selected.map(b => ({ b, total: Math.round((b.manualTotal != null ? b.manualTotal : blTotal(b, roe)) * 100) / 100 }));
+  const slices = selected.map(b => ({ b, total: Math.round((hasManual(b) ? b.manualTotal : blTotal(b, roe)) * 100) / 100 }));
   const grandTotal = slices.reduce((s, x) => s + x.total, 0);
 
   if (grandTotal <= 0) {
@@ -178,8 +178,8 @@ function _buildConsolidatedInvoiceHTML(group, docnum) {
         <td colspan="9">
           <span class="inv-bl-tag">BL ${idx + 1}</span>
           <strong>${esc(b.bl || '—')}</strong>
-          &nbsp;·&nbsp; ${b.vessel || '—'}
-          &nbsp;·&nbsp; ${b.pol || '—'} → ${b.pod || '—'}
+          &nbsp;·&nbsp; ${esc(b.vessel || '—')}
+          &nbsp;·&nbsp; ${esc(b.pol || '—')} → ${esc(b.pod || '—')}
           <span class="inv-bl-sub">${fmtBRL(subtotal)}</span>
         </td>
       </tr>`;
@@ -199,7 +199,7 @@ function _buildConsolidatedInvoiceHTML(group, docnum) {
   });
 
   // Listagem compacta dos BLs cobertos (no lugar dos blocos repetidos).
-  const blsListStr = group.map(b => b.bl || '—').join(', ');
+  const blsListStr = esc(group.map(b => b.bl || '—').join(', '));
 
   // Vencimento: usa o do primeiro BL (todos do mesmo grupo costumam compartilhar).
   if (!first.venc) first.venc = nextBusinessDay(null);

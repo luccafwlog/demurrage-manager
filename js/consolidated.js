@@ -177,12 +177,12 @@ function _renderConsPreview(cnpj) {
       <td style="padding:5px 6px;text-align:center;">
         <input type="checkbox" class="cons-bl-cb" data-id="${esc(b.id)}" data-total="${blTotalBRL(b)}" checked
           style="width:15px;height:15px;cursor:pointer;accent-color:var(--blue-btn);"
-          onchange="_toggleConsBL('${b.id}', this.checked)">
+          onchange="_toggleConsBL('${escJs(b.id)}', this.checked)">
       </td>
       <td style="padding:5px 6px;font-family:monospace;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(docnum)}</td>
       <td style="padding:5px 6px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(b.bl)}</td>
       <td style="padding:5px 6px;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(ctrs)}">${esc(ctrs)}</td>
-      <td style="padding:5px 6px;text-align:right;font-weight:600;font-size:12px;white-space:nowrap;">${fmtBRL(total)}</td>
+      <td style="padding:5px 6px;text-align:right;font-weight:600;font-size:12px;white-space:nowrap;">${fmtBRLorDash(total)}</td>
       <td style="padding:5px 6px;font-size:12px;white-space:nowrap;">${esc(venc)}</td>
       <td style="padding:5px 6px;">${status}</td>
     </tr>`;
@@ -233,7 +233,7 @@ function _updateConsPreviewTotal() {
   checkboxes.forEach(cb => {
     if (cb.checked) {
       const b = bls.find(x => x.id === cb.dataset.id);
-      if (b) grand += blTotalBRL(b);
+      if (b) grand += blTotalBRL(b) || 0;
     }
   });
   const totalEl = document.getElementById('cons-grand-total');
@@ -268,6 +268,7 @@ function sendConsolidatedEmail() {
     ? allUnpaid.filter(b => _consSelectedBLs.has(b.id))
     : allUnpaid;
   if (!eligible.length) { toast('Nenhuma fatura selecionada.', 'error'); return; }
+  if (eligible.some(b => blTotalBRL(b) == null)) { ptaxMissingAlert(); return; }
   const info  = _consMap[cnpj] || {};
   const nome  = info.name || cnpj;
   const emails = info.emails || getEmailsForBL(eligible[0]);
@@ -372,7 +373,7 @@ function buildInvoiceHTML(b) {
     </tr>`;
   }).join('');
 
-  const frozen = isFrozen(b) || b.manualTotal != null;
+  const frozen = isFrozen(b) || hasManual(b);
   if (frozen) totalBRL = invoiceTotalBRL(b);
 
   // Apply discount only when NOT frozen (frozen already includes discount via blTotal)
@@ -485,7 +486,7 @@ body{margin:0;padding:20px;background:white;}
 
 // ── Helper: obtém CSS completo dos arquivos externos + inline ─────────────
 async function _fetchPrintCSS() {
-  const urls = ['css/base.css', 'css/components.css'];
+  const urls = ['css/base.css?v=200', 'css/components.css?v=200'];
   const fetched = await Promise.all(
     urls.map(u => fetch(u).then(r => r.ok ? r.text() : '').catch(() => ''))
   );
@@ -513,7 +514,7 @@ async function printAllInvoices() {
     renderDoc(b,'invoice');
     const docnum=b.docnum||genDocnum(b.bl);
     const invHTML=document.getElementById('doc-content').innerHTML;
-    const tot=invoiceTotalBRL(b)||0;
+    const tot=invoiceTotalBRL(b);
     // O QR tem que usar EXATAMENTE o payload que renderDoc acabou de imprimir
     // no bloco "Pix Copia e Cola" do invHTML capturado acima. Recalcular aqui
     // gerava um código diferente (sem o txid = docnum e sem o desconto do BL),
@@ -534,7 +535,11 @@ async function printAllInvoices() {
   const qrs=invoiceData.map(({docnum,pixPayload})=>`gen(${JSON.stringify('pix-qr-'+docnum)},${JSON.stringify(pixPayload)});`).join('');
   const doc=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${esc(ttl)}</title><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script><style>${css}html,body{margin:0;padding:0;background:#f1f5f9}.inv-pix-copy-btn{display:none!important}.top-bar{position:sticky;top:0;z-index:200;display:flex;align-items:center;gap:12px;padding:10px 20px;background:#0f2a4a;color:#fff;font-family:Arial,sans-serif;font-size:13px}.top-bar strong{flex:1}.top-bar button{padding:7px 20px;background:#f59e0b;color:#111;border:none;border-radius:6px;cursor:pointer;font-weight:700}.pp{background:#fff;margin:20px auto;max-width:900px;page-break-after:always;break-after:page}.lp{page-break-after:avoid;break-after:avoid}@page{margin:0;}@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}html,body{background:#fff;margin:0;padding:0}.top-bar{display:none!important}.pp{margin:0;padding:0;max-width:100%;page-break-after:always;break-after:page}.lp{page-break-after:avoid;break-after:avoid}.inv-pix{display:flex!important}}</style></head><body><div class="top-bar"><strong>📄 ${esc(ttl)}</strong><span style="opacity:.75;font-size:12px">Ctrl+P para PDF</span><button onclick="window.print()">🖨️ Imprimir / PDF</button></div>${body}<script>function gen(id,p){var e=document.getElementById(id);if(e&&typeof QRCode!="undefined"){e.innerHTML="";new QRCode(e,{text:p,width:100,height:100,correctLevel:QRCode.CorrectLevel.M})}}function run(){if(typeof QRCode!="undefined"){${qrs}}else setTimeout(run,100)}run()<\/script></body></html>`;
   const w=window.open('','_blank');
-  if(w){w.document.write(doc);w.document.close();closeModal('modal-consolidated');toast(`${n} fatura${n>1?'s':''} abertas — Ctrl+P para PDF.`,'success');}
+  if(w){w.document.write(doc);w.document.close();
+    // Só agora as faturas existem para o cliente: registra a emissão (popup
+    // bloqueado = nada foi emitido).
+    eligible.forEach(b => recordEmission(b));
+    closeModal('modal-consolidated');toast(`${n} fatura${n>1?'s':''} abertas — Ctrl+P para PDF.`,'success');}
   else toast('Permita pop-ups para este site.','error');
 }
 

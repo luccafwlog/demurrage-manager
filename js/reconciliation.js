@@ -155,7 +155,7 @@ function matchTransactions(transactions, blsArray) {
       const group = txidMap[key];
       const isConsolidated = group.length > 1;
       // txid certo não basta: o valor recebido tem que bater com o faturado.
-      const expected = group.reduce((s, b) => s + (b.frozenTotal || 0), 0);
+      const expected = group.reduce((s, b) => s + (b.frozenTotal != null ? b.frozenTotal : (invoiceTotalBRL(b) || 0)), 0);
       matches.push({
         transaction: tx,
         bl:          group[0],     // BL "âncora" para exibição
@@ -398,12 +398,23 @@ function confirmConciliacao() {
     return;
   }
 
+  // A mesma fatura não pode ser quitada por duas transações (CNPJ ambíguo:
+  // o usuário pode escolher o mesmo BL em duas linhas).
+  const seen = new Set();
+  const dup = selected.filter(({ bl }) => { if (seen.has(bl.id)) return true; seen.add(bl.id); return false; });
+  if (dup.length) { toast(`O BL ${dup[0].bl.bl} foi escolhido para mais de uma transação. Ajuste a seleção.`, 'error'); return; }
+
   let consolidatedCount = 0;
+  const semValor = [];
   selected.forEach(({ match, bl }) => {
     const tx = match.transaction;
 
-    const roe   = bl.frozenRoe;
-    const total = bl.frozenTotal;
+    // BL faturado antes do congelamento existir não tem frozenTotal: congela
+    // agora (senão ficaria pago com valor flutuando com a PTAX).
+    const fv    = bl.frozenTotal != null ? { roe: bl.frozenRoe, total: bl.frozenTotal } : freezeValues(bl);
+    if (!fv) { semValor.push(bl.bl); return; }
+    const roe   = fv.roe;
+    const total = fv.total;
 
     bl.paid                 = true;
     bl.paidAt               = tx.date;
@@ -437,5 +448,6 @@ function confirmConciliacao() {
   closeModal('modal-extrato-import');
   renderList();
   const extra = consolidatedCount > 0 ? ` (${consolidatedCount} via fatura consolidada)` : '';
-  toast(`${selected.length} BL(s) conciliado(s) com sucesso${extra}! ✔`, 'success');
+  if (semValor.length) toast(`PTAX indisponível — ${semValor.length} BL(s) sem valor congelado não foram conciliados: ${semValor.join(', ')}.`, 'error');
+  else toast(`${selected.length} BL(s) conciliado(s) com sucesso${extra}! ✔`, 'success');
 }

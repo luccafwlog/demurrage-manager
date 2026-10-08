@@ -280,7 +280,7 @@ async function saveUser() {
     const existing = _usrList.find(u => (u.email || '').toLowerCase() === email);
     if (existing) { id = existing.uid || existing.id; }
     else {
-      alert('Para criar um usuário:\n\n1. No painel do Supabase, vá em Authentication → Users → "Invite user" e convide ' + email + '.\n2. Após o primeiro acesso dele, o perfil aparece aqui e você ajusta nome, cargo, admin e ativo.\n\nO perfil não pode ser criado antes da conta de acesso existir.');
+      alert('Para criar um usuário:\n\n1. No painel do Supabase, vá em Authentication → Users → "Invite user" e convide ' + email + '.\n2. O perfil é criado automaticamente no convite (ativo, sem admin) e aparece nesta lista — recarregue a página e ajuste nome, cargo e permissões.\n\nO perfil não pode ser criado antes da conta de acesso existir.');
       return;
     }
   }

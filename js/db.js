@@ -120,12 +120,17 @@ const _CONFLICT = {
   // Paginação: PostgREST trunca em 1000 linhas. Um erro em qualquer página
   // ABORTA o carregamento — antes o app seguia com dados parciais em silêncio,
   // e o usuário podia trabalhar (e salvar) sobre uma base incompleta.
+  // Ordem total pela PK: sem ORDER BY o Postgres não garante a mesma ordem
+  // entre páginas, e com mais de 1000 linhas registros podiam sumir ou repetir.
+  const _ORDER = { bls: ['id'], clients: ['id', 'user_id'], containers: ['container', 'bl', 'user_id'] };
   async function fetchAllPages(table, columns) {
     const PAGE = 1000;
     let from = 0;
     const allRows = [];
     while (true) {
-      const { data: page, error } = await sb.from(table).select(columns).range(from, from + PAGE - 1);
+      let q = sb.from(table).select(columns);
+      (_ORDER[table] || []).forEach(col => { q = q.order(col, { ascending: true }); });
+      const { data: page, error } = await q.range(from, from + PAGE - 1);
       if (error) throw new Error(table + ': ' + error.message);
       allRows.push(...(page || []));
       if ((page || []).length < PAGE) break;
@@ -137,7 +142,12 @@ const _CONFLICT = {
   // Perfil primeiro: usuário inativo não carrega nenhum dado.
   const { data: profile, error: profErr } = await sb.from('usuarios').select('*').eq('id', uid).maybeSingle();
   if (profErr) { fatalScreen('Erro ao carregar perfil', profErr.message); return; }
-  if (profile && profile.ativo === false) {
+  // A decisão final é do servidor (mesma função usada pelas policies de RLS):
+  // sem perfil, ou perfil inativo, a conta não acessa nada. Sem isso o app
+  // abriria "vazio" (o RLS filtra em silêncio). Se a migração ainda não foi
+  // aplicada a função não existe — aí vale só o perfil.
+  const { data: ativoSrv, error: ativoErr } = await sb.rpc('auth_is_active');
+  if ((profile && profile.ativo === false) || (!ativoErr && ativoSrv === false)) {
     await sb.auth.signOut().catch(() => {});
     window.location.href = 'index.html?inativo=1';
     return;
@@ -177,6 +187,20 @@ const _CONFLICT = {
   window._dmStore.clients = deduplicateClientsList(_rawClients);
 
   if (settRes && settRes.data) window._dmStore.alertDays = settRes.data.alert_days ?? 5;
+
+  // ── Base de comparação dos saves ───────────────────────────
+  // _dmStore é o estado VIVO (o tempo real grava nele). _base é o estado a
+  // partir do qual as listas da tela foram carregadas. O save completo compara
+  // a lista da tela com _base — e não com o store vivo —, senão um BL criado
+  // por outro usuário (que está no store mas ainda não na tela) seria tratado
+  // como "removido aqui" e EXCLUÍDO do banco, e uma alteração remota seria
+  // revertida pela cópia antiga da tela.
+  const _clone = x => JSON.parse(JSON.stringify(x));
+  const _base = {
+    bls: _clone(window._dmStore.bls), trk: _clone(window._dmStore.trk), clients: _clone(window._dmStore.clients)
+  };
+  const _busy = { bls: 0, trk: 0, clients: 0 };   // saveOne/delete em andamento
+  const _remoteDirty = {};                          // store vivo diverge de _base
 
   // ── Último upload de containers ────────────────────────────
   window._dmRenderLastUpload = function(isoDate) {
@@ -237,8 +261,16 @@ const _CONFLICT = {
       return null;
     }
     for (let i = 0; i < keys.length; i += 100) {
-      const { error } = await sb.from(TABLE[type]).delete().in('id', keys.slice(i, i + 100));
+      const chunk = keys.slice(i, i + 100);
+      const { error } = await sb.from(TABLE[type]).delete().in('id', chunk);
       if (error) return error;
+      if (type === 'bls') {
+        // O RLS bloqueia a exclusão SEM erro (0 linhas afetadas). Sem conferir,
+        // o BL sumia da tela e "ressuscitava" no próximo carregamento.
+        const { data: left, error: chkErr } = await sb.from('bls').select('id').in('id', chunk);
+        if (chkErr) return chkErr;
+        if (left && left.length) return { message: `sem permissão para excluir ${left.length} BL(s) — fatura já emitida só pode ser excluída por administrador` };
+      }
     }
     return null;
   }
@@ -267,6 +299,26 @@ const _CONFLICT = {
     return null;
   }
 
+  // ── Fatura PAGA: somente-leitura para quem não é admin ──────────────
+  // Espelha o trigger bls_protege_paga do banco (mesma lista de campos — manter
+  // iguais). Conferir aqui evita mandar ao servidor uma alteração que ele vai
+  // recusar: no save completo a recusa derrubaria o lote inteiro, e como o
+  // registro recusado continuaria na lista, todos os saves seguintes falhariam.
+  const _PAGA_CAMPOS_LIVRES = new Set(['email', 'phone', 'dispute', 'firstBilledAt', 'migratedAt', 'readyAt', '_updatedAt', 'docnum']);
+  const _canon = v => Array.isArray(v) ? '[' + v.map(_canon).join(',') + ']'
+    : (v && typeof v === 'object') ? '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + _canon(v[k])).join(',') + '}'
+    : JSON.stringify(v === undefined ? null : v);
+  function _pagaBloqueada(oldRec, newRec) {
+    if (window._dmIsAdmin || !oldRec || !oldRec.paid) return false;
+    const fin = r => { const o = {}; Object.keys(sanitize(r || {})).forEach(k => { if (!_PAGA_CAMPOS_LIVRES.has(k)) o[k] = r[k]; }); return _canon(sanitize(o)); };
+    if (fin(oldRec) !== fin(newRec)) return true;
+    return !!oldRec.docnum && newRec.docnum !== oldRec.docnum;
+  }
+  function _avisoPaga(nums) {
+    _toastErr(`Fatura paga só pode ser alterada por administrador — alteração desfeita: ${nums.join(', ')}`);
+    if (typeof window.renderList === 'function') { try { window.renderList(); } catch (e) {} }
+  }
+
   // ================= SAVE (full array diff) =================
   // Mutex por tipo: saves concorrentes do mesmo tipo são serializados e o
   // último estado pendente é salvo ao final.
@@ -290,22 +342,42 @@ const _CONFLICT = {
       try {
         const newData = _savePending[type];
         delete _savePending[type];
-        const oldStore = window._dmStore[sKey] || [];
+        const oldStore = _base[sKey] || [];
         const oldMap = new Map(oldStore.map(r => [keyFn(r), JSON.stringify(sanitize(r))]));
         const newKeySet = new Set(newData.map(keyFn));
         const toDeleteKeys = oldStore.filter(r => !newKeySet.has(keyFn(r))).map(keyFn);
-        const toUpsert = newData.filter(r => oldMap.get(keyFn(r)) !== JSON.stringify(sanitize(r)));
+        let toUpsert = newData.filter(r => oldMap.get(keyFn(r)) !== JSON.stringify(sanitize(r)));
+        if (type === 'bls') {
+          // Desfaz na própria lista da tela a alteração proibida em BL pago
+          // e grava o resto normalmente.
+          const baseById = new Map(oldStore.map(r => [keyFn(r), r]));
+          const bloqueados = toUpsert.filter(r => _pagaBloqueada(baseById.get(keyFn(r)), r));
+          if (bloqueados.length) {
+            bloqueados.forEach(r => { const i = newData.indexOf(r); if (i >= 0) newData[i] = _clone(baseById.get(keyFn(r))); });
+            toUpsert = toUpsert.filter(r => !bloqueados.includes(r));
+            _avisoPaga(bloqueados.map(r => r.bl || r.id));
+          }
+        }
 
         const delErr = await _deleteKeys(type, toDeleteKeys);
         const upsErr = delErr ? null : await _upsertRows(type, toUpsert);
         const err = delErr || upsErr;
         if (err) {
-          // NÃO atualiza o store: o próximo save recalcula o diff contra o que
-          // de fato está no servidor e tenta de novo.
+          // NÃO atualiza base/store: o próximo save recalcula o diff e tenta de novo.
           console.error('[DB-SAVE]', type, err);
           _toastErr('Erro ao salvar no servidor — as alterações NÃO foram gravadas: ' + err.message);
         } else {
-          window._dmStore[sKey] = JSON.parse(JSON.stringify(newData));
+          _base[sKey] = _clone(newData);
+          if (!_remoteDirty[type]) {
+            window._dmStore[sKey] = _clone(newData);
+          } else {
+            // Há alterações remotas ainda não levadas para a tela: aplica só o
+            // que ESTE save mudou sobre o store vivo, sem apagá-las.
+            const live = new Map((window._dmStore[sKey] || []).map(r => [keyFn(r), r]));
+            toDeleteKeys.forEach(k => live.delete(k));
+            toUpsert.forEach(r => live.set(keyFn(r), _clone(r)));
+            window._dmStore[sKey] = Array.from(live.values());
+          }
           ok = true;
         }
       } catch(e) {
@@ -319,17 +391,30 @@ const _CONFLICT = {
   }
 
   function _storeReplace(sKey, keyFn, data) {
-    const store = (window._dmStore[sKey] || []).slice();
-    const key = keyFn(data);
-    const idx = store.findIndex(r => keyFn(r) === key);
     const copy = JSON.parse(JSON.stringify(data));
-    if (idx >= 0) store[idx] = copy; else store.push(copy);
-    window._dmStore[sKey] = store;
+    const key = keyFn(data);
+    [window._dmStore, _base].forEach(holder => {
+      const store = (holder[sKey] || []).slice();
+      const idx = store.findIndex(r => keyFn(r) === key);
+      if (idx >= 0) store[idx] = _clone(copy); else store.push(_clone(copy));
+      holder[sKey] = store;
+    });
   }
 
   // ================= SAVE ONE RECORD =================
   window._dmFireSaveOne = async function(type, id, data) {
     if (!TABLE[type]) return false;
+    if (type === 'bls') {
+      const antes = (_base.bls || []).find(r => String(r.id) === String(data.id));
+      if (_pagaBloqueada(antes, data)) {
+        // Volta o objeto da tela ao estado gravado.
+        Object.keys(data).forEach(k => delete data[k]);
+        Object.assign(data, _clone(antes));
+        _avisoPaga([data.bl || data.id]);
+        return false;
+      }
+    }
+    _busy[type]++;
     try {
       const err = await _upsertRows(type, [data]);
       if (err) { console.error('[DB-SAVE-ONE]', err); _toastErr('Erro ao salvar no servidor — alteração NÃO gravada: ' + err.message); return false; }
@@ -337,22 +422,23 @@ const _CONFLICT = {
       return true;
     } catch(e) {
       console.error('[DB-SAVE-ONE]', e); _toastErr('Erro interno ao salvar dados: ' + e.message); return false;
-    }
+    } finally { _busy[type]--; }
   };
 
   // ================= DELETE ONE RECORD =================
   // Para containers, id = 'container\x00bl'.
   window._dmFireDelete = async function(type, id) {
     if (!TABLE[type]) return false;
+    _busy[type]++;
     try {
       const err = await _deleteKeys(type, [String(id)]);
       if (err) { console.error('[DB-DELETE]', err); _toastErr('Erro ao excluir no servidor: ' + err.message); return false; }
       const sKey = STORE[type];
-      window._dmStore[sKey] = (window._dmStore[sKey] || []).filter(r => _KEY_FN[type](r) !== String(id));
+      [window._dmStore, _base].forEach(h => { h[sKey] = (h[sKey] || []).filter(r => _KEY_FN[type](r) !== String(id)); });
       return true;
     } catch(e) {
       console.error('[DB-DELETE]', e); _toastErr('Erro ao excluir: ' + e.message); return false;
-    }
+    } finally { _busy[type]--; }
   };
 
   // ================= SUBSTITUIÇÃO COMPLETA (backup / checkpoint) =================
@@ -362,10 +448,35 @@ const _CONFLICT = {
   // memória — registros iguais nunca voltavam.)
   window._dmFireReplaceAll = async function(snapshot) {
     const types = ['bls', 'trk', 'clients'];
+    // Índice único por nº de BL: um BL do banco que NÃO está no snapshot mas tem
+    // o mesmo número de um que está (ex.: processo recriado depois do backup)
+    // faria a gravação falhar sempre. Ordem: 1) grava tudo que não conflita;
+    // 2) troca os conflitantes (apaga o atual, grava o do snapshot); se a troca
+    // falhar, regrava os atuais — nada se perde.
+    const snapBls = snapshot.bls || [];
+    let clashLive = [], clashNums = new Set();
+    try {
+      const snapIds = new Set(snapBls.map(b => String(b.id || '')));
+      const snapNums = new Set(snapBls.filter(b => !b.complementOf).map(b => String(b.bl || '').toUpperCase()));
+      const cur = await fetchAllPages('bls', 'id, data');
+      clashLive = cur.filter(r => !snapIds.has(String(r.id)) && !(r.data || {}).complementOf && snapNums.has(String((r.data || {}).bl || '').toUpperCase()))
+        .map(r => r.data);
+      clashNums = new Set(clashLive.map(d => String(d.bl || '').toUpperCase()));
+    } catch (e) { return { ok: false, error: e.message }; }
+    const isClash = b => !b.complementOf && clashNums.has(String(b.bl || '').toUpperCase());
     for (const t of types) {
-      const rows = (snapshot[t] || []).filter(r => _KEY_FN[t](r).replace('\x00', ''));
+      const rows = (snapshot[t] || []).filter(r => _KEY_FN[t](r).replace('\x00', '') && !(t === 'bls' && isClash(r)));
       const err = await _upsertRows(t, rows);
       if (err) return { ok: false, error: `${t}: ${err.message}` };
+    }
+    if (clashLive.length) {
+      const delErr = await _deleteKeys('bls', clashLive.map(d => String(d.id)));
+      if (delErr) return { ok: false, error: 'bls: ' + delErr.message };
+      const upErr = await _upsertRows('bls', snapBls.filter(isClash));
+      if (upErr) {
+        const back = await _upsertRows('bls', clashLive);
+        return { ok: false, error: 'bls: ' + upErr.message + (back ? ' — ATENÇÃO: falha ao regravar os BLs atuais (' + back.message + '); use o checkpoint criado antes da restauração.' : ' (BLs atuais regravados)') };
+      }
     }
     for (const t of types) {
       const keep = new Set((snapshot[t] || []).map(_KEY_FN[t]));
@@ -378,9 +489,12 @@ const _CONFLICT = {
       const err = await _deleteKeys(t, [...new Set(existing.filter(k => !keep.has(k)))]);
       if (err) return { ok: false, error: `${t}: ${err.message}` };
       window._dmStore[STORE[t]] = JSON.parse(JSON.stringify(snapshot[t] || []));
+      _base[STORE[t]] = JSON.parse(JSON.stringify(snapshot[t] || []));
     }
     window._dmStore.clients = deduplicateClientsList(window._dmStore.clients);
     window._dmStore.trk     = deduplicateTrkList(window._dmStore.trk);
+    _base.clients = _clone(window._dmStore.clients);
+    _base.trk     = _clone(window._dmStore.trk);
     return { ok: true };
   };
 
@@ -481,8 +595,24 @@ const _CONFLICT = {
   };
 
   // ================= REALTIME =================
-  // Alterações de outros usuários chegam aqui e atualizam o store; init.js
-  // recarrega as listas da tela (window._dmOnRemoteChange).
+  // Alterações de outros usuários chegam aqui e atualizam o store VIVO. A tela
+  // (e a _base dos saves) só é recarregada quando não há save em andamento
+  // para aquele tipo — senão a recarga trocava a lista da tela por uma versão
+  // anterior ao save em voo, e o save seguinte revertia a alteração.
+  const _syncTimers = {};
+  function _scheduleSync(type) {
+    _remoteDirty[type] = true;
+    clearTimeout(_syncTimers[type]);
+    _syncTimers[type] = setTimeout(() => {
+      if (_busy[type] > 0 || _saveLocks[type] || _savePending[type] !== undefined) { _scheduleSync(type); return; }
+      const sKey = STORE[type];
+      _base[sKey] = _clone(window._dmStore[sKey] || []);
+      _remoteDirty[type] = false;
+      if (typeof window._dmOnRemoteChange === 'function') window._dmOnRemoteChange(type);
+    }, 400);
+  }
+  const _cmpJSON = r => { const { _updatedAt, ...rest } = r || {}; return JSON.stringify(sanitize(rest)); };
+
   function _applyRemote(type, payload) {
     const sKey = STORE[type];
     const rec = payload.new && Object.keys(payload.new).length ? payload.new : null;
@@ -491,6 +621,7 @@ const _CONFLICT = {
     if (payload.eventType === 'DELETE') {
       const key = type === 'trk' ? (old.container + '\x00' + (old.bl || '')) : String(old.id);
       if (type === 'bls') {
+        if (!store.some(r => _KEY_FN[type](r) === key)) return; // eco da própria exclusão
         store = store.filter(r => _KEY_FN[type](r) !== key);
       } else {
         // Containers/clientes podem ter cópias por usuário (PK inclui user_id):
@@ -503,8 +634,10 @@ const _CONFLICT = {
           const row = data && data[0];
           if (row) _applyRemote(type, { eventType: 'UPDATE', new: row, old: {} });
           else {
-            window._dmStore[sKey] = (window._dmStore[sKey] || []).filter(r => _KEY_FN[type](r) !== key);
-            if (typeof window._dmOnRemoteChange === 'function') window._dmOnRemoteChange(type);
+            const cur = window._dmStore[sKey] || [];
+            if (!cur.some(r => _KEY_FN[type](r) === key)) return;
+            window._dmStore[sKey] = cur.filter(r => _KEY_FN[type](r) !== key);
+            _scheduleSync(type);
           }
         });
         return;
@@ -515,10 +648,12 @@ const _CONFLICT = {
       if (type === 'clients') obj = { ...obj, id: rec.id, _updatedAt: rec.updated_at };
       const key = _KEY_FN[type](obj);
       const idx = store.findIndex(r => _KEY_FN[type](r) === key);
+      // Eco do próprio save (ou nada mudou): não mexe na tela.
+      if (idx >= 0 && _cmpJSON(store[idx]) === _cmpJSON(obj)) return;
       if (idx >= 0) store[idx] = obj; else store.push(obj);
-    }
+    } else return;
     window._dmStore[sKey] = type === 'trk' ? deduplicateTrkList(store) : type === 'clients' ? deduplicateClientsList(store) : store;
-    if (typeof window._dmOnRemoteChange === 'function') window._dmOnRemoteChange(type);
+    _scheduleSync(type);
   }
   try {
     const ch = sb.channel && sb.channel('dm-sync');

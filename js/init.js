@@ -399,7 +399,7 @@ async function cfgImportBackup(event) {
       if (!cp) { toast('Não foi possível criar o checkpoint de segurança — restauração cancelada.', 'error'); return; }
       toast('Restaurando backup...', '');
       const res = await window._dmFireReplaceAll(snapshot);
-      if (!res.ok) { toast('Erro ao restaurar (nada foi apagado antes da gravação completa): ' + res.error, 'error'); return; }
+      if (!res.ok) { toast('Erro ao restaurar — a restauração pode ter ficado incompleta; restaure o checkpoint de segurança criado antes dela. Detalhe: ' + res.error, 'error'); return; }
       if (backup.alertDays && window._dmSaveAlertDays) await window._dmSaveAlertDays(backup.alertDays);
       logAuditAction('restauracao_backup', { arquivo: file.name, bls: snapshot.bls.length, containers: snapshot.trk.length, clientes: snapshot.clients.length, checkpointAntes: cp.id });
       toast('Backup restaurado! Recarregando...', 'success');
@@ -497,7 +497,7 @@ async function renderCheckpointList() {
         <div style="font-size:11px;color:var(--muted);">${dateStr} · por ${esc(cp.criado_por || '—')}</div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;">
-        <button onclick="restoreCheckpoint('${escJs(cp.id)}','${(cp.label||'').replace(/'/g,'\\\'')}')" class="act-btn edit" style="font-size:11px;padding:4px 10px;">↩ Restaurar</button>
+        <button onclick="restoreCheckpoint('${escJs(cp.id)}','${escJs(cp.label||'')}')" class="act-btn edit" style="font-size:11px;padding:4px 10px;">↩ Restaurar</button>
         <button onclick="deleteCheckpoint('${escJs(cp.id)}')" class="act-btn" style="font-size:11px;padding:4px 8px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;">✕</button>
       </div>
     </div>`;
@@ -691,14 +691,14 @@ function renderAlertPanel() {
     return `<div class="alert-group">
       <div class="alert-group-header">
         <div>
-          ${g.name}
+          ${esc(g.name)}
           ${g.cnpj ? `<span style="color:var(--muted);font-size:11px;margin-left:6px;font-weight:400;">${formatCnpj(g.cnpj)}</span>` : ''}
           ${cnpjWarn}
           <span style="margin-left:10px;font-weight:400;">${summary}</span>
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
           ${emailBadge}
-          ${g.emails.length ? `<button class="btn btn-sm btn-outline" onclick="openAlertEmailForKey('${safeKey}')" style="font-size:11px;padding:3px 10px;">✉️ E-mail</button>` : ''}
+          ${g.emails.length ? `<button class="btn btn-sm btn-outline" onclick="openAlertEmailForKey('${escJs(safeKey)}')" style="font-size:11px;padding:3px 10px;">✉️ E-mail</button>` : ''}
         </div>
       </div>
       <div>${rows}</div>
@@ -927,6 +927,8 @@ function renderConsClientList(query) {
 function sendMultipleEmails() {
   if (!_consSelected.size) return;
   const cnpjs = [..._consSelected];
+  // Sem PTAX o valor é desconhecido: não manda cobrança de R$ 0,00 ao cliente.
+  if (cnpjs.some(c => ((_consMap[c] || {}).bls || []).some(b => !b.paid && invoiceTotalBRL(b) == null))) { ptaxMissingAlert(); return; }
   cnpjs.forEach((cnpj, i) => {
     setTimeout(() => {
       const info      = _consMap[cnpj] || {};
@@ -938,7 +940,7 @@ function sendMultipleEmails() {
       const to        = encodeURIComponent(info.emails.join(', '));
       let grand = 0;
       const linhas = unpaid.map(b => {
-        const total = invoiceTotalBRL(b) || 0;
+        const total = invoiceTotalBRL(b);
         grand += total;
         const docnum = b.docnum || genDocnum(b.bl);
         const fmt    = total.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -962,6 +964,7 @@ function dispararTodasCobranças() {
     info.emails.length > 0 && info.bls.some(b => !b.paid)
   );
   if (!eligible.length) { toast('Nenhum cliente com e-mail cadastrado e faturas em aberto.', 'error'); return; }
+  if (eligible.some(([, info]) => info.bls.some(b => !b.paid && invoiceTotalBRL(b) == null))) { ptaxMissingAlert(); return; }
   if (!confirm(`Disparar cobranças para ${eligible.length} cliente${eligible.length !== 1 ? 's' : ''}?\n\nSerá aberto um e-mail para cada cliente com faturas pendentes.`)) return;
   eligible.forEach(([cnpj, info], i) => {
     setTimeout(() => {
@@ -972,7 +975,7 @@ function dispararTodasCobranças() {
       const to        = encodeURIComponent(info.emails.join(', '));
       let grand = 0;
       const linhas = unpaid.map(b => {
-        const total = invoiceTotalBRL(b) || 0;
+        const total = invoiceTotalBRL(b);
         grand += total;
         const docnum = b.docnum || genDocnum(b.bl);
         const ctrs   = (b.containers||[]).map(c=>c.container).join(', ');
@@ -991,13 +994,13 @@ function dispararTodasCobranças() {
 // ── CLIENTS EXPORT ─────────────────────────────────────────────────────────
 function exportClientsReport() {
   if (!clients.length) { toast('Nenhum cliente para exportar.', 'error'); return; }
+  if (bls.some(b => !b.paid && invoiceTotalBRL(b) == null)) { toast('PTAX indisponível — o total em aberto não pode ser calculado. Tente novamente após carregar a cotação.', 'error'); return; }
   const sorted = [...clients].sort((a,b) => (a.name||a.cnpj||'').localeCompare(b.name||b.cnpj||'', 'pt-BR'));
   const rows = sorted.map(c => {
     const unpaid = bls.filter(b => b.cnpj && normalizeCnpj(b.cnpj) === normalizeCnpj(c.cnpj) && !b.paid);
     let totalAberto = 0;
     unpaid.forEach(b => {
-      const tot = invoiceTotalBRL(b) || 0;
-      totalAberto += tot;
+      totalAberto += invoiceTotalBRL(b);
     });
     return {
       'RAZÃO SOCIAL': c.name||'—', 'CNPJ': formatCnpj(c.cnpj),
@@ -1475,7 +1478,7 @@ function renderTrkGroupedByBL(filtered) {
   return [...groups.entries()].map(([key, g]) => {
     const ctrs    = g.ctrs;
     const isExp   = window._trkExpanded.has(key);
-    const safeKey = key.replace(/'/g, "\'");
+    const safeKey = escJs(key);
 
     // Aggregate status counts
     const nDD    = ctrs.filter(r => trkStatus(r) === 'dd_open').length;
@@ -1689,24 +1692,24 @@ window._dmOnReady = async function() {
   // Auto-checkpoint diário gerenciado pelo pg_cron no Supabase (23:59 BRT)
 
   // ── Sincronização em tempo real ──────────────────────────────────────
-  // db.js atualiza o store quando outro usuário grava; aqui recarregamos as
-  // listas da tela (com debounce, para lotes de alterações).
-  const _remoteTimers = {};
+  // db.js atualiza o store quando outro usuário grava e só chama isto quando
+  // não há save em andamento (o debounce também fica lá). Recarrega as listas
+  // da tela a partir do store.
   window._dmOnRemoteChange = function(type) {
-    clearTimeout(_remoteTimers[type]);
-    _remoteTimers[type] = setTimeout(() => {
-      if (type === 'bls') {
-        bls = load();
-        renderList();
-        if (document.getElementById('mod-dashboard')?.style.display !== 'none') renderDashboard();
-      } else if (type === 'trk') {
-        trkData = trkLoad();
-        renderTracking();
-        updateAlertBadge();
-      } else if (type === 'clients') {
-        clients = cliLoad();
-        if (document.getElementById('mod-clients')?.style.display !== 'none') renderClients();
-      }
-    }, 400);
+    if (type === 'bls') {
+      bls = load();
+      // A fatura aberta na tela aponta para o objeto antigo: reaponta, senão
+      // "Editar Valor"/impressão gravariam uma cópia defasada.
+      if (currentBL) currentBL = bls.find(x => x.id === currentBL.id) || currentBL;
+      renderList();
+      if (document.getElementById('mod-dashboard')?.style.display !== 'none') renderDashboard();
+    } else if (type === 'trk') {
+      trkData = trkLoad();
+      renderTracking();
+      updateAlertBadge();
+    } else if (type === 'clients') {
+      clients = cliLoad();
+      if (document.getElementById('mod-clients')?.style.display !== 'none') renderClients();
+    }
   };
 };
