@@ -399,7 +399,7 @@ async function cfgImportBackup(event) {
       if (!cp) { toast('Não foi possível criar o checkpoint de segurança — restauração cancelada.', 'error'); return; }
       toast('Restaurando backup...', '');
       const res = await window._dmFireReplaceAll(snapshot);
-      if (!res.ok) { toast('Erro ao restaurar (nada foi apagado antes da gravação completa): ' + res.error, 'error'); return; }
+      if (!res.ok) { toast('Erro ao restaurar — a restauração pode ter ficado incompleta; restaure o checkpoint de segurança criado antes dela. Detalhe: ' + res.error, 'error'); return; }
       if (backup.alertDays && window._dmSaveAlertDays) await window._dmSaveAlertDays(backup.alertDays);
       logAuditAction('restauracao_backup', { arquivo: file.name, bls: snapshot.bls.length, containers: snapshot.trk.length, clientes: snapshot.clients.length, checkpointAntes: cp.id });
       toast('Backup restaurado! Recarregando...', 'success');

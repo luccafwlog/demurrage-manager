@@ -472,21 +472,24 @@ body {
   // Link de recuperação de senha: pede a nova senha antes de entrar.
   // (Antes o link logava direto no sistema, sem trocar a senha.)
   const isRecovery = location.hash.includes('type=recovery') || new URLSearchParams(location.search).get('recuperar');
-  sb.auth.onAuthStateChange(async (event) => {
-    if (event === 'PASSWORD_RECOVERY') {
-      const nova = prompt('Digite a nova senha (mínimo 8 caracteres):');
-      if (!nova || nova.length < 8) {
-        // Sem trocar a senha, não fica logado pelo link de recuperação.
-        alert('Senha não alterada (mínimo 8 caracteres). Use o link do e-mail novamente.');
-        await sb.auth.signOut().catch(() => {});
-        history.replaceState(null, '', location.pathname);
-        return;
-      }
-      const { error } = await sb.auth.updateUser({ password: nova });
-      alert(error ? 'Erro ao trocar a senha: ' + error.message : 'Senha alterada! Entrando...');
-      if (!error) window.location.href = 'app.html';
-    }
+  // Nada de chamada assíncrona ao Supabase DENTRO do callback: a própria
+  // documentação avisa que pode travar (deadlock). O fluxo roda depois.
+  sb.auth.onAuthStateChange((event) => {
+    if (event === 'PASSWORD_RECOVERY') setTimeout(recuperarSenha, 0);
   });
+  async function recuperarSenha() {
+    const nova = prompt('Digite a nova senha (mínimo 8 caracteres):');
+    if (!nova || nova.length < 8) {
+      // Sem trocar a senha, não fica logado pelo link de recuperação.
+      alert('Senha não alterada (mínimo 8 caracteres). Use o link do e-mail novamente.');
+      await sb.auth.signOut().catch(() => {});
+      history.replaceState(null, '', location.pathname);
+      return;
+    }
+    const { error } = await sb.auth.updateUser({ password: nova });
+    alert(error ? 'Erro ao trocar a senha: ' + error.message : 'Senha alterada! Entrando...');
+    if (!error) window.location.href = 'app.html';
+  }
   // Redireciona se já logado
   sb.auth.getSession().then(({ data: { session } }) => {
     // Conta desativada volta com ?inativo=1: não redireciona de novo para o app

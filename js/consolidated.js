@@ -515,7 +515,6 @@ async function printAllInvoices() {
     const docnum=b.docnum||genDocnum(b.bl);
     const invHTML=document.getElementById('doc-content').innerHTML;
     const tot=invoiceTotalBRL(b);
-    recordEmission(b); // fatura impressa = valor enviado ao cliente
     // O QR tem que usar EXATAMENTE o payload que renderDoc acabou de imprimir
     // no bloco "Pix Copia e Cola" do invHTML capturado acima. Recalcular aqui
     // gerava um código diferente (sem o txid = docnum e sem o desconto do BL),
@@ -536,7 +535,11 @@ async function printAllInvoices() {
   const qrs=invoiceData.map(({docnum,pixPayload})=>`gen(${JSON.stringify('pix-qr-'+docnum)},${JSON.stringify(pixPayload)});`).join('');
   const doc=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${esc(ttl)}</title><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script><style>${css}html,body{margin:0;padding:0;background:#f1f5f9}.inv-pix-copy-btn{display:none!important}.top-bar{position:sticky;top:0;z-index:200;display:flex;align-items:center;gap:12px;padding:10px 20px;background:#0f2a4a;color:#fff;font-family:Arial,sans-serif;font-size:13px}.top-bar strong{flex:1}.top-bar button{padding:7px 20px;background:#f59e0b;color:#111;border:none;border-radius:6px;cursor:pointer;font-weight:700}.pp{background:#fff;margin:20px auto;max-width:900px;page-break-after:always;break-after:page}.lp{page-break-after:avoid;break-after:avoid}@page{margin:0;}@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}html,body{background:#fff;margin:0;padding:0}.top-bar{display:none!important}.pp{margin:0;padding:0;max-width:100%;page-break-after:always;break-after:page}.lp{page-break-after:avoid;break-after:avoid}.inv-pix{display:flex!important}}</style></head><body><div class="top-bar"><strong>📄 ${esc(ttl)}</strong><span style="opacity:.75;font-size:12px">Ctrl+P para PDF</span><button onclick="window.print()">🖨️ Imprimir / PDF</button></div>${body}<script>function gen(id,p){var e=document.getElementById(id);if(e&&typeof QRCode!="undefined"){e.innerHTML="";new QRCode(e,{text:p,width:100,height:100,correctLevel:QRCode.CorrectLevel.M})}}function run(){if(typeof QRCode!="undefined"){${qrs}}else setTimeout(run,100)}run()<\/script></body></html>`;
   const w=window.open('','_blank');
-  if(w){w.document.write(doc);w.document.close();closeModal('modal-consolidated');toast(`${n} fatura${n>1?'s':''} abertas — Ctrl+P para PDF.`,'success');}
+  if(w){w.document.write(doc);w.document.close();
+    // Só agora as faturas existem para o cliente: registra a emissão (popup
+    // bloqueado = nada foi emitido).
+    eligible.forEach(b => recordEmission(b));
+    closeModal('modal-consolidated');toast(`${n} fatura${n>1?'s':''} abertas — Ctrl+P para PDF.`,'success');}
   else toast('Permita pop-ups para este site.','error');
 }
 

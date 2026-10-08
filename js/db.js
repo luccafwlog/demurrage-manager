@@ -450,19 +450,33 @@ const _CONFLICT = {
     const types = ['bls', 'trk', 'clients'];
     // Índice único por nº de BL: um BL do banco que NÃO está no snapshot mas tem
     // o mesmo número de um que está (ex.: processo recriado depois do backup)
-    // faria a gravação falhar sempre. Esses — e só esses — saem antes.
+    // faria a gravação falhar sempre. Ordem: 1) grava tudo que não conflita;
+    // 2) troca os conflitantes (apaga o atual, grava o do snapshot); se a troca
+    // falhar, regrava os atuais — nada se perde.
+    const snapBls = snapshot.bls || [];
+    let clashLive = [], clashNums = new Set();
     try {
-      const snapIds = new Set((snapshot.bls || []).map(b => String(b.id || '')));
-      const snapNums = new Set((snapshot.bls || []).filter(b => !b.complementOf).map(b => String(b.bl || '').toUpperCase()));
-      const cur = await fetchAllPages('bls', 'id, bl:data->>bl, comp:data->>complementOf');
-      const clash = cur.filter(r => !snapIds.has(String(r.id)) && !r.comp && snapNums.has(String(r.bl || '').toUpperCase())).map(r => String(r.id));
-      const err = await _deleteKeys('bls', clash);
-      if (err) return { ok: false, error: 'bls: ' + err.message };
+      const snapIds = new Set(snapBls.map(b => String(b.id || '')));
+      const snapNums = new Set(snapBls.filter(b => !b.complementOf).map(b => String(b.bl || '').toUpperCase()));
+      const cur = await fetchAllPages('bls', 'id, data');
+      clashLive = cur.filter(r => !snapIds.has(String(r.id)) && !(r.data || {}).complementOf && snapNums.has(String((r.data || {}).bl || '').toUpperCase()))
+        .map(r => r.data);
+      clashNums = new Set(clashLive.map(d => String(d.bl || '').toUpperCase()));
     } catch (e) { return { ok: false, error: e.message }; }
+    const isClash = b => !b.complementOf && clashNums.has(String(b.bl || '').toUpperCase());
     for (const t of types) {
-      const rows = (snapshot[t] || []).filter(r => _KEY_FN[t](r).replace('\x00', ''));
+      const rows = (snapshot[t] || []).filter(r => _KEY_FN[t](r).replace('\x00', '') && !(t === 'bls' && isClash(r)));
       const err = await _upsertRows(t, rows);
       if (err) return { ok: false, error: `${t}: ${err.message}` };
+    }
+    if (clashLive.length) {
+      const delErr = await _deleteKeys('bls', clashLive.map(d => String(d.id)));
+      if (delErr) return { ok: false, error: 'bls: ' + delErr.message };
+      const upErr = await _upsertRows('bls', snapBls.filter(isClash));
+      if (upErr) {
+        const back = await _upsertRows('bls', clashLive);
+        return { ok: false, error: 'bls: ' + upErr.message + (back ? ' — ATENÇÃO: falha ao regravar os BLs atuais (' + back.message + '); use o checkpoint criado antes da restauração.' : ' (BLs atuais regravados)') };
+      }
     }
     for (const t of types) {
       const keep = new Set((snapshot[t] || []).map(_KEY_FN[t]));
