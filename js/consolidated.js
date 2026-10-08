@@ -143,7 +143,7 @@ function clearConsolidatedSelection() {
 
 // Render preview table
 function _renderConsPreview(cnpj) {
-  const eligible = bls.filter(b => b.cnpj === cnpj && !b.paid);
+  const eligible = bls.filter(b => b.cnpj === cnpj && !b.paid && !b.complementOf);
   const preview  = document.getElementById('cons-preview');
   const empty    = document.getElementById('cons-empty');
 
@@ -263,7 +263,7 @@ function sendConsolidatedEmail() {
   const cnpj = document.getElementById('cons-cnpj-hidden').value;
   if (!cnpj) return;
   // Usa apenas BLs selecionados via checkbox no preview
-  const allUnpaid  = bls.filter(b => b.cnpj === cnpj && !b.paid);
+  const allUnpaid  = bls.filter(b => b.cnpj === cnpj && !b.paid && !b.complementOf);
   const eligible   = _consSelectedBLs.size > 0
     ? allUnpaid.filter(b => _consSelectedBLs.has(b.id))
     : allUnpaid;
@@ -350,7 +350,7 @@ function buildInvoiceHTML(b) {
 
   const rows = (b.containers||[]).filter(c => {
     const dc = daysBetween(c.discharge, c.emptyReturn);
-    return dc !== null && calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD > 0;
+    return dc !== null && calcContainer(b, c).totalUSD > 0;
   }).map(c => {
     const dc   = daysBetween(c.discharge, c.emptyReturn);
     const rate = getRate(c.type);
@@ -496,7 +496,7 @@ async function _fetchPrintCSS() {
 async function printAllInvoices() {
   const cnpj = document.getElementById('cons-cnpj-hidden').value;
   if (!cnpj) { toast('Nenhum cliente selecionado.', 'error'); return; }
-  const allUnpaid = bls.filter(b => b.cnpj === cnpj && !b.paid);
+  const allUnpaid = bls.filter(b => b.cnpj === cnpj && !b.paid && !b.complementOf);
   // Filtra pelos selecionados no preview (se houver seleção ativa)
   const eligible = _consSelectedBLs.size > 0
     ? allUnpaid.filter(b => _consSelectedBLs.has(b.id))
@@ -511,7 +511,7 @@ async function printAllInvoices() {
     const roe=(b.paid||b.billed)&&b.frozenRoe!=null?b.frozenRoe:effectiveROE(b);
     let tot=0;
     if(b.frozenTotal!=null&&(b.paid||b.billed))tot=b.frozenTotal;
-    else(b.containers||[]).forEach(c=>{const dc=daysBetween(c.discharge,c.emptyReturn);if(dc!==null)tot+=calcUSD(dc,getRateForBL(b,c.type),b.ov1||null,b.ov2||null).totalUSD*roe;});
+    else(b.containers||[]).forEach(c=>{const dc=daysBetween(c.discharge,c.emptyReturn);if(dc!==null)tot+=calcContainer(b, c).totalUSD*roe;});
     // O QR tem que usar EXATAMENTE o payload que renderDoc acabou de imprimir
     // no bloco "Pix Copia e Cola" do invHTML capturado acima. Recalcular aqui
     // gerava um código diferente (sem o txid = docnum e sem o desconto do BL),

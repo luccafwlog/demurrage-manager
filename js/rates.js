@@ -109,6 +109,21 @@ function calcUSD(dc, rate, ov1, ov2) {
   return { dc, diasP1: clampedP1, diasP2, usdP1, usdP2, totalUSD };
 }
 
+// Demurrage de um container dentro de um BL. Todo cálculo de valor de fatura
+// passa por aqui. Em fatura complementar, c.creditUSD é o que já foi cobrado
+// desse container na fatura original, e o total passa a ser só a diferença.
+function calcContainer(b, c) {
+  const dc = daysBetween(c.discharge, c.emptyReturn);
+  const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null);
+  const creditUSD = c.creditUSD > 0 ? c.creditUSD : 0;
+  if (!creditUSD) return calc;
+  return Object.assign({}, calc, {
+    grossUSD: calc.totalUSD,
+    creditUSD,
+    totalUSD: Math.max(0, calc.totalUSD - creditUSD),
+  });
+}
+
 function daysBetween(d1, d2) {
   if (!d1 || !d2) return 0;
   return Math.max(0, Math.round((new Date(d2+'T12:00:00') - new Date(d1+'T12:00:00')) / 86400000));

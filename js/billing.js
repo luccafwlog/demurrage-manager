@@ -348,7 +348,7 @@ function blTotal(b, roeOv) {
   let t = 0;
   (b.containers||[]).forEach(c => {
     const dc = daysBetween(c.discharge, c.emptyReturn);
-    const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null);
+    const calc = calcContainer(b, c);
     t += calc.totalUSD * roe;
   });
   // Apply discount if present
@@ -368,7 +368,7 @@ function blTotalUSD(b) {
   let t = 0;
   (b.containers||[]).forEach(c => {
     const dc = daysBetween(c.discharge, c.emptyReturn);
-    const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null);
+    const calc = calcContainer(b, c);
     t += calc.totalUSD;
   });
   if (b.discount && b.discount.value > 0 && b.discount.mode === 'percent') {
@@ -441,7 +441,7 @@ function attachDiscountListeners() {
 const _AUDIT_FIRESTORE_ACTIONS = new Set([
   // BLs
   'edicao_bl', 'exclusao_bl', 'exclusao_todos_bls', 'exclusao_em_massa_bls',
-  'marcacao_pagamento', 'marcacao_fatura',
+  'marcacao_pagamento', 'marcacao_fatura', 'criacao_fatura_complementar',
   'envio_email', 'importacao_planilha',
   // Containers
   'exclusao_todos_containers', 'exclusao_em_massa_containers',
@@ -549,6 +549,8 @@ function renderList() {
   updateBillingKPIs(filtered);
   document.getElementById('results-count').textContent = `${filtered.length} resultado(s) encontrado(s)`;
   const list = document.getElementById('bl-list');
+  const compsByOrig = {};
+  bls.forEach(x => { if (x.complementOf) (compsByOrig[x.complementOf] = compsByOrig[x.complementOf] || []).push(x); });
   if (!filtered.length) {
     list.innerHTML = `<div class="empty-state"><div class="icon">📭</div><p>Nenhum BL encontrado. Importe uma planilha ou crie um novo BL.</p></div>`;
     return;
@@ -558,7 +560,7 @@ function renderList() {
     // Only containers that generated demurrage
     const billableCtrs = ctrs.filter(c => {
       const dc = daysBetween(c.discharge, c.emptyReturn);
-      return calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD > 0;
+      return calcContainer(b, c).totalUSD > 0;
     });
     const tot = (b.billed && b.frozenTotal != null) ? b.frozenTotal : blTotal(b, null);
     const totStr = tot > 0 ? ` · Total: ${fmtBRL(tot)}` : '';
@@ -578,6 +580,13 @@ function renderList() {
     const billedBadge = isBilled ? `<span class="paid-badge" style="background:#dbeafe;color:#1e40af;margin-left:4px;">📄 FATURADO</span>` : '';
     const consolidatedBadge = isConsolidated ? `<span class="paid-badge" style="background:#ede9fe;color:#5b21b6;margin-left:4px;" title="Faz parte da fatura consolidada ${b.consolidatedDocnum || b.docnum}">🔗 CONSOLIDADA</span>` : '';
     const discountBadge = (b.discount && b.discount.value > 0) ? `<span class="badge-desc">DESC</span>` : '';
+    const comps = compsByOrig[b.id] || [];
+    const complementBadge = b.complementOf
+      ? `<span class="paid-badge" style="background:#fef3c7;color:#92400e;margin-left:4px;" title="${(b.complementReason||'').replace(/"/g,'&quot;')}">➕ COMPLEMENTAR de ${b.complementOfDocnum||'—'}</span>`
+      : comps.length
+      ? `<span class="paid-badge" style="background:#fef3c7;color:#92400e;margin-left:4px;" title="Diferença cobrada em fatura complementar">↪ COMPLEMENTADA: ${comps.map(x=>x.docnum).join(', ')}</span>`
+      : '';
+    const canComplement = (isBilled || isPaid) && !b.complementOf && !comps.length;
     const isDisputed = (b.dispute && b.dispute.open);
     const disputeBadge = isDisputed ? `<span class="badge-dispute">⚠️ DISPUTA</span>` : '';
     const paidLabel   = isPaid   ? '✔ Pago'     : '○ Pago';
@@ -596,7 +605,7 @@ function renderList() {
     return `<div class="bl-card${isPaid?' is-paid':''}${isBilled?' is-paid':''}${isDisputed?' is-disputed':''}">
       <span class="bl-badge">BL</span>
       <div class="bl-info">
-        <div class="bl-number">${b.bl}${paidBadge}${discountBadge}${disputeBadge}${billedBadge}${consolidatedBadge}${agingBadge}</div>
+        <div class="bl-number">${b.bl}${paidBadge}${discountBadge}${disputeBadge}${billedBadge}${consolidatedBadge}${complementBadge}${agingBadge}</div>
         <div class="bl-client">${b.client||'—'}</div>
         <div class="bl-meta"><span>${billableCtrs.length} contêiner(es) c/ demurrage${ctrs.length > billableCtrs.length ? ` (${ctrs.length} total)` : ""}${totStr}</span>${tags}${more}${dateChip}</div>
       </div>
@@ -617,6 +626,7 @@ function renderList() {
         <div class="bl-action-divider"></div>
         <div class="bl-action-group bl-action-meta">
           <button class="act-btn edit" onclick="openEditBL('${b.id}')" title="Editar BL">✏️</button>
+          ${canComplement ? `<button class="act-btn edit" onclick="openComplementModal('${b.id}')" title="Gerar fatura complementar (cobrar diferença)">➕</button>` : ''}
           <button class="act-btn del" onclick="deleteBL('${b.id}')" aria-label="Excluir BL ${b.blNum||b.id}" title="Excluir BL">🗑️</button>
         </div>
       </div>
@@ -730,20 +740,23 @@ function fillForm(b) {
   (b.containers||[]).forEach(c=>addContainerRow(c));
 }
 
+// Tipos oferecidos nos <select> de container (edição de BL e fatura complementar).
+const CONTAINER_TYPES = [
+  '20G1','22G1','20GP','20HC',           // 20 pés GP/HC
+  '40G1','42G1','40GP','40HC','45G1',    // 40/45 pés GP/HC
+  '20FR','20OT',                          // 20 pés FR/OT
+  '40FR','40OT',                          // 40 pés FR/OT
+  '20R1','20RF',                          // 20 pés Reefer
+  '40R1','40RF','45R1',                   // 40/45 pés Reefer
+  '40FH_45P3','40FR_42P3',                // variações ISO vindas do rastreamento
+];
+
 function addContainerRow(c={}) {
   const tbody = document.getElementById('containers-body');
   const tr = document.createElement('tr');
   const rid = uid();
   tr.dataset.rid = rid;
-  const types = [
-    '20G1','22G1','20GP','20HC',           // 20 pés GP/HC
-    '40G1','42G1','40GP','40HC','45G1',    // 40/45 pés GP/HC
-    '20FR','20OT',                          // 20 pés FR/OT
-    '40FR','40OT',                          // 40 pés FR/OT
-    '20R1','20RF',                          // 20 pés Reefer
-    '40R1','40RF','45R1',                   // 40/45 pés Reefer
-    '40FH_45P3','40FR_42P3',                // variações ISO vindas do rastreamento
-  ];
+  const types = CONTAINER_TYPES.slice();
   // Tipo fora da lista vira <option> própria: sem isso o <select> cai na 1ª
   // opção (20G1) e o salvar regrava o container com a tarifa errada.
   if (c.type && !types.includes(c.type)) types.unshift(c.type);
@@ -831,6 +844,12 @@ function saveBL() {
     appliedAt: new Date().toISOString().slice(0,10)
   } : null;
 
+  const prevBL = editingId ? bls.find(x => x.id === editingId) : null;
+  if (prevBL && prevBL.complementOf && discount && (!discountApprover || !discountJustification)) {
+    toast('Desconto em fatura complementar exige aprovador e justificativa.', 'error');
+    return;
+  }
+
   // Collect dispute fields
   const disputeOpen = document.getElementById('f-dispute-open').checked;
   const disputeSubject = document.getElementById('f-dispute-subject').value.trim();
@@ -877,6 +896,18 @@ function saveBL() {
     dispute: dispute,
     createdAt: editingId?(bls.find(x=>x.id===editingId)?.createdAt||Date.now()):Date.now(),
   };
+  // Fatura complementar: o formulário não conhece o vínculo com a original nem
+  // o valor já cobrado de cada container. Sem repor os dois, salvar a
+  // complementar a transformaria em cobrança cheia do BL.
+  if (prevBL && prevBL.complementOf) {
+    obj.complementOf       = prevBL.complementOf;
+    obj.complementOfDocnum = prevBL.complementOfDocnum;
+    obj.complementReason   = prevBL.complementReason;
+    obj.containers = obj.containers.map(c => {
+      const old = (prevBL.containers || []).find(p => p.container === c.container);
+      return old && old.creditUSD != null ? { ...c, creditUSD: old.creditUSD, billedType: old.billedType } : c;
+    });
+  }
   // Computa readyAt (data em que todos os containers foram devolvidos)
   obj.readyAt = computeReadyAt(obj);
   if (editingId) {
@@ -912,14 +943,14 @@ function exportReport() {
     // Only containers that generated demurrage
     const billable = (b.containers || []).filter(c => {
       const dc = daysBetween(c.discharge, c.emptyReturn);
-      return calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD > 0;
+      return calcContainer(b, c).totalUSD > 0;
     });
 
     if (!billable.length) return; // skip BLs with no demurrage at all
 
     billable.forEach((c, idx) => {
       const dc = daysBetween(c.discharge, c.emptyReturn);
-      const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null);
+      const calc = calcContainer(b, c);
       const brl = calc.totalUSD * roe;
       blBRL += brl;
 
@@ -942,7 +973,7 @@ function exportReport() {
       const totalBRLWithDiscount = Math.max(0, totalBRL - discountAmt);
 
       rows.push({
-        'Nº FATURA':      b.docnum || genDocnum(b.bl),
+        'Nº FATURA':      (b.docnum || genDocnum(b.bl)) + (b.complementOf ? ` (compl. de ${b.complementOfDocnum || '—'})` : ''),
         'BL':             b.bl,
         'NAVIO/VIAGEM':   b.vessel || '—',
         'POL':            b.pol || '—',
@@ -1402,8 +1433,9 @@ function _validateBilBulkDelete(blNums) {
   const found = [];
   const notFound = [];
   blNumsNorm.forEach(num => {
-    const match = bls.find(b => b.bl && b.bl.toUpperCase() === num);
-    if (match) found.push(match);
+    // Inclui as faturas complementares do BL: excluir o processo exclui todas.
+    const matches = bls.filter(b => b.bl && b.bl.toUpperCase() === num);
+    if (matches.length) found.push(...matches);
     else notFound.push(num);
   });
 
@@ -1602,7 +1634,7 @@ function doImport() {
   let added=0, updated=0;
   Object.values(grouped).forEach(imp => {
     imp.readyAt = computeReadyAt(imp);
-    const i=bls.findIndex(x=>x.bl===imp.bl);
+    const i=bls.findIndex(x=>x.bl===imp.bl && !x.complementOf);
     if(i>=0){bls[i]={...bls[i],...imp};updated++;}else{bls.unshift(imp);added++;}
   });
   save(bls); closeModal('modal-import'); renderList();
@@ -1654,7 +1686,7 @@ function printDoc() {
     const primeiroNome = (currentBL.client || '').trim().split(/\s+/)[0] || 'CLIENTE';
     const isCons = (typeof isConsolidatedDocnum === 'function') && isConsolidatedDocnum(docnum);
     const tipo = currentType === 'invoice'
-      ? (isCons ? 'FATURA CONSOLIDADA DEMURRAGE' : 'FATURA DEMURRAGE')
+      ? (isCons ? 'FATURA CONSOLIDADA DEMURRAGE' : currentBL.complementOf ? 'FATURA COMPLEMENTAR DEMURRAGE' : 'FATURA DEMURRAGE')
       : 'RECIBO DEMURRAGE';
     const tail = isCons
       ? ((typeof getBLsByConsolidatedDocnum === 'function')
@@ -1834,7 +1866,7 @@ function sendInvoiceEmail() {
   const pixBlock = b.paid ? '' : pixEmailBlock(getOrBuildPixPayload(b, b.docnum ? docnum : null));
 
   const to = encodeURIComponent(getEmailsForBL(b).join(', ') || b.email || '');
-  const subject = encodeURIComponent(`${docnum} - Fatura de Demurrage - BL ${b.bl}`);
+  const subject = encodeURIComponent(`${docnum} - Fatura${b.complementOf ? ' Complementar' : ''} de Demurrage - BL ${b.bl}`);
 
   const vencFmt = b.venc ? new Date(b.venc+'T12:00:00').toLocaleDateString('pt-BR') : '—';
   const totalFmt = totalBRL.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -1842,12 +1874,15 @@ function sendInvoiceEmail() {
   const body = encodeURIComponent(
 `Prezado(a) ${(b.client||'').split(' ')[0] || 'Cliente'},
 
-Encaminhamos em anexo a Fatura de Sobreestadia de Container referente ao BL abaixo:
-
+Encaminhamos em anexo a Fatura ${b.complementOf ? 'Complementar ' : ''}de Sobreestadia de Container referente ao BL abaixo:
+${b.complementOf ? `
+Esta fatura complementa a fatura Nº ${b.complementOfDocnum} e cobra apenas a diferença.
+Motivo: ${b.complementReason || '—'}
+` : ''}
   Nº Fatura : ${docnum}
   BL         : ${b.bl}
   Navio/Voy  : ${b.vessel || '—'}
-  Container(s): ${(b.containers||[]).filter(c => { const dc = daysBetween(c.discharge, c.emptyReturn); return calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD > 0; }).map(c=>c.container).join(', ')}
+  Container(s): ${(b.containers||[]).filter(c => { const dc = daysBetween(c.discharge, c.emptyReturn); return calcContainer(b, c).totalUSD > 0; }).map(c=>c.container).join(', ')}
   Total      : R$ ${totalFmt}
   Vencimento : ${vencFmt}
 
@@ -1901,7 +1936,7 @@ function renderDoc(b, type) {
 
   const rows = (b.containers||[]).map(c => {
     const dc = daysBetween(c.discharge, c.emptyReturn);
-    const calc = calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null);
+    const calc = calcContainer(b, c);
     const brl = calc.totalUSD * roe;
     totalBRL += brl;
     return {c, calc, brl};
@@ -1938,14 +1973,14 @@ function renderDoc(b, type) {
   const rowsHTML = rows.map(({c,calc,brl}) => `
     <tr>
       <td>${c.container}</td>
-      <td>${c.type||'—'}</td>
+      <td>${c.type||'—'}${c.billedType ? `<br><span style="font-size:10px;color:#6b7280;">faturado: ${c.billedType}</span>` : ''}</td>
       <td>${calc.diasP1||0}</td>
       <td>${calc.usdP1.toFixed(2)}</td>
       <td>${calc.diasP2||0}</td>
       <td>${calc.usdP2.toFixed(2)}</td>
       <td>${fmtDate(c.discharge)}</td>
       ${isInv?`<td>${fmtDate(c.emptyReturn)}</td>`:''}
-      <td style="font-weight:600">${fmtBRL(brl)}</td>
+      <td style="font-weight:600">${fmtBRL(brl)}${calc.creditUSD ? `<br><span style="font-size:10px;color:#6b7280;font-weight:400;">USD ${calc.grossUSD.toFixed(2)} − ${calc.creditUSD.toFixed(2)} já cobrado</span>` : ''}</td>
     </tr>`).join('');
 
   const totalCols = isInv ? 9 : 8;
@@ -1963,11 +1998,12 @@ function renderDoc(b, type) {
       </div>
       <div class="inv-num">Nº ${docnum}</div>
     </div>
-    <div class="inv-title">${isInv?'FATURA DE SOBREESTADIA DE CONTAINER':'RECIBO'}</div>
+    <div class="inv-title">${isInv ? (b.complementOf ? 'FATURA COMPLEMENTAR DE SOBREESTADIA DE CONTAINER' : 'FATURA DE SOBREESTADIA DE CONTAINER') : (b.complementOf ? 'RECIBO — FATURA COMPLEMENTAR' : 'RECIBO')}</div>
     <hr class="inv-hr">
     <div class="inv-row"><span class="inv-lbl">Cliente:</span><span class="inv-val">${b.client||'—'}${b.cnpj?'<br>CNPJ: '+b.cnpj:''}</span></div>
     <hr class="inv-hr-light">
     <div class="inv-row"><span class="inv-lbl">BL</span><span class="inv-val">${b.bl}</span></div>
+    ${b.complementOf ? `<div class="inv-row"><span class="inv-lbl">Complementa</span><span class="inv-val">Fatura Nº ${b.complementOfDocnum||'—'}<br><span style="font-size:11px;color:#6b7280;">${_compEsc(b.complementReason)}<br>Valor por container: tarifa correta menos o já cobrado na fatura original.</span></span></div>` : ''}
     <div class="inv-row"><span class="inv-lbl">Container(s)</span><span class="inv-val">${rows.map(({c})=>c.container).join(', ')}</span></div>
     <div class="inv-row"><span class="inv-lbl">Navio/Voy:</span><span class="inv-val">${b.vessel||'—'}</span></div>
     <div class="inv-row"><span class="inv-lbl">From:</span><span class="inv-val">${b.pol||'—'}</span></div>

@@ -934,7 +934,7 @@ function sendMultipleEmails() {
         let total = 0;
         (b.containers||[]).forEach(c => {
           const dc = daysBetween(c.discharge, c.emptyReturn);
-          if (dc !== null) total += calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
+          if (dc !== null) total += calcContainer(b, c).totalUSD * roe;
         });
         if ((b.paid||b.billed)&&b.frozenTotal!=null) total = b.frozenTotal;
         grand += total;
@@ -974,7 +974,7 @@ function dispararTodasCobranças() {
         let total = 0;
         (b.containers || []).forEach(c => {
           const dc = daysBetween(c.discharge, c.emptyReturn);
-          if (dc !== null) total += calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
+          if (dc !== null) total += calcContainer(b, c).totalUSD * roe;
         });
         if ((b.paid || b.billed) && b.frozenTotal != null) total = b.frozenTotal;
         grand += total;
@@ -1004,7 +1004,7 @@ function exportClientsReport() {
       let tot = b.frozenTotal != null && b.billed ? b.frozenTotal : 0;
       if (!tot) (b.containers||[]).forEach(ct => {
         const dc = daysBetween(ct.discharge, ct.emptyReturn);
-        if (dc !== null) tot += calcUSD(dc, getRateForBL(b, ct.type), b.ov1||null, b.ov2||null).totalUSD * roe;
+        if (dc !== null) tot += calcContainer(b, ct).totalUSD * roe;
       });
       totalAberto += tot;
     });
@@ -1051,7 +1051,7 @@ function renderDashboard() {
     let tot = b.frozenTotal != null && b.billed ? b.frozenTotal : 0;
     if (!tot) (b.containers||[]).forEach(c => {
       const dc = daysBetween(c.discharge, c.emptyReturn);
-      if (dc !== null) tot += calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
+      if (dc !== null) tot += calcContainer(b, c).totalUSD * roe;
     });
     totalAberto += tot;
 
@@ -1132,7 +1132,7 @@ function renderDashboard() {
     let tot = b.frozenTotal != null && b.billed ? b.frozenTotal : 0;
     if (!tot) (b.containers||[]).forEach(c => {
       const dc = daysBetween(c.discharge, c.emptyReturn);
-      if (dc !== null) tot += calcUSD(dc, getRateForBL(b, c.type), b.ov1||null, b.ov2||null).totalUSD * roe;
+      if (dc !== null) tot += calcContainer(b, c).totalUSD * roe;
     });
     byClient[key].total += tot; byClient[key].count++;
   });
