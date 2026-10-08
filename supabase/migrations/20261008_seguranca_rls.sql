@@ -12,7 +12,8 @@
 --   3. Logs de auditoria passam a ser SOMENTE-INCLUSÃO: ninguém edita nem apaga,
 --      e o user_id do log tem que ser o do próprio usuário.
 --   4. Taxas, checkpoints e exclusões de registros financeiros (BL faturado/pago)
---      exigem admin no servidor.
+--      exigem admin no servidor. Fatura PAGA não pode ser alterada (nem ter o
+--      pagamento desfeito) por quem não é admin.
 --   5. Um processo por número de BL (faturas complementares à parte).
 --
 -- PERFIL OBRIGATÓRIO: conta sem linha em `usuarios` NÃO acessa nada. Esta
@@ -86,6 +87,34 @@ create trigger trg_bls_marca_emitida before insert or update on bls
 update bls set ja_emitida = true
   where coalesce((data->>'billed')::boolean, false) or coalesce((data->>'paid')::boolean, false)
      or coalesce(data->>'firstBilledAt', '') <> '';
+
+-- ── BLs: fatura PAGA só muda por admin ──
+-- Para quem não é admin, um BL pago é somente-leitura, exceto campos sem
+-- efeito financeiro: contato (e-mail/telefone, sincronizados do cadastro de
+-- clientes), disputa e datas de controle preenchidas automaticamente.
+-- O nº do documento só pode ser preenchido se estava vazio.
+-- Desfazer o pagamento também é alteração: só admin.
+-- Mesma lista em js/db.js (_PAGA_CAMPOS_LIVRES) — manter as duas iguais.
+-- Sem auth.uid() (SQL Editor, service role, pg_cron) a regra não se aplica.
+create or replace function public.bls_protege_paga()
+returns trigger language plpgsql set search_path = public as $$
+declare
+  livres text[] := array['email','phone','dispute','firstBilledAt','migratedAt','readyAt','_updatedAt','docnum'];
+begin
+  if auth.uid() is null or not coalesce((old.data->>'paid')::boolean, false) or public.auth_is_admin() then
+    return new;
+  end if;
+  if new.id is distinct from old.id
+     or (new.data - livres) is distinct from (old.data - livres)
+     or (coalesce(old.data->>'docnum', '') <> '' and new.data->'docnum' is distinct from old.data->'docnum') then
+    raise exception 'Fatura paga só pode ser alterada por administrador (BL %)', old.data->>'bl'
+      using errcode = '42501';
+  end if;
+  return new;
+end $$;
+drop trigger if exists trg_bls_protege_paga on bls;
+create trigger trg_bls_protege_paga before update on bls
+  for each row execute function public.bls_protege_paga();
 
 -- ── BLs: colaborativo para ativos; excluir fatura já emitida só admin ──
 drop policy if exists "authenticated_rw" on bls;

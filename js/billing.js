@@ -1140,6 +1140,8 @@ function togglePaid(id) {
   const b = bls.find(x => x.id === id);
   if (!b) return;
   if (b.paid) {
+    // Mesma regra do servidor (trigger bls_protege_paga): fatura paga só muda por admin.
+    if (!requireAdmin('desfazer um pagamento registrado')) return;
     // BL faturado continua faturado: mantém os valores congelados na emissão
     // (é o valor que o cliente recebeu). Só BL pago sem faturamento descongela.
     const msg = b.billed

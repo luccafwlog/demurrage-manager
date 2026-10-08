@@ -299,6 +299,26 @@ const _CONFLICT = {
     return null;
   }
 
+  // ── Fatura PAGA: somente-leitura para quem não é admin ──────────────
+  // Espelha o trigger bls_protege_paga do banco (mesma lista de campos — manter
+  // iguais). Conferir aqui evita mandar ao servidor uma alteração que ele vai
+  // recusar: no save completo a recusa derrubaria o lote inteiro, e como o
+  // registro recusado continuaria na lista, todos os saves seguintes falhariam.
+  const _PAGA_CAMPOS_LIVRES = new Set(['email', 'phone', 'dispute', 'firstBilledAt', 'migratedAt', 'readyAt', '_updatedAt', 'docnum']);
+  const _canon = v => Array.isArray(v) ? '[' + v.map(_canon).join(',') + ']'
+    : (v && typeof v === 'object') ? '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + _canon(v[k])).join(',') + '}'
+    : JSON.stringify(v === undefined ? null : v);
+  function _pagaBloqueada(oldRec, newRec) {
+    if (window._dmIsAdmin || !oldRec || !oldRec.paid) return false;
+    const fin = r => { const o = {}; Object.keys(sanitize(r || {})).forEach(k => { if (!_PAGA_CAMPOS_LIVRES.has(k)) o[k] = r[k]; }); return _canon(sanitize(o)); };
+    if (fin(oldRec) !== fin(newRec)) return true;
+    return !!oldRec.docnum && newRec.docnum !== oldRec.docnum;
+  }
+  function _avisoPaga(nums) {
+    _toastErr(`Fatura paga só pode ser alterada por administrador — alteração desfeita: ${nums.join(', ')}`);
+    if (typeof window.renderList === 'function') { try { window.renderList(); } catch (e) {} }
+  }
+
   // ================= SAVE (full array diff) =================
   // Mutex por tipo: saves concorrentes do mesmo tipo são serializados e o
   // último estado pendente é salvo ao final.
@@ -326,7 +346,18 @@ const _CONFLICT = {
         const oldMap = new Map(oldStore.map(r => [keyFn(r), JSON.stringify(sanitize(r))]));
         const newKeySet = new Set(newData.map(keyFn));
         const toDeleteKeys = oldStore.filter(r => !newKeySet.has(keyFn(r))).map(keyFn);
-        const toUpsert = newData.filter(r => oldMap.get(keyFn(r)) !== JSON.stringify(sanitize(r)));
+        let toUpsert = newData.filter(r => oldMap.get(keyFn(r)) !== JSON.stringify(sanitize(r)));
+        if (type === 'bls') {
+          // Desfaz na própria lista da tela a alteração proibida em BL pago
+          // e grava o resto normalmente.
+          const baseById = new Map(oldStore.map(r => [keyFn(r), r]));
+          const bloqueados = toUpsert.filter(r => _pagaBloqueada(baseById.get(keyFn(r)), r));
+          if (bloqueados.length) {
+            bloqueados.forEach(r => { const i = newData.indexOf(r); if (i >= 0) newData[i] = _clone(baseById.get(keyFn(r))); });
+            toUpsert = toUpsert.filter(r => !bloqueados.includes(r));
+            _avisoPaga(bloqueados.map(r => r.bl || r.id));
+          }
+        }
 
         const delErr = await _deleteKeys(type, toDeleteKeys);
         const upsErr = delErr ? null : await _upsertRows(type, toUpsert);
@@ -373,6 +404,16 @@ const _CONFLICT = {
   // ================= SAVE ONE RECORD =================
   window._dmFireSaveOne = async function(type, id, data) {
     if (!TABLE[type]) return false;
+    if (type === 'bls') {
+      const antes = (_base.bls || []).find(r => String(r.id) === String(data.id));
+      if (_pagaBloqueada(antes, data)) {
+        // Volta o objeto da tela ao estado gravado.
+        Object.keys(data).forEach(k => delete data[k]);
+        Object.assign(data, _clone(antes));
+        _avisoPaga([data.bl || data.id]);
+        return false;
+      }
+    }
     _busy[type]++;
     try {
       const err = await _upsertRows(type, [data]);
