@@ -177,12 +177,12 @@ function _renderConsPreview(cnpj) {
       <td style="padding:5px 6px;text-align:center;">
         <input type="checkbox" class="cons-bl-cb" data-id="${esc(b.id)}" data-total="${blTotalBRL(b)}" checked
           style="width:15px;height:15px;cursor:pointer;accent-color:var(--blue-btn);"
-          onchange="_toggleConsBL('${b.id}', this.checked)">
+          onchange="_toggleConsBL('${escJs(b.id)}', this.checked)">
       </td>
       <td style="padding:5px 6px;font-family:monospace;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(docnum)}</td>
       <td style="padding:5px 6px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(b.bl)}</td>
       <td style="padding:5px 6px;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(ctrs)}">${esc(ctrs)}</td>
-      <td style="padding:5px 6px;text-align:right;font-weight:600;font-size:12px;white-space:nowrap;">${fmtBRL(total)}</td>
+      <td style="padding:5px 6px;text-align:right;font-weight:600;font-size:12px;white-space:nowrap;">${fmtBRLorDash(total)}</td>
       <td style="padding:5px 6px;font-size:12px;white-space:nowrap;">${esc(venc)}</td>
       <td style="padding:5px 6px;">${status}</td>
     </tr>`;
@@ -233,7 +233,7 @@ function _updateConsPreviewTotal() {
   checkboxes.forEach(cb => {
     if (cb.checked) {
       const b = bls.find(x => x.id === cb.dataset.id);
-      if (b) grand += blTotalBRL(b);
+      if (b) grand += blTotalBRL(b) || 0;
     }
   });
   const totalEl = document.getElementById('cons-grand-total');
@@ -268,6 +268,7 @@ function sendConsolidatedEmail() {
     ? allUnpaid.filter(b => _consSelectedBLs.has(b.id))
     : allUnpaid;
   if (!eligible.length) { toast('Nenhuma fatura selecionada.', 'error'); return; }
+  if (eligible.some(b => blTotalBRL(b) == null)) { ptaxMissingAlert(); return; }
   const info  = _consMap[cnpj] || {};
   const nome  = info.name || cnpj;
   const emails = info.emails || getEmailsForBL(eligible[0]);
@@ -372,7 +373,7 @@ function buildInvoiceHTML(b) {
     </tr>`;
   }).join('');
 
-  const frozen = isFrozen(b) || b.manualTotal != null;
+  const frozen = isFrozen(b) || hasManual(b);
   if (frozen) totalBRL = invoiceTotalBRL(b);
 
   // Apply discount only when NOT frozen (frozen already includes discount via blTotal)
@@ -485,7 +486,7 @@ body{margin:0;padding:20px;background:white;}
 
 // ── Helper: obtém CSS completo dos arquivos externos + inline ─────────────
 async function _fetchPrintCSS() {
-  const urls = ['css/base.css', 'css/components.css'];
+  const urls = ['css/base.css?v=200', 'css/components.css?v=200'];
   const fetched = await Promise.all(
     urls.map(u => fetch(u).then(r => r.ok ? r.text() : '').catch(() => ''))
   );
@@ -513,7 +514,8 @@ async function printAllInvoices() {
     renderDoc(b,'invoice');
     const docnum=b.docnum||genDocnum(b.bl);
     const invHTML=document.getElementById('doc-content').innerHTML;
-    const tot=invoiceTotalBRL(b)||0;
+    const tot=invoiceTotalBRL(b);
+    recordEmission(b); // fatura impressa = valor enviado ao cliente
     // O QR tem que usar EXATAMENTE o payload que renderDoc acabou de imprimir
     // no bloco "Pix Copia e Cola" do invHTML capturado acima. Recalcular aqui
     // gerava um código diferente (sem o txid = docnum e sem o desconto do BL),

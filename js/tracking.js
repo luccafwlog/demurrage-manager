@@ -163,7 +163,7 @@ function doTrkImport() {
     Object.entries(row).forEach(([k,v]) => { n[trkNk(k)] = v; });
     const discharge = trkParseDate(n['DISCHARGE_DATE'] || n['DISCHARGE'] || n['DATA_DESCARGA'] || '');
     const type      = String(n['TYPE'] || n['TIPO'] || '').trim();
-    const ftRaw     = parseInt(n['FREE_TIME'] || n['FREE TIME'], 10);
+    const ftRaw     = parseInt(n['FREE_TIME'] ?? n['FREE TIME'], 10); // ?? e não ||: free time 0 é válido
     // Sem FREE TIME na planilha: padrão da tabela para o tipo (reefer = 10d).
     const freeTime  = !isNaN(ftRaw) && ftRaw >= 0 ? ftRaw : getRate(type).freeUntil;
     const emptyReturnRaw = trkParseDate(n['EMPTY_RETURN'] || n['EMPTY RETURN'] || n['DEVOLUCAO'] || '');
@@ -338,6 +338,7 @@ function checkAndMigrateBLs() {
         }));
         if (JSON.stringify(existingBL.containers) !== JSON.stringify(freshContainers)) {
           existingBL.containers = freshContainers;
+          if (typeof computeReadyAt === 'function') existingBL.readyAt = computeReadyAt(existingBL);
           updatedContainers++;
         }
       }
@@ -381,7 +382,6 @@ function checkAndMigrateBLs() {
       docnum: genDocnum(blNum),
       migratedFromTracking: true,
       migratedAt: todayISO(),
-      readyAt: containers.reduce((m, c) => (c.emptyReturn > m ? c.emptyReturn : m), ''),
       containers: containers.map(c => ({
         container: c.container,
         type: c.type || '40G1',
@@ -391,6 +391,8 @@ function checkAndMigrateBLs() {
       createdAt: Date.now(),
     };
 
+    // Mesma regra do faturamento: só tem data de pronto quando TODOS voltaram.
+    if (typeof computeReadyAt === 'function') blObj.readyAt = computeReadyAt(blObj);
     bls.unshift(blObj);
     migrated++;
   });

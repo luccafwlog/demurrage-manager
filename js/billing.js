@@ -295,17 +295,35 @@ function blTotalUSD(b) {
 
 function isFrozen(b) { return !!(b && (b.paid || b.billed) && b.frozenTotal != null); }
 
+// Assinatura dos dados que determinam o valor da fatura (exceto a PTAX do
+// dia). Valor ajustado manualmente e snapshot de emissão só valem enquanto a
+// assinatura for a mesma de quando foram gravados: containers alterados por
+// reimportação, migração do rastreamento ou edição do container mudam o
+// valor, e o ajuste/snapshot antigo deixa de valer sozinho (antes ele
+// sobrevivia e era congelado no faturamento).
+function valueSig(b) {
+  return JSON.stringify([
+    (b.containers || []).map(c => [c.container || '', c.type || '', c.discharge || '', c.emptyReturn || '', c.creditUSD || 0]),
+    b.freeTime ?? null, b.ov1 || null, b.ov2 || null,
+    b.roeManual ? b.roe : null,
+    b.discount && b.discount.value > 0 ? [b.discount.mode, b.discount.value] : null
+  ]);
+}
+function hasManual(b) { return !!b && b.manualTotal != null && b.manualSig === valueSig(b); }
+function emissionSig(b) { return valueSig(b) + '|' + (hasManual(b) ? b.manualTotal : ''); }
+function hasEmission(b) { return !!b && b.emittedTotal != null && !!b.emittedRoe && b.emittedSig === emissionSig(b); }
+
 // ── FONTE ÚNICA DO VALOR DE UMA FATURA ──────────────────────────────────
 // Toda tela, relatório, e-mail e PIX usa esta função. Regras:
 //   1. faturada/paga com valor congelado → valor congelado;
-//   2. valor ajustado manualmente ("Editar Valor") → esse valor;
+//   2. valor ajustado manualmente ("Editar Valor") e ainda válido → esse valor;
 //   3. senão → cálculo pela tabela × ROE, com desconto.
 // Retorna null quando não há ROE (PTAX indisponível) — quem chama decide
 // como exibir; nunca vira R$ 0,00 silenciosamente.
 function invoiceTotalBRL(b) {
   if (!b) return null;
   if (isFrozen(b)) return b.frozenTotal;
-  if (b.manualTotal != null) return b.manualTotal;
+  if (hasManual(b)) return b.manualTotal;
   const roe = effectiveROE(b);
   if (!roe) return null;
   return blTotal(b, roe);
@@ -317,14 +335,15 @@ function invoiceROE(b) {
 function fmtBRLorDash(v) { return v == null ? '— (sem PTAX)' : fmtBRL(v); }
 
 // Valores a congelar ao faturar/receber. Usa o snapshot da emissão (PDF ou
-// e-mail enviado ao cliente) quando existe: o congelado tem que ser o mesmo
-// valor que o cliente recebeu. Devolve null se não houver ROE.
+// e-mail enviado ao cliente) quando ainda corresponde aos dados atuais: o
+// congelado tem que ser o mesmo valor que o cliente recebeu. Devolve null se
+// não houver ROE.
 function freezeValues(b) {
-  if (b.emittedTotal != null && b.emittedRoe) return { roe: b.emittedRoe, total: b.emittedTotal };
+  if (hasEmission(b)) return { roe: b.emittedRoe, total: b.emittedTotal, origem: 'emissao' };
   const roe = effectiveROE(b);
   if (!roe) return null;
-  const total = b.manualTotal != null ? b.manualTotal : blTotal(b, roe);
-  return { roe, total: Math.round(total * 100) / 100 }; // congela em centavos
+  const total = hasManual(b) ? b.manualTotal : blTotal(b, roe);
+  return { roe, total: Math.round(total * 100) / 100, origem: 'calculo' }; // congela em centavos
 }
 function ptaxMissingAlert() {
   alert('⚠ PTAX não disponível.\n\nNão é possível congelar valores sem a cotação. Aguarde o carregamento, clique em "↻ Tentar novamente" no topo da tela ou informe a PTAX manualmente.');
@@ -337,8 +356,9 @@ function recordEmission(b) {
   const roe = effectiveROE(b);
   const total = invoiceTotalBRL(b);
   if (!roe || total == null) return;
-  if (b.emittedRoe === roe && b.emittedTotal === Math.round(total * 100) / 100) return;
-  b.emittedRoe = roe; b.emittedTotal = Math.round(total * 100) / 100; b.emittedAt = todayISO();
+  const t = Math.round(total * 100) / 100;
+  if (b.emittedRoe === roe && b.emittedTotal === t && hasEmission(b)) return;
+  b.emittedRoe = roe; b.emittedTotal = t; b.emittedAt = todayISO(); b.emittedSig = emissionSig(b);
   saveOne(b);
 }
 
@@ -508,7 +528,7 @@ function renderList() {
     const billableCtrs = ctrs.filter(c => calcContainer(b, c).totalUSD > 0);
     const tot = invoiceTotalBRL(b);
     const totStr = tot == null ? ' · Total: — (sem PTAX)' : tot > 0 ? ` · Total: ${fmtBRL(tot)}` : '';
-    const manualTag = (!isFrozen(b) && b.manualTotal != null) ? ' <span title="Valor ajustado manualmente" style="color:#b45309;">(ajustado)</span>' : '';
+    const manualTag = (!isFrozen(b) && hasManual(b)) ? ' <span title="Valor ajustado manualmente" style="color:#b45309;">(ajustado)</span>' : '';
     const tags = billableCtrs.slice(0,3).map(c=>`<span class="container-tag">${esc(c.container)}${c.type?' ('+esc(c.type)+')':''}</span>`).join('');
     const more = billableCtrs.length>3?`<span style="font-size:11px;color:var(--muted)">+${billableCtrs.length-3}</span>`:'';
     const isPaid   = !!b.paid;
@@ -874,9 +894,14 @@ function saveBL() {
   if (prevBL) {
     // Dados mudaram: o snapshot de emissão e o valor ajustado deixam de valer
     // (senão o congelamento usaria um valor de antes da edição).
-    const hadManual = prevBL.manualTotal != null;
-    delete rec.emittedRoe; delete rec.emittedTotal; delete rec.emittedAt;
-    delete rec.manualTotal;
+    // Só quando o que entra no cálculo mudou (trocar telefone/e-mail não
+    // descarta o ajuste).
+    const valueChanged = valueSig(prevBL) !== valueSig(rec);
+    const hadManual = valueChanged && hasManual(prevBL);
+    if (valueChanged) {
+      delete rec.emittedRoe; delete rec.emittedTotal; delete rec.emittedAt; delete rec.emittedSig;
+      delete rec.manualTotal; delete rec.manualSig;
+    }
     // Marca edição manual de containers: reimportar a planilha não sobrescreve.
     if (JSON.stringify((prevBL.containers||[]).map(c=>[c.container,c.type,c.discharge,c.emptyReturn])) !==
         JSON.stringify(rec.containers.map(c=>[c.container,c.type,c.discharge,c.emptyReturn]))) rec.containersEditedManually = true;
@@ -914,7 +939,7 @@ function exportReport() {
     const roe = invoiceROE(b);
     if (!roe) { semPtax.push(b.bl); return; }
     // Valor final = fonte única (congelado / ajustado / calculado).
-    const frozenTotal = (isFrozen(b) || b.manualTotal != null) ? invoiceTotalBRL(b) : null;
+    const frozenTotal = (isFrozen(b) || hasManual(b)) ? invoiceTotalBRL(b) : null;
     // Only containers that generated demurrage
     const billable = (b.containers || []).filter(c => calcContainer(b, c).totalUSD > 0);
     if (!billable.length) return; // skip BLs with no demurrage at all
@@ -1525,7 +1550,7 @@ function toggleBilled(id) {
       )) return;
       const newVenc = nextBusinessDay(null);
       group.forEach(g => {
-        delete g.emittedRoe; delete g.emittedTotal; delete g.emittedAt;
+        delete g.emittedRoe; delete g.emittedTotal; delete g.emittedAt; delete g.emittedSig;
         if (!g.firstBilledAt && g.billedAt) g.firstBilledAt = g.billedAt;
         g.billed = false;
         g.billedAt = null;
@@ -1557,7 +1582,7 @@ function toggleBilled(id) {
     b.billedAt = null;   // limpa último faturamento; firstBilledAt permanece intacto
     b.frozenRoe = null;
     b.frozenTotal = null;
-    delete b.emittedRoe; delete b.emittedTotal; delete b.emittedAt;
+    delete b.emittedRoe; delete b.emittedTotal; delete b.emittedAt; delete b.emittedSig;
     // Recalcula vencimento: próximo dia útil a partir de hoje (regra de negócio)
     const newVenc = nextBusinessDay(null);
     b.venc = newVenc;
@@ -1574,7 +1599,7 @@ function toggleBilled(id) {
     if (!b.firstBilledAt) b.firstBilledAt = today; // data do 1º faturamento (só define uma vez)
     b.frozenRoe = roe;
     b.frozenTotal = total;
-    logAuditAction('marcacao_fatura', {blId: id, bl: b.bl, total: total, roe, origem: b.emittedTotal != null ? 'emissao' : 'calculo', firstBilledAt: b.firstBilledAt});
+    logAuditAction('marcacao_fatura', {blId: id, bl: b.bl, total: total, roe, origem: fv.origem, firstBilledAt: b.firstBilledAt});
     toast('Fatura marcada como Faturada! Valores congelados. 📄', 'success');
   }
   // FIX-QUOTA #G: apenas 1 write (documento modificado)
@@ -1637,7 +1662,7 @@ function doImport() {
   let duplicatesConsolidated = 0;
   importData.forEach(row => {
     const n = {}; Object.entries(row).forEach(([k,v])=>{ n[nk(k)]=v; });
-    const blNum = String(n['BL']||n['B_L']||'').trim(); if(!blNum) return;
+    const blNum = String(n['BL']||n['B_L']||'').trim().toUpperCase(); if(!blNum) return; // mesmo formato do cadastro manual (índice único é por maiúsculas)
     if (!grouped[blNum]) {
       grouped[blNum] = { id:uid(), bl:blNum, vessel:String(n['VESSEL']||n['NAVIO']||'').trim(), pol:String(n['POL']||'').trim(), pod:String(n['POD']||'').trim(), client:String(n['CNEE']||n['CLIENTE']||'').trim(), cnpj:(s => s.length === 13 ? '0'+s : s)(String(n['CNPJ']||'').replace(/\D/g,'').trim()), phone:String(n['PHONE']||n['TELEFONE']||'').trim(), email:String(n['EMAIL']||n['E_MAIL']||'').trim(), freeTime:(v=>isNaN(parseInt(v))?null:parseInt(v))(n['FREE_TIME']||n['FREETIME']), roe:parseFloat(n['ROE'])||null, ov1:null, ov2:null, venc:parseDs(n['VENCIMENTO']||n['VENC']||'')||nextBusinessDay(null), docnum:String(n['DOCNUM']||'').trim()||genDocnum(blNum), containers:[], createdAt:Date.now() };
     }
@@ -1653,13 +1678,14 @@ function doImport() {
   let added=0, updated=0;
   Object.values(grouped).forEach(imp => {
     imp.readyAt = computeReadyAt(imp);
-    const i=bls.findIndex(x=>x.bl===imp.bl && !x.complementOf);
+    const i=bls.findIndex(x=>String(x.bl||'').toUpperCase()===imp.bl && !x.complementOf);
     if(i>=0){
       const cur = bls[i];
       if (cur.billed || cur.paid) { return; } // fatura emitida não muda por planilha
       // Preserva identidade e histórico: id, nº do documento, criação e ROE manual.
       const { id, docnum, createdAt, ...rest } = imp;
       if (rest.roe == null) { delete rest.roe; }
+      if (rest.freeTime == null) { delete rest.freeTime; } // célula vazia não apaga free time negociado
       bls[i]={...cur,...rest};updated++;
     }else{bls.unshift(imp);added++;}
   });
@@ -1939,14 +1965,14 @@ function applyEditVal() {
   const b = currentBL; if (!b) return;
   const roeIn = parseFloat(document.getElementById('edit-roe-input').value);
   const valIn = parseFloat(document.getElementById('edit-val-input').value);
-  const before = { manualTotal: b.manualTotal ?? null, roe: b.roeManual ? b.roe : null };
+  const before = { manualTotal: hasManual(b) ? b.manualTotal : null, roe: b.roeManual ? b.roe : null };
   // Vazio ou igual à PTAX oficial = volta a acompanhar a PTAX.
   if (roeIn > 0 && Math.abs(roeIn - (ptaxState.roe || 0)) > 0.00005) { b.roe = roeIn; b.roeManual = true; }
   else { b.roe = null; b.roeManual = false; }
   const calc = effectiveROE(b) ? blTotal(b, effectiveROE(b)) : null;
-  if (valIn >= 0 && (calc == null || Math.abs(valIn - calc) >= 0.005)) b.manualTotal = parseFloat(valIn.toFixed(2));
-  else delete b.manualTotal;
-  delete b.emittedRoe; delete b.emittedTotal; delete b.emittedAt;
+  if (valIn >= 0 && (calc == null || Math.abs(valIn - calc) >= 0.005)) { b.manualTotal = parseFloat(valIn.toFixed(2)); b.manualSig = valueSig(b); }
+  else { delete b.manualTotal; delete b.manualSig; }
+  delete b.emittedRoe; delete b.emittedTotal; delete b.emittedAt; delete b.emittedSig;
   logAuditAction('edicao_valor_fatura', { blId: b.id, bl: b.bl, antes: before, depois: { manualTotal: b.manualTotal ?? null, roe: b.roeManual ? b.roe : null }, calculado: calc });
   saveOne(b);
   closeModal('modal-editval');
@@ -1973,7 +1999,7 @@ function renderDoc(b, type) {
     return {c, calc, brl};
   }).filter(({calc}) => calc.totalUSD > 0);
 
-  const isManual = !isFrozen(b) && b.manualTotal != null;
+  const isManual = !isFrozen(b) && hasManual(b);
   if (isFrozen(b)) totalBRL = b.frozenTotal;
   else if (isManual) totalBRL = b.manualTotal;
 

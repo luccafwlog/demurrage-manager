@@ -15,10 +15,12 @@
 --      exigem admin no servidor.
 --   5. Um processo por número de BL (faturas complementares à parte).
 --
--- PRÉ-REQUISITO: todo usuário que deve continuar acessando precisa ter linha em
--- `usuarios` com ativo = true. Confira antes:
---   select u.email, p.ativo, p.admin from auth.users u left join usuarios p on p.id = u.id;
--- Usuário sem linha em `usuarios` é tratado como ATIVO e NÃO-ADMIN.
+-- PERFIL OBRIGATÓRIO: conta sem linha em `usuarios` NÃO acessa nada. Esta
+-- migração cria a linha (ativo, não-admin) para todas as contas que já existem
+-- — ninguém perde acesso ao aplicá-la — e um trigger cria o perfil de contas
+-- novas: convidadas pelo painel entram ativas; cadastro espontâneo (signup
+-- público, se estiver habilitado) entra INATIVO até um admin liberar.
+-- Antes, qualquer conta criada com a chave pública do app lia todos os dados.
 -- ============================================================
 
 -- ── Funções auxiliares (security definer: leem usuarios ignorando RLS) ──
@@ -30,8 +32,28 @@ $$;
 create or replace function public.auth_is_active()
 returns boolean language sql security definer stable set search_path = public as $$
   select auth.uid() is not null
-     and coalesce((select ativo from usuarios where id = auth.uid()), true);
+     and coalesce((select ativo from usuarios where id = auth.uid()), false);
 $$;
+
+-- Perfis das contas já existentes (mantém o acesso de quem já usa o sistema).
+insert into public.usuarios (id, email, nome, ativo, admin)
+select u.id, lower(u.email), coalesce(u.raw_user_meta_data->>'nome', u.email), true, false
+from auth.users u
+where not exists (select 1 from public.usuarios p where p.id = u.id);
+
+-- Perfil automático para contas novas.
+create or replace function public.usuarios_cria_perfil()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.usuarios (id, email, nome, ativo, admin)
+  values (new.id, lower(new.email), coalesce(new.raw_user_meta_data->>'nome', new.email),
+          new.invited_at is not null, false)
+  on conflict (id) do nothing;
+  return new;
+end $$;
+drop trigger if exists trg_usuarios_cria_perfil on auth.users;
+create trigger trg_usuarios_cria_perfil after insert on auth.users
+  for each row execute function public.usuarios_cria_perfil();
 
 revoke all on function public.auth_is_admin()  from public;
 revoke all on function public.auth_is_active() from public;
@@ -46,8 +68,14 @@ alter table bls add column if not exists ja_emitida boolean not null default fal
 create or replace function public.bls_marca_emitida()
 returns trigger language plpgsql as $$
 begin
-  new.ja_emitida := coalesce(old.ja_emitida, false) and tg_op = 'UPDATE'
-    or coalesce((new.data->>'billed')::boolean, false)
+  -- OLD só existe no UPDATE: não referenciar no INSERT.
+  if tg_op = 'UPDATE' then
+    if old.ja_emitida then
+      new.ja_emitida := true;
+      return new;
+    end if;
+  end if;
+  new.ja_emitida := coalesce((new.data->>'billed')::boolean, false)
     or coalesce((new.data->>'paid')::boolean, false)
     or coalesce(new.data->>'firstBilledAt', '') <> '';
   return new;

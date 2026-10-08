@@ -35,6 +35,7 @@ Para aplicar: Supabase Dashboard → SQL Editor → colar o arquivo → Run. Os 
 
 O deploy publica só os arquivos do app: `.md`, `.sql`, `supabase/` e arquivos ocultos ficam fora do Hosting (`firebase.json`).
 JS/CSS/HTML são servidos com `Cache-Control: no-cache` (revalidam a cada acesso) — não é mais preciso subir `?v=` a cada alteração.
+(As versões `?v=200` desta mudança são necessárias uma única vez: a configuração anterior mandava o navegador guardar JS/CSS por 1 ano.)
 
 ## ⚠️ Segurança
 
